@@ -120,8 +120,8 @@ mkdir -p /opt/sashko-music/downloads/{slskd,qobuz,bandcamp,apple-music}
 # Створити директорію для Navidrome
 mkdir -p /opt/sashko-music/navidrome/data
 
-# Створити директорію для Slskd конфігурації
-mkdir -p /opt/sashko-music/slskd/{app,config,downloads,incomplete}
+# Створити директорії для Slskd
+mkdir -p /opt/sashko-music/slskd/{app,downloads,incomplete}
 
 # Переконатися що твоя музична бібліотека примонтована
 ls -la /mnt/media_hdd/lib
@@ -225,49 +225,18 @@ cd /opt/sashko-music
 
 ## Крок 6: Налаштування Slskd
 
-### 6.1 Створити конфігураційний файл
+Slskd конфігурується через environment variables в `docker-compose.yaml`, тому окремий YAML конфіг створювати **не треба**.
 
-```bash
-nano /opt/sashko-music/slskd/config/slskd.yml
-```
+Всі необхідні налаштування (Soulseek креди, веб UI креди, порти, директорії) беруться з `.env` файлу.
 
-Вставити базову конфігурацію:
+**Important**: Slskd webhook для download-complete нотифікацій треба налаштувати **через веб UI** після першого запуску:
 
-```yaml
-soulseek:
-  username: your_soulseek_username
-  password: your_soulseek_password
-
-web:
-  authentication:
-    username: slskd
-    password: slskd
-
-  http:
-    port: 5030
-
-global:
-  upload:
-    slots: 10
-  download:
-    slots: 10
-
-shares:
-  directories:
-    - /music
-
-downloads:
-  directory: /var/slskd/downloads
-  incomplete_directory: /var/slskd/incomplete
-
-integration:
-  webhooks:
-    - url: http://host.containers.internal:8081/slskd/download-complete
-      events:
-        - download_complete
-```
-
-Збережи: `Ctrl+O`, `Enter`, `Ctrl+X`
+1. Відкрий Slskd веб UI: `http://your-server-ip:5030`
+2. Увійди з кредами з `.env` файлу (`SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD`)
+3. Перейди в Settings → Integration → Webhooks
+4. Додай webhook:
+   - URL: `http://host.containers.internal:8081/slskd/download-complete` (dev) або `http://sm-download-agent:8081/slskd/download-complete` (prod)
+   - Events: `download_complete`
 
 ---
 
@@ -432,12 +401,16 @@ ls -la /opt/sashko-music/downloads
 sudo chown -R $USER:$USER /opt/sashko-music
 ```
 
-### Проблема: Slskd не може підключитися до sm-download-agent
+### Проблема: Slskd webhook не працює
 
-Переконайся що в `slskd.yml` webhook URL використовує `host.containers.internal`:
-```yaml
-webhooks:
-  - url: http://host.containers.internal:8081/slskd/download-complete
+Перевір webhook налаштування в Slskd веб UI (Settings → Integration → Webhooks):
+- **Development (MacBook)**: `http://host.docker.internal:8081/slskd/download-complete`
+- **Production (Ubuntu)**: `http://sm-download-agent:8081/slskd/download-complete`
+
+Переконайся що sm-download-agent запущений і доступний:
+```bash
+docker compose logs sm-download-agent
+curl http://localhost:8081/actuator/health
 ```
 
 ### Проблема: Python CLI tools не знайдено

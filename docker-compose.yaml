@@ -67,20 +67,21 @@ services:
       - "50300:50300"
     volumes:
       - ./slskd/app:/app
-      - ./slskd/config:/config
       - ./slskd/downloads:/var/slskd/downloads
       - ./slskd/incomplete:/var/slskd/incomplete
+      - ${LIBRARY_ROOT_PATH}:/music:ro
     environment:
-      - SLSKD_SLSK_USERNAME=${SLSKD_SOULSEEK_USERNAME}
-      - SLSKD_SLSK_PASSWORD=${SLSKD_SOULSEEK_PASSWORD}
+      - SLSKD_SOULSEEK_USERNAME=${SLSKD_SOULSEEK_USERNAME}
+      - SLSKD_SOULSEEK_PASSWORD=${SLSKD_SOULSEEK_PASSWORD}
       - SLSKD_WEB_AUTHENTICATION_USERNAME=${SLSKD_WEB_USERNAME}
       - SLSKD_WEB_AUTHENTICATION_PASSWORD=${SLSKD_WEB_PASSWORD}
-      - SLSKD_WEB_HTTP_PORT=5030
-      - SLSKD_SLSK_LISTEN_PORT=50300
+      - SLSKD_WEB_PORT=5030
+      - SLSKD_SOULSEEK_LISTEN_PORT=50300
       - SLSKD_DIRECTORIES_DOWNLOADS=/var/slskd/downloads
       - SLSKD_DIRECTORIES_INCOMPLETE=/var/slskd/incomplete
-      - SLSKD_INTEGRATION_WEBHOOKS_0_URL=${SLSKD_WEBHOOK_URL}
-      - SLSKD_INTEGRATION_WEBHOOKS_0_EVENTS=download_complete
+      - SLSKD_SHARES_DIRECTORIES=/music
+      - SLSKD_REMOTE_CONFIGURATION=true
+      - SLSKD_INTEGRATION_FTP_ENABLED=false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
