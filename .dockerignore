@@ -1,0 +1,76 @@
+# Git
+.git
+.gitignore
+.gitmodules
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# Build outputs
+**/build/
+**/target/
+**/.gradle/
+*.jar
+*.class
+
+# Music library and downloads (HUGE!)
+lib/
+downloads/
+sm-download-agent/downloads/
+sm-library-agent/downloads/
+slskd/downloads/
+slskd/incomplete/
+slskd/app/
+slskd/config/
+
+# Navidrome data
+navidrome/
+
+# Logs
+*.log
+
+# Audio files (no need in build context)
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.wav
+*.opus
+*.aac
+
+# Temporary files
+*.tmp
+*.swp
+.DS_Store
+
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Node (if any)
+node_modules/
+
+# Docker files themselves
+docker-compose.yaml
+Dockerfile
+.dockerignore
+
+# Documentation
+README*.md
+*.md
+
+# Scripts
+*.sh
+
+# Cookies and secrets
+cookies.txt
+*.cookies

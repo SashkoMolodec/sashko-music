@@ -1,0 +1,63 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Gradle
+.gradle/
+build/
+
+# HTTP Client private environment files
+http-client.private.env.json
+*.http
+
+# Environment variables (contains secrets!)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Authentication & cookies
+cookies.txt
+*.cookies
+
+# Music downloads
+**/qobuz/downloads/
+**/apple-music/
+**/slskd/downloads/
+**/Qobuz Downloads/
+**/Soulseek Downloads/
+
+# Audio files
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.wav
+*.opus
+*.aac
+*.wma
+*.alac
+*.ape
+*.wv
+
+# Slskd configuration
+**/slskd.yml
+slskd.yml
+
+# Navidrome data
+navidrome/data/
+
+# Logs
+*.log
+
+# Database backups
+*.sql
+*.dump
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.swp

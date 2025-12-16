@@ -1,0 +1,191 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: sm_postgres
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: sm_library
+    ports:
+      - "5432:5432"
+    volumes:
+      - sm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: sm_redpanda
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --memory 1G
+      - --mode dev-container
+      - --default-log-level info
+      - --kafka-addr
+      - internal://0.0.0.0:9091
+      - --kafka-addr
+      - external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:9091
+      - --advertise-kafka-addr
+      - external://localhost:9092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redpanda-console:
+    image: redpandadata/console:latest
+    container_name: sm_redpanda_console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "9094:8080"
+    environment:
+      - KAFKA_BROKERS=redpanda:9091
+      - ADMIN_API_URL=http://redpanda:9644
+    restart: unless-stopped
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: sm_slskd
+    ports:
+      - "5030:5030"
+      - "5031:5031"
+      - "50300:50300"
+    volumes:
+      - ./slskd/app:/app
+      - ./slskd/config:/config
+      - ./slskd/downloads:/var/slskd/downloads
+      - ./slskd/incomplete:/var/slskd/incomplete
+    environment:
+      - SLSKD_SLSK_USERNAME=${SLSKD_SOULSEEK_USERNAME}
+      - SLSKD_SLSK_PASSWORD=${SLSKD_SOULSEEK_PASSWORD}
+      - SLSKD_WEB_AUTHENTICATION_USERNAME=${SLSKD_WEB_USERNAME}
+      - SLSKD_WEB_AUTHENTICATION_PASSWORD=${SLSKD_WEB_PASSWORD}
+      - SLSKD_WEB_HTTP_PORT=5030
+      - SLSKD_SLSK_LISTEN_PORT=50300
+      - SLSKD_DIRECTORIES_DOWNLOADS=/var/slskd/downloads
+      - SLSKD_DIRECTORIES_INCOMPLETE=/var/slskd/incomplete
+      - SLSKD_INTEGRATION_WEBHOOKS_0_URL=${SLSKD_WEBHOOK_URL}
+      - SLSKD_INTEGRATION_WEBHOOKS_0_EVENTS=download_complete
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  sm-main-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: sm-main-agent
+    container_name: sm_main_agent
+    image: localhost/sm-main-agent:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
+      - TGBOT_NAME=${TGBOT_NAME}
+      - TGBOT_TOKEN=${TGBOT_TOKEN}
+      - TGBOT_DEFAULT_CHAT_ID=${TGBOT_DEFAULT_CHAT_ID:-0}
+      - DISCOGS_API_TOKEN=${DISCOGS_API_TOKEN}
+      - AI_ANTHROPIC_API_KEY=${AI_ANTHROPIC_API_KEY}
+      - LIBRARY_ROOT_PATH=${LIBRARY_ROOT_PATH}
+      - DOWNLOADS_BASE_PATH=${DOWNLOADS_BASE_PATH}
+    volumes:
+      - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
+      - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sm-library-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: sm-library-agent
+    container_name: sm_library_agent
+    image: localhost/sm-library-agent:latest
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/sm_library
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - AI_ANTHROPIC_API_KEY=${AI_ANTHROPIC_API_KEY}
+      - LIBRARY_ROOT_PATH=${LIBRARY_ROOT_PATH}
+    volumes:
+      - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sm-download-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: sm-download-agent
+    container_name: sm_download_agent
+    image: localhost/sm-download-agent:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
+      - SLSKD_BASE_URL=http://slskd:5030
+      - QOBUZ_EMAIL=${QOBUZ_EMAIL}
+      - QOBUZ_PASSWORD=${QOBUZ_PASSWORD}
+      - QOBUZ_CLI_PATH=${QOBUZ_CLI_PATH}
+      - QOBUZ_DOWNLOAD_PATH=${QOBUZ_DOWNLOAD_PATH}
+      - BANDCAMP_CLI_PATH=${BANDCAMP_CLI_PATH}
+      - BANDCAMP_DOWNLOAD_PATH=${BANDCAMP_DOWNLOAD_PATH}
+      - APPLE_MUSIC_CLI_PATH=${APPLE_MUSIC_CLI_PATH}
+      - APPLE_MUSIC_COOKIES_PATH=${APPLE_MUSIC_COOKIES_PATH}
+      - APPLE_MUSIC_DOWNLOAD_PATH=${APPLE_MUSIC_DOWNLOAD_PATH}
+    volumes:
+      - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
+      - ./slskd/downloads:/var/slskd/downloads
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      slskd:
+        condition: service_started
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+    restart: unless-stopped
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: sm_navidrome
+    user: "${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID}"
+    ports:
+      - "4533:4533"
+    environment:
+      - ND_SCANSCHEDULE=1h
+      - ND_LOGLEVEL=info
+    volumes:
+      - ${LIBRARY_ROOT_PATH}:/music:ro
+      - ./navidrome/data:/data
+    restart: unless-stopped
+
+volumes:
+  sm_pgdata:

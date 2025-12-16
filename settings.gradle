@@ -1,0 +1,6 @@
+rootProject.name = 'sashko-music'
+
+include 'sm-main-agent'
+include 'sm-download-agent'
+include 'sm-library-agent'
+include 'sm-api'

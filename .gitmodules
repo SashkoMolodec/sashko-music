@@ -1,0 +1,14 @@
+[submodule "sm-main-agent"]
+	path = sm-main-agent
+	url = git@github.com:SashkoMolodec/sm-main-agent.git
+	branch = main
+
+[submodule "sm-library-agent"]
+	path = sm-library-agent
+	url = git@github.com:SashkoMolodec/sm-library-agent.git
+	branch = main
+
+[submodule "sm-download-agent"]
+	path = sm-download-agent
+	url = git@github.com:SashkoMolodec/sm-download-agent.git
+	branch = main
