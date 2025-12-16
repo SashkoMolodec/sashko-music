@@ -21,8 +21,17 @@
 
 # Music library and downloads (HUGE!)
 lib/
+lib копія/
+**/lib/
+**/lib копія/
 downloads/
+**/downloads/
+**/slskd/downloads/
+**/slskd/incomplete/
+**/slskd/app/
+**/slskd/config/
 sm-download-agent/downloads/
+sm-download-agent/slskd/
 sm-library-agent/downloads/
 slskd/downloads/
 slskd/incomplete/
