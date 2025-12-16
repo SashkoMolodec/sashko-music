@@ -7,6 +7,38 @@ echo "  SASHKO MUSIC - DEPLOYMENT SCRIPT"
 echo "========================================="
 echo ""
 
+# Setup SSH agent to cache passphrase
+setup_ssh_agent() {
+    # Check if ssh-agent is already running
+    if [ -z "$SSH_AUTH_SOCK" ] || ! ssh-add -l &>/dev/null; then
+        echo "🔑 Starting SSH agent and adding key..."
+        eval "$(ssh-agent -s)" > /dev/null
+
+        # Find the SSH key (try common paths)
+        SSH_KEY=""
+        if [ -f "$HOME/.ssh/id_ed25519" ]; then
+            SSH_KEY="$HOME/.ssh/id_ed25519"
+        elif [ -f "$HOME/.ssh/id_rsa" ]; then
+            SSH_KEY="$HOME/.ssh/id_rsa"
+        fi
+
+        if [ -n "$SSH_KEY" ]; then
+            ssh-add "$SSH_KEY" || {
+                echo "⚠️  Warning: Failed to add SSH key. You may need to enter passphrase multiple times."
+            }
+        else
+            echo "⚠️  Warning: No SSH key found. Skipping ssh-agent setup."
+        fi
+    else
+        echo "✓ SSH agent already running with loaded keys"
+    fi
+    echo ""
+}
+
+# Run SSH agent setup
+setup_ssh_agent
+
+
 COMPOSE_CMD=""
 if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
