@@ -67,21 +67,25 @@ echo "✓ Environment file found"
 echo ""
 
 echo "📁 Creating directories with correct permissions..."
-# Source .env to get user IDs
-source .env
 
 # Create necessary directories
 mkdir -p slskd/{app,downloads,incomplete,config}
 mkdir -p navidrome/data
 mkdir -p downloads/{qobuz,bandcamp,apple-music,slskd}
 
-# Set permissions for Navidrome data directory
-if [ -n "$NAVIDROME_USER_ID" ] && [ -n "$NAVIDROME_GROUP_ID" ]; then
-    if command -v chown &> /dev/null; then
-        chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data 2>/dev/null || {
-            echo "⚠️  Warning: Could not set ownership for navidrome/data (may need sudo)"
-            echo "   Run manually: sudo chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data"
-        }
+# Read Navidrome user IDs from .env (safely, without sourcing)
+if [ -f .env ]; then
+    NAVIDROME_USER_ID=$(grep "^NAVIDROME_USER_ID=" .env | cut -d '=' -f2)
+    NAVIDROME_GROUP_ID=$(grep "^NAVIDROME_GROUP_ID=" .env | cut -d '=' -f2)
+
+    # Set permissions for Navidrome data directory
+    if [ -n "$NAVIDROME_USER_ID" ] && [ -n "$NAVIDROME_GROUP_ID" ]; then
+        if command -v chown &> /dev/null; then
+            chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data 2>/dev/null || {
+                echo "⚠️  Warning: Could not set ownership for navidrome/data (may need sudo)"
+                echo "   Run manually: sudo chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data"
+            }
+        fi
     fi
 fi
 
@@ -120,14 +124,22 @@ sleep 5
 if command -v curl &> /dev/null; then
     NAVIDROME_URL="http://localhost:4533"
 
-    # Create admin user using credentials from .env
-    curl -s -X POST \
-        -H "Content-Type: application/json" \
-        "${NAVIDROME_URL}/auth/createAdmin" \
-        --data "{\"username\":\"${NAVIDROME_USERNAME}\",\"password\":\"${NAVIDROME_PASSWORD}\"}" \
-        > /dev/null 2>&1 && \
-        echo "✓ Navidrome admin user created: ${NAVIDROME_USERNAME}" || \
-        echo "✓ Navidrome admin user already exists (or service not ready yet)"
+    # Read credentials from .env (safely, without sourcing)
+    if [ -f .env ]; then
+        NAVIDROME_USERNAME=$(grep "^NAVIDROME_USERNAME=" .env | cut -d '=' -f2)
+        NAVIDROME_PASSWORD=$(grep "^NAVIDROME_PASSWORD=" .env | cut -d '=' -f2)
+
+        # Create admin user using credentials from .env
+        curl -s -X POST \
+            -H "Content-Type: application/json" \
+            "${NAVIDROME_URL}/auth/createAdmin" \
+            --data "{\"username\":\"${NAVIDROME_USERNAME}\",\"password\":\"${NAVIDROME_PASSWORD}\"}" \
+            > /dev/null 2>&1 && \
+            echo "✓ Navidrome admin user created: ${NAVIDROME_USERNAME}" || \
+            echo "✓ Navidrome admin user already exists (or service not ready yet)"
+    else
+        echo "⚠️  .env file not found, skipping Navidrome admin creation"
+    fi
 else
     echo "⚠️  curl not found, skipping Navidrome admin creation"
     echo "   Create admin manually at: http://localhost:4533"
