@@ -41,9 +41,11 @@ cookies.txt
 *.ape
 *.wv
 
-# Slskd configuration
+# Slskd configuration (contains secrets!)
+slskd/slskd.dev.yml
+slskd/slskd.prod.yml
+slskd/config/slskd.yml
 **/slskd.yml
-slskd.yml
 
 # Navidrome data
 navidrome/data/
