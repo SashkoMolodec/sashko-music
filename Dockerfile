@@ -48,6 +48,7 @@ RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
     echo '[DEFAULT]' >> /app/entrypoint.sh && \
     echo 'email = $QOBUZ_EMAIL' >> /app/entrypoint.sh && \
     echo 'password = $QOBUZ_PASSWORD' >> /app/entrypoint.sh && \
+    echo 'default_folder = $QOBUZ_DOWNLOAD_PATH' >> /app/entrypoint.sh && \
     echo 'default_quality = 27' >> /app/entrypoint.sh && \
     echo 'default_limit = 20' >> /app/entrypoint.sh && \
     echo 'no_cover = false' >> /app/entrypoint.sh && \
