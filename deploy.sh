@@ -66,28 +66,11 @@ fi
 echo "✓ Environment file found"
 echo ""
 
-echo "📁 Creating directories with correct permissions..."
+echo "📁 Creating directories..."
 
 # Create necessary directories
 mkdir -p slskd/{app,downloads,incomplete,config}
-mkdir -p navidrome/data
 mkdir -p downloads/{qobuz,bandcamp,apple-music,slskd}
-
-# Read Navidrome user IDs from .env (safely, without sourcing)
-if [ -f .env ]; then
-    NAVIDROME_USER_ID=$(grep "^NAVIDROME_USER_ID=" .env | cut -d '=' -f2)
-    NAVIDROME_GROUP_ID=$(grep "^NAVIDROME_GROUP_ID=" .env | cut -d '=' -f2)
-
-    # Set permissions for Navidrome data directory
-    if [ -n "$NAVIDROME_USER_ID" ] && [ -n "$NAVIDROME_GROUP_ID" ]; then
-        if command -v chown &> /dev/null; then
-            chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data 2>/dev/null || {
-                echo "⚠️  Warning: Could not set ownership for navidrome/data (may need sudo)"
-                echo "   Run manually: sudo chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data"
-            }
-        fi
-    fi
-fi
 
 echo "✓ Directories created"
 echo ""

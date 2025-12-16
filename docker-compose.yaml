@@ -166,25 +166,9 @@ services:
       - "host.containers.internal:host-gateway"
     restart: unless-stopped
 
-  # Init container to fix Navidrome permissions
-  navidrome-init:
-    image: busybox:latest
-    container_name: sm_navidrome_init
-    command: >
-      sh -c "
-      echo 'Fixing Navidrome data directory permissions...';
-      chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} /data;
-      chmod -R 755 /data;
-      echo 'Permissions fixed!';
-      "
-    volumes:
-      - ./navidrome/data:/data
-    restart: "no"
-
   navidrome:
     image: deluan/navidrome:latest
     container_name: sm_navidrome
-    user: "${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID}"
     ports:
       - "4533:4533"
     environment:
@@ -192,12 +176,10 @@ services:
       - ND_LOGLEVEL=info
     volumes:
       - ${LIBRARY_ROOT_PATH}:/music:ro
-      - ./navidrome/data:/data
-    depends_on:
-      navidrome-init:
-        condition: service_completed_successfully
+      - navidrome_data:/data
     restart: unless-stopped
 
 volumes:
   sm_pgdata:
   slskd_app:
+  navidrome_data:
