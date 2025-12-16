@@ -31,6 +31,39 @@ RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
 
 COPY --from=builder /app/${SERVICE_NAME}/build/libs/*.jar app.jar
 
+# Create startup script for sm-download-agent to auto-configure qobuz-dl
+RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
+    echo '#!/bin/bash' > /app/entrypoint.sh && \
+    echo 'set -e' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Auto-configure qobuz-dl if credentials are provided' >> /app/entrypoint.sh && \
+    echo 'if [ -n "$QOBUZ_EMAIL" ] && [ -n "$QOBUZ_PASSWORD" ]; then' >> /app/entrypoint.sh && \
+    echo '    QOBUZ_CONFIG_DIR="/root/.config/qobuz-dl"' >> /app/entrypoint.sh && \
+    echo '    QOBUZ_CONFIG_FILE="$QOBUZ_CONFIG_DIR/config.ini"' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    if [ ! -f "$QOBUZ_CONFIG_FILE" ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "Creating qobuz-dl config from environment variables..."' >> /app/entrypoint.sh && \
+    echo '        mkdir -p "$QOBUZ_CONFIG_DIR"' >> /app/entrypoint.sh && \
+    echo '        cat > "$QOBUZ_CONFIG_FILE" <<EOF' >> /app/entrypoint.sh && \
+    echo '[DEFAULT]' >> /app/entrypoint.sh && \
+    echo 'email = $QOBUZ_EMAIL' >> /app/entrypoint.sh && \
+    echo 'password = $QOBUZ_PASSWORD' >> /app/entrypoint.sh && \
+    echo 'default_quality = 27' >> /app/entrypoint.sh && \
+    echo 'default_limit = 20' >> /app/entrypoint.sh && \
+    echo 'no_cover = false' >> /app/entrypoint.sh && \
+    echo 'EOF' >> /app/entrypoint.sh && \
+    echo '        echo "✓ qobuz-dl configured successfully"' >> /app/entrypoint.sh && \
+    echo '    else' >> /app/entrypoint.sh && \
+    echo '        echo "✓ qobuz-dl config already exists"' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Start Java application' >> /app/entrypoint.sh && \
+    echo 'exec java -jar /app/app.jar' >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh; \
+    fi
+
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Use custom entrypoint for sm-download-agent, default for others
+ENTRYPOINT ["/bin/sh", "-c", "if [ -f /app/entrypoint.sh ]; then /app/entrypoint.sh; else java -jar /app/app.jar; fi"]

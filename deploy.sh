@@ -66,6 +66,28 @@ fi
 echo "✓ Environment file found"
 echo ""
 
+echo "📁 Creating directories with correct permissions..."
+# Source .env to get user IDs
+source .env
+
+# Create necessary directories
+mkdir -p slskd/{app,downloads,incomplete,config}
+mkdir -p navidrome/data
+mkdir -p downloads/{qobuz,bandcamp,apple-music,slskd}
+
+# Set permissions for Navidrome data directory
+if [ -n "$NAVIDROME_USER_ID" ] && [ -n "$NAVIDROME_GROUP_ID" ]; then
+    if command -v chown &> /dev/null; then
+        chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data 2>/dev/null || {
+            echo "⚠️  Warning: Could not set ownership for navidrome/data (may need sudo)"
+            echo "   Run manually: sudo chown -R ${NAVIDROME_USER_ID}:${NAVIDROME_GROUP_ID} navidrome/data"
+        }
+    fi
+fi
+
+echo "✓ Directories created"
+echo ""
+
 echo "📥 Pulling latest code from GitHub..."
 git pull origin main || {
     echo "⚠️  Warning: git pull failed for main repo"
@@ -88,6 +110,28 @@ echo ""
 
 echo "⏳ Waiting for services to start..."
 sleep 10
+echo ""
+
+echo "👤 Creating Navidrome admin user (if first time)..."
+# Wait a bit more for Navidrome to be fully ready
+sleep 5
+
+# Try to create admin user via API (only works if no users exist)
+if command -v curl &> /dev/null; then
+    NAVIDROME_URL="http://localhost:4533"
+
+    # Create admin user using credentials from .env
+    curl -s -X POST \
+        -H "Content-Type: application/json" \
+        "${NAVIDROME_URL}/auth/createAdmin" \
+        --data "{\"username\":\"${NAVIDROME_USERNAME}\",\"password\":\"${NAVIDROME_PASSWORD}\"}" \
+        > /dev/null 2>&1 && \
+        echo "✓ Navidrome admin user created: ${NAVIDROME_USERNAME}" || \
+        echo "✓ Navidrome admin user already exists (or service not ready yet)"
+else
+    echo "⚠️  curl not found, skipping Navidrome admin creation"
+    echo "   Create admin manually at: http://localhost:4533"
+fi
 echo ""
 
 echo "📊 Service Status:"
