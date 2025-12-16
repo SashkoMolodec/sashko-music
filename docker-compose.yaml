@@ -124,6 +124,7 @@ services:
       - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD}
     volumes:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
+      - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
     depends_on:
       postgres:
         condition: service_healthy
