@@ -51,7 +51,18 @@ RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
     echo 'default_folder = $QOBUZ_DOWNLOAD_PATH' >> /app/entrypoint.sh && \
     echo 'default_quality = 27' >> /app/entrypoint.sh && \
     echo 'default_limit = 20' >> /app/entrypoint.sh && \
+    echo 'no_m3u = false' >> /app/entrypoint.sh && \
+    echo 'albums_only = false' >> /app/entrypoint.sh && \
+    echo 'no_fallback = false' >> /app/entrypoint.sh && \
+    echo 'og_cover = false' >> /app/entrypoint.sh && \
+    echo 'embed_art = false' >> /app/entrypoint.sh && \
     echo 'no_cover = false' >> /app/entrypoint.sh && \
+    echo 'no_database = false' >> /app/entrypoint.sh && \
+    echo 'app_id = 798273057' >> /app/entrypoint.sh && \
+    echo 'secrets = 806331c3b0b641da923b890aed01d04a,f69a7734686cb9427629378a4b7ac381,abb21364945c0583309667d13ca3d93a' >> /app/entrypoint.sh && \
+    echo 'folder_format = {artist} - {album} ({year}) [{bit_depth}B-{sampling_rate}kHz]' >> /app/entrypoint.sh && \
+    echo 'track_format = {tracknumber}. {tracktitle}' >> /app/entrypoint.sh && \
+    echo 'smart_discography = false' >> /app/entrypoint.sh && \
     echo 'EOF' >> /app/entrypoint.sh && \
     echo '        echo "✓ qobuz-dl configured successfully"' >> /app/entrypoint.sh && \
     echo '    else' >> /app/entrypoint.sh && \
