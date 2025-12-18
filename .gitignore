@@ -63,3 +63,12 @@ navidrome/data/
 # Temporary files
 *.tmp
 *.swp
+
+# Python virtual environment
+venv_essentia/
+
+# Music library (managed separately)
+lib/
+
+# Slskd application data
+slskd/
