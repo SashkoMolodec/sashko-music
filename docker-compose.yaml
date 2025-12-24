@@ -156,8 +156,7 @@ services:
       - APPLE_MUSIC_COOKIES_PATH=${APPLE_MUSIC_COOKIES_PATH}
       - APPLE_MUSIC_DOWNLOAD_PATH=${APPLE_MUSIC_DOWNLOAD_PATH}
     volumes:
-      - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
-      - ./slskd/downloads:/var/slskd/downloads
+      - ${SLSKD_DOWNLOAD_PATH}:/var/slskd/downloads
     depends_on:
       redpanda:
         condition: service_healthy
