@@ -80,7 +80,7 @@ git pull origin main || {
     echo "⚠️  Warning: git pull failed for main repo"
 }
 
-echo "📥 Updating submodules (sm-main-agent, sm-library-agent, sm-download-agent)..."
+echo "📥 Updating submodules (sm-main-agent, sm-library-agent, sm-download-agent, sm-api)..."
 git submodule update --remote --merge || {
     echo "⚠️  Warning: submodule update failed, continuing with current code"
 }
