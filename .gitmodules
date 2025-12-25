@@ -12,3 +12,8 @@
 	path = sm-download-agent
 	url = git@github.com:SashkoMolodec/sm-download-agent.git
 	branch = main
+
+[submodule "sm-api"]
+	path = sm-api
+	url = git@github.com:SashkoMolodec/sm-api.git
+	branch = main
