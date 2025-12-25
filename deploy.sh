@@ -70,7 +70,7 @@ echo "📁 Creating directories..."
 
 # Create necessary directories
 mkdir -p slskd/{app,downloads,incomplete,config}
-mkdir -p downloads/{qobuz,bandcamp,apple-music,slskd}
+mkdir -p downloads/{qobuz,bandcamp,apple-music,slskd/incomplete}
 
 echo "✓ Directories created"
 echo ""
