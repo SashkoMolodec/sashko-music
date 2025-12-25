@@ -97,6 +97,7 @@ services:
       - NAVIDROME_BASE_URL=http://navidrome:4533
       - NAVIDROME_USERNAME=${NAVIDROME_USERNAME}
       - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD}
+      - SM_API_BASE_URL=http://sm-api:8083
     volumes:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
       - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
@@ -166,6 +167,25 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.containers.internal:host-gateway"
+    restart: unless-stopped
+
+  sm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: sm-api
+    container_name: sm_api
+    image: localhost/sm-api:latest
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/sm_library
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   navidrome:
