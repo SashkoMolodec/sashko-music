@@ -68,8 +68,8 @@ services:
     volumes:
       - slskd_app:/app/data
       - ./slskd/config/slskd.yml:/app/slskd.yml:ro
-      - ./slskd/downloads:/var/slskd/downloads
-      - ./slskd/incomplete:/var/slskd/incomplete
+      - ${SLSKD_DOWNLOAD_PATH}:/var/slskd/downloads
+      - ${SLSKD_DOWNLOAD_PATH}:/var/slskd/incomplete
       - ${LIBRARY_ROOT_PATH}:/music:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -157,7 +157,7 @@ services:
       - APPLE_MUSIC_COOKIES_PATH=${APPLE_MUSIC_COOKIES_PATH}
       - APPLE_MUSIC_DOWNLOAD_PATH=${APPLE_MUSIC_DOWNLOAD_PATH}
     volumes:
-      - ${SLSKD_DOWNLOAD_PATH}:/var/slskd/downloads
+      - ${SLSKD_DOWNLOAD_PATH}:${SLSKD_DOWNLOAD_PATH}
     depends_on:
       redpanda:
         condition: service_healthy
