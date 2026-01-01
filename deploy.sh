@@ -86,6 +86,20 @@ git submodule update --remote --merge || {
 }
 echo ""
 
+echo "📥 Updating sm-audio-analyzer..."
+if [ -d "sm-audio-analyzer/.git" ]; then
+    echo "  Pulling latest changes..."
+    (cd sm-audio-analyzer && git pull origin main) || {
+        echo "⚠️  Warning: Failed to pull sm-audio-analyzer, continuing with current code"
+    }
+else
+    echo "  Cloning sm-audio-analyzer repository..."
+    git clone git@github.com:sashkomusic/sm-audio-analyzer.git sm-audio-analyzer || {
+        echo "⚠️  Warning: Failed to clone sm-audio-analyzer, continuing without it"
+    }
+fi
+echo ""
+
 echo "🔨 Building Docker images..."
 echo "This will build all three services (may take a few minutes)..."
 $COMPOSE_CMD build
