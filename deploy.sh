@@ -94,7 +94,7 @@ if [ -d "sm-audio-analyzer/.git" ]; then
     }
 else
     echo "  Cloning sm-audio-analyzer repository..."
-    git clone git@github.com:sashkomusic/sm-audio-analyzer.git sm-audio-analyzer || {
+    git clone git@github.com:SashkoMolodec/sm-audio-analyzer.git sm-audio-analyzer || {
         echo "⚠️  Warning: Failed to clone sm-audio-analyzer, continuing without it"
     }
 fi
