@@ -162,7 +162,7 @@ cat ~/.ssh/id_ed25519.pub
 
 - **`.env.development`** - для локальної розробки (MacBook)
   - Library: `/Users/okravch/my/sm/lib`
-  - Downloads: `/Users/okravch/my/sm/sm-download-agent/downloads`
+  - Downloads: `/Users/okravch/my/sm/downloads`
   - Webhook: `http://host.docker.internal:8081` (for Docker → IntelliJ communication)
 
 - **`.env.production`** - для production сервера (Ubuntu Server)
@@ -181,7 +181,7 @@ nano .env
 
 **Для локальної розробки:**
 ```bash
-cd /Users/okravch/my/sm
+cd /Users/okravch/my/sm/sm
 cp .env.development .env
 # Вже містить твої MacBook шляхи, просто перевір креди
 ```

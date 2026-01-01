@@ -129,6 +129,7 @@ services:
     volumes:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
       - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
+      - ${ANALYSIS_RESULTS_PATH}:${ANALYSIS_RESULTS_PATH}:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -188,6 +189,27 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
     depends_on:
       postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sm-audio-analyzer:
+    platform: linux/amd64
+    build:
+      context: ./sm-audio-analyzer
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: sm_audio_analyzer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9091
+      - KAFKA_CONSUMER_GROUP=audio-analyzer-group
+      - ANALYSIS_RESULTS_PATH=${ANALYSIS_RESULTS_PATH}
+      - ANALYSIS_VERSION=1.0
+    volumes:
+      - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}:ro
+      - ${ANALYSIS_RESULTS_PATH}:${ANALYSIS_RESULTS_PATH}:rw
+    depends_on:
+      redpanda:
         condition: service_healthy
     restart: unless-stopped
 
