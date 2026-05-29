@@ -1,0 +1,74 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.7'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.sashkomusic'
+version = '0.0.1-SNAPSHOT'
+description = 'sashkomusic'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Web
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'org.springframework:spring-aspects'
+
+    // Database
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core:10.21.0'
+    implementation 'org.flywaydb:flyway-database-postgresql:10.21.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.18.2'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.18.2'
+    implementation 'jakarta.validation:jakarta.validation-api:3.1.1'
+
+    // Resilience4j
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // AI
+    implementation 'dev.langchain4j:langchain4j-spring-boot-starter:1.8.0-beta15'
+    implementation 'dev.langchain4j:langchain4j-anthropic-spring-boot-starter:1.8.0-beta15'
+
+    // Telegram
+    implementation 'org.telegram:telegrambots-springboot-longpolling-starter:9.2.0'
+    implementation 'org.telegram:telegrambots-client:9.2.0'
+
+    // Audio
+    implementation 'net.jthink:jaudiotagger:3.0.1'
+
+    // File watching
+    implementation 'io.methvin:directory-watcher:0.18.0'
+
+    // HTTP clients
+    implementation 'org.jsoup:jsoup:1.21.2'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

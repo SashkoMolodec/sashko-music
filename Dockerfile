@@ -17,7 +17,7 @@ ARG SERVICE_NAME
 
 WORKDIR /app
 
-RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
+RUN if [ "$SERVICE_NAME" = "sm-download-agent" ] || [ "$SERVICE_NAME" = "sashkomusic" ]; then \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 \
@@ -32,7 +32,7 @@ RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
 COPY --from=builder /app/${SERVICE_NAME}/build/libs/*.jar app.jar
 
 # Create startup script for sm-download-agent to auto-configure qobuz-dl
-RUN if [ "$SERVICE_NAME" = "sm-download-agent" ]; then \
+RUN if [ "$SERVICE_NAME" = "sm-download-agent" ] || [ "$SERVICE_NAME" = "sashkomusic" ]; then \
     echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo 'set -e' >> /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
