@@ -115,6 +115,13 @@ public class ProcessFolderFlowService {
             return handleAdditionalContext(chatId, trimmed.substring(1).trim());
         }
 
+        if (trimmed.equals("-")) {
+            String key = contextHolder.getChatContextKey(chatId);
+            if (key != null) contextHolder.remove(key);
+            contextHolder.clearChatSelection(chatId);
+            return List.of(BotResponse.text("❌ скасовано"));
+        }
+
         Integer optionNumber = parseInt(trimmed);
         if (optionNumber == null) {
             return List.of(BotResponse.text("❌ невірний номер. спробуй ще раз"));

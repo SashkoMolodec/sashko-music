@@ -46,7 +46,7 @@ public class ProcessOptionsFormatter {
                     .append("**");
 
             String yearsDisplay = result.getYearsDisplay();
-            if (!yearsDisplay.isEmpty()) {
+            if (!yearsDisplay.isEmpty() && !yearsDisplay.equals("N/A")) {
                 message.append(" • ").append(yearsDisplay);
             }
 

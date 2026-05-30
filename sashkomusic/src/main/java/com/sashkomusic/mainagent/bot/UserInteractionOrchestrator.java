@@ -38,6 +38,10 @@ public class UserInteractionOrchestrator {
     private final DjTagContextHolder djTagContextHolder;
 
     public List<BotResponse> handleUserRequest(long chatId, String rawInput) {
+        if (rawInput.trim().equalsIgnoreCase("стоп")) {
+            return clearAllCaches();
+        }
+
         var res = processOngoingFlow(chatId, rawInput);
         if (!res.isEmpty()) return res;
 
@@ -89,9 +93,6 @@ public class UserInteractionOrchestrator {
     }
 
     private List<BotResponse> processUserCommands(long chatId, String rawInput) {
-        if (rawInput.equalsIgnoreCase("стоп")) {
-            return clearAllCaches();
-        }
         if (rawInput.startsWith("/np")) {
             return nowPlayingFlowService.nowPlaying(chatId);
         }

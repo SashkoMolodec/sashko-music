@@ -26,6 +26,14 @@ async def bandcamp_search(q: str = Query(..., min_length=1)):
     return JSONResponse(content=results)
 
 
+@app.get("/bandcamp/release")
+async def bandcamp_release(url: str = Query(..., min_length=1)):
+    result = await bc.get_release_metadata(url)
+    if result is None:
+        return JSONResponse(content={"error": "Failed to fetch release"}, status_code=502)
+    return JSONResponse(content=result)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

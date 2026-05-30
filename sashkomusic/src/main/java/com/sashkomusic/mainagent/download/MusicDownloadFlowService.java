@@ -103,6 +103,11 @@ public class MusicDownloadFlowService {
             return List.of(BotResponse.text("😔 **варіанти пропали, нич нема, давай ше раз.**"));
         }
 
+        if (rawInput.trim().equals("-")) {
+            downloadContextHolder.clearSession(chatId);
+            return List.of(BotResponse.text("❌ скасовано"));
+        }
+
         Integer optionNumber = parseNumberFromInput(rawInput);
         if (optionNumber == null || optionNumber < 1 || optionNumber > reports.size()) {
             return List.of(BotResponse.text("🤔 **незрозумілий зроз.**"));

@@ -10,9 +10,6 @@ import com.sashkomusic.mainagent.shared.model.TrackMetadata;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.ParameterizedTypeReference;
@@ -20,8 +17,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,6 +36,7 @@ public class BandcampClient implements SearchEngineService {
         this.bandcampClient = builder
                 .baseUrl("https://bandcamp.com")
                 .defaultHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+                .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 
@@ -49,19 +45,71 @@ public class BandcampClient implements SearchEngineService {
     @Override
     public List<ReleaseMetadata> searchReleases(MetadataSearchRequest request) {
         String query = buildSearchQuery(request);
-        log.info("Searching Bandcamp (via sm-scraper) with query: {}", query);
 
-        List<BandcampSearchResponse.Result> results = scraperClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/bandcamp/search").queryParam("q", query).build())
-                .retrieve()
-                .body(new ParameterizedTypeReference<>() {});
-
-        if (results == null || results.isEmpty()) {
-            return List.of();
+        List<BandcampSearchResponse.Result> results = searchViaScraper(query);
+        if (!results.isEmpty()) {
+            log.info("Bandcamp scraper returned {} results", results.size());
+            return mapToDomain(results);
         }
 
-        log.info("Bandcamp scraper returned {} results", results.size());
+        log.info("Scraper returned nothing, falling back to Bandcamp API for query='{}'", query);
+        results = searchViaApi(query);
+        log.info("Bandcamp API returned {} results", results.size());
         return mapToDomain(results);
+    }
+
+    private List<BandcampSearchResponse.Result> searchViaScraper(String query) {
+        try {
+            log.info("Searching Bandcamp via sm-scraper: query='{}'", query);
+            List<BandcampSearchResponse.Result> results = scraperClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/bandcamp/search").queryParam("q", query).build())
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {});
+            return results != null ? results : List.of();
+        } catch (Exception e) {
+            log.warn("Bandcamp scraper unavailable: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<BandcampSearchResponse.Result> searchViaApi(String query) {
+        try {
+            var body = Map.of("search_text", query, "search_filter", "a", "full_page", true);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = bandcampClient.post()
+                    .uri("/api/bcsearch_public_api/1/autocomplete_elastic")
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+
+            if (response == null) return List.of();
+
+            @SuppressWarnings("unchecked")
+            var auto = (Map<String, Object>) response.get("auto");
+            if (auto == null) return List.of();
+
+            @SuppressWarnings("unchecked")
+            var items = (List<Map<String, Object>>) auto.get("results");
+            if (items == null) return List.of();
+
+            return items.stream()
+                    .map(item -> new BandcampSearchResponse.Result(
+                            (String) item.getOrDefault("band_name", "Unknown Artist"),
+                            (String) item.getOrDefault("name", ""),
+                            "album",
+                            (String) item.getOrDefault("item_url_path", ""),
+                            (String) item.getOrDefault("img", ""),
+                            "",
+                            List.of()
+                    ))
+                    .filter(r -> !r.title().isEmpty() && !r.url().isEmpty())
+                    .limit(10)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Bandcamp API fallback failed: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     public List<ReleaseMetadata> searchReleasesFallback(MetadataSearchRequest request, Exception e) {
@@ -82,42 +130,11 @@ public class BandcampClient implements SearchEngineService {
             return List.of();
         }
 
-        String url = metadata.masterId();
-        log.info("Fetching tracklist from URL: {}", url);
+        ReleaseMetadata withTracks = getReleaseByUrl(metadata.masterId());
+        if (withTracks == null || withTracks.tracks() == null) return List.of();
 
-        String html = bandcampClient.get().uri(url).retrieve().body(String.class);
-        if (html == null || html.isEmpty()) {
-            log.warn("Empty response from Bandcamp URL: {}", url);
-            return List.of();
-        }
-
-        Document doc = Jsoup.parse(html);
-        String albumArtist = metadata.artist();
-        List<TrackMetadata> tracks = new ArrayList<>();
-        int trackNumber = 1;
-
-        for (Element row : doc.select("table.track_list tr.track_row_view")) {
-            Element titleEl = row.selectFirst("span.track-title");
-            if (titleEl == null) continue;
-            String title = titleEl.text().trim();
-            if (title.isEmpty()) continue;
-
-            String trackArtist = albumArtist;
-            String trackTitle = title;
-            if (title.contains(" - ")) {
-                int dash = title.indexOf(" - ");
-                String possibleArtist = title.substring(0, dash).trim();
-                String possibleTitle = title.substring(dash + 3).trim();
-                if (!possibleArtist.isEmpty() && possibleArtist.length() < 100 && !possibleTitle.isEmpty()) {
-                    trackArtist = possibleArtist;
-                    trackTitle = possibleTitle;
-                }
-            }
-            tracks.add(new TrackMetadata(trackNumber++, trackArtist, trackTitle));
-        }
-
-        log.info("Found {} tracks for release {}", tracks.size(), releaseId);
-        return tracks;
+        log.info("Found {} tracks for release {}", withTracks.tracks().size(), releaseId);
+        return withTracks.tracks();
     }
 
     public List<TrackMetadata> getTracksFallback(String releaseId, Exception e) {
@@ -128,25 +145,38 @@ public class BandcampClient implements SearchEngineService {
     @CircuitBreaker(name = "bandcampClient", fallbackMethod = "getReleaseByUrlFallback")
     @Retry(name = "bandcampClient")
     public ReleaseMetadata getReleaseByUrl(String url) {
-        log.info("Fetching release metadata from Bandcamp URL: {}", url);
+        log.info("Fetching release metadata via scraper: {}", url);
 
-        String html = bandcampClient.get().uri(url).retrieve().body(String.class);
-        if (html == null || html.isEmpty()) {
-            throw new RuntimeException("Empty response from Bandcamp URL: " + url);
+        Map<String, Object> response = scraperClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/bandcamp/release").queryParam("url", url).build())
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {});
+
+        if (response == null || response.containsKey("error")) {
+            throw new RuntimeException("Scraper failed to fetch release: " + url);
         }
 
-        Document doc = Jsoup.parse(html);
-        String artist = clean(extractArtistFromPage(doc));
-        String title = clean(extractTitleFromPage(doc));
-        String year = extractYearFromPage(doc);
-        String imageUrl = extractImageFromPage(doc);
-        List<String> tags = extractTagsFromPage(doc);
-        String type = extractTypeFromPage(doc);
-        int trackCount = extractTrackCount(doc);
-        List<TrackMetadata> tracks = extractTracksFromPage(doc, artist);
+        String artist = clean((String) response.getOrDefault("artist", "Unknown Artist"));
+        String title = clean((String) response.getOrDefault("title", "Unknown Title"));
+        String year = (String) response.getOrDefault("year", "");
+        String imageUrl = (String) response.getOrDefault("imageUrl", "");
+        String type = (String) response.getOrDefault("type", "Album");
+        int trackCount = ((Number) response.getOrDefault("trackCount", 0)).intValue();
+
+        @SuppressWarnings("unchecked")
+        List<String> tags = (List<String>) response.getOrDefault("tags", List.of());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rawTracks = (List<Map<String, Object>>) response.getOrDefault("tracks", List.of());
+        List<TrackMetadata> tracks = rawTracks.stream()
+                .map(t -> new TrackMetadata(
+                        ((Number) t.getOrDefault("number", 0)).intValue(),
+                        (String) t.getOrDefault("artist", artist),
+                        (String) t.getOrDefault("title", "")))
+                .toList();
 
         String releaseId = "bandcamp:" + Integer.toHexString(url.hashCode());
-        log.info("Extracted metadata: {} - {} ({})", artist, title, year);
+        log.info("Scraped metadata: {} - {} ({}), {} tracks", artist, title, year, tracks.size());
 
         return new ReleaseMetadata(
                 releaseId, url, SearchEngine.BANDCAMP, artist, title, 80,
@@ -236,86 +266,6 @@ public class BandcampClient implements SearchEngineService {
         String releaseId = "bandcamp:" + Integer.toHexString(rep.url().hashCode());
         return new ReleaseMetadata(releaseId, rep.url(), SearchEngine.BANDCAMP, artist, title, 80,
                 years, types, 0, 0, groupResults.size(), List.of(), rep.imageUrl(), tags, "");
-    }
-
-    private String extractArtistFromPage(Document doc) {
-        Element meta = doc.selectFirst("meta[property=og:site_name]");
-        if (meta != null && !meta.attr("content").isEmpty()) return meta.attr("content");
-        Element span = doc.selectFirst("span[itemprop=byArtist]");
-        if (span != null) return span.text().trim();
-        Element link = doc.selectFirst("p#band-name-location span.title");
-        if (link != null) return link.text().trim();
-        return "Unknown Artist";
-    }
-
-    private String extractTitleFromPage(Document doc) {
-        Element h2 = doc.selectFirst("h2.trackTitle");
-        if (h2 != null && !h2.text().trim().isEmpty()) return h2.text().trim();
-        Element meta = doc.selectFirst("meta[property=og:title]");
-        if (meta != null && !meta.attr("content").isEmpty()) return meta.attr("content").split(", by ")[0];
-        return "Unknown Title";
-    }
-
-    private String extractYearFromPage(Document doc) {
-        Element meta = doc.selectFirst("meta[itemprop=datePublished]");
-        if (meta != null) {
-            String date = meta.attr("content");
-            if (date.length() >= 4 && date.substring(0, 4).matches("\\d{4}")) return date.substring(0, 4);
-        }
-        Element credits = doc.selectFirst("div.tralbum-credits");
-        if (credits != null) {
-            Matcher m = Pattern.compile("\\b(\\d{4})\\b").matcher(credits.text());
-            if (m.find()) return m.group(1);
-        }
-        return "";
-    }
-
-    private String extractImageFromPage(Document doc) {
-        Element meta = doc.selectFirst("meta[property=og:image]");
-        if (meta != null && !meta.attr("content").isEmpty()) return meta.attr("content");
-        Element img = doc.selectFirst("#tralbumArt img");
-        if (img != null) return img.attr("src");
-        return "";
-    }
-
-    private List<String> extractTagsFromPage(Document doc) {
-        return doc.select("a.tag").stream()
-                .map(e -> e.text().trim().toLowerCase())
-                .filter(t -> !t.isEmpty())
-                .toList();
-    }
-
-    private String extractTypeFromPage(Document doc) {
-        Element trackList = doc.selectFirst("table.track_list");
-        if (trackList != null && trackList.select("tr.track_row_view").size() > 1) return "Album";
-        return "Track";
-    }
-
-    private int extractTrackCount(Document doc) {
-        Element trackList = doc.selectFirst("table.track_list");
-        return trackList != null ? trackList.select("tr.track_row_view").size() : 0;
-    }
-
-    private List<TrackMetadata> extractTracksFromPage(Document doc, String albumArtist) {
-        List<TrackMetadata> tracks = new ArrayList<>();
-        int n = 1;
-        for (Element row : doc.select("table.track_list tr.track_row_view")) {
-            Element titleEl = row.selectFirst("span.track-title");
-            if (titleEl == null) continue;
-            String title = titleEl.text().trim();
-            if (title.isEmpty()) continue;
-
-            String artist = albumArtist;
-            String trackTitle = title;
-            if (title.contains(" - ")) {
-                int dash = title.indexOf(" - ");
-                String a = title.substring(0, dash).trim();
-                String t = title.substring(dash + 3).trim();
-                if (!a.isEmpty() && a.length() < 100 && !t.isEmpty()) { artist = a; trackTitle = t; }
-            }
-            tracks.add(new TrackMetadata(n++, artist, trackTitle));
-        }
-        return tracks;
     }
 
     private String clean(String text) {

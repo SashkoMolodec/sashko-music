@@ -1,5 +1,6 @@
 package com.sashkomusic.mainagent.process;
 
+import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.search.client.bandcamp.BandcampClient;
 import com.sashkomusic.mainagent.search.client.discogs.DiscogsClient;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
@@ -32,13 +33,53 @@ public class ProcessFolderSearcher {
     private final MusicBrainzClient musicBrainzClient;
     private final DiscogsClient discogsClient;
     private final BandcampClient bandcampClient;
+    private final SearchRequestExtractor searchRequestExtractor;
 
     public SearchResults searchAll(MetadataSearchRequest request) {
         String title = request.getTitle();
-        return new SearchResults(
+        SearchResults results = new SearchResults(
                 run(() -> musicBrainzClient.searchReleases(request), title, MB_LIMIT),
                 run(() -> discogsClient.searchReleases(request), title, DISCOGS_LIMIT),
                 run(() -> bandcampClient.searchReleases(request), title, BANDCAMP_LIMIT));
+
+        if (results.isEmpty() || !hasArtistMatch(results.allResults(), request.artist())) {
+            log.info("No artist match in results — retrying with AI-extracted query for artist='{}' release='{}'",
+                    request.artist(), request.release());
+            results = retryWithCleanQuery(request, title);
+        }
+
+        return results;
+    }
+
+    private SearchResults retryWithCleanQuery(MetadataSearchRequest original, String title) {
+        try {
+            String freeText = buildFreeText(original);
+            MetadataSearchRequest clean = searchRequestExtractor.extract(freeText);
+            log.info("Cleaned query: artist='{}' release='{}' type='{}' dateRange={}",
+                    clean.artist(), clean.release(), clean.type(), clean.dateRange());
+            return new SearchResults(
+                    run(() -> musicBrainzClient.searchReleases(clean), title, MB_LIMIT),
+                    run(() -> discogsClient.searchReleases(clean), title, DISCOGS_LIMIT),
+                    run(() -> bandcampClient.searchReleases(clean), title, BANDCAMP_LIMIT));
+        } catch (Exception e) {
+            log.warn("Fallback search failed: {}", e.getMessage());
+            return new SearchResults(List.of(), List.of(), List.of());
+        }
+    }
+
+    private static boolean hasArtistMatch(List<ReleaseMetadata> results, String requestArtist) {
+        if (requestArtist == null || requestArtist.isBlank()) return true;
+        String needle = requestArtist.toLowerCase().trim();
+        return results.stream().anyMatch(r ->
+                r.artist() != null && r.artist().toLowerCase().contains(needle));
+    }
+
+    private static String buildFreeText(MetadataSearchRequest request) {
+        var parts = new ArrayList<String>();
+        if (request.artist() != null && !request.artist().isBlank()) parts.add(request.artist());
+        if (request.release() != null && !request.release().isBlank()) parts.add(request.release());
+        else if (request.recording() != null && !request.recording().isBlank()) parts.add(request.recording());
+        return String.join(" ", parts);
     }
 
     private List<ReleaseMetadata> run(SourceSearcher searcher, String title, int limit) {
