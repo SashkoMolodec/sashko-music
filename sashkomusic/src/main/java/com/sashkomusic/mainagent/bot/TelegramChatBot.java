@@ -21,6 +21,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import org.slf4j.MDC;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +55,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
     @Override
     public void consume(Update update) {
+        MDC.put("flowId", String.valueOf(update.getUpdateId()));
         try {
             if (update.hasMessage() && update.getMessage().hasText()) {
                 var text = update.getMessage().getText();
@@ -78,6 +81,8 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
             log.warn("Session expired: {}", e.getMessage());
         } catch (Exception e) {
             log.error("Unexpected error in consumer: ", e);
+        } finally {
+            MDC.remove("flowId");
         }
     }
 

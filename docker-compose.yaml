@@ -75,6 +75,7 @@ services:
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
       - AUDIO_ANALYZER_URL=http://sm-audio-analyzer:8090
+      - SM_SCRAPER_URL=http://sm-scraper:8091
     volumes:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
       - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
@@ -86,6 +87,21 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.containers.internal:host-gateway"
+    restart: unless-stopped
+
+  sm-scraper:
+    build:
+      context: ./sm-scraper
+      dockerfile: Dockerfile
+    container_name: sm_scraper
+    ports:
+      - "8091:8091"
+    environment:
+      - BANDCAMP_EMAIL=${BANDCAMP_EMAIL}
+      - BANDCAMP_PASSWORD=${BANDCAMP_PASSWORD}
+      - BANDCAMP_COOKIES_FILE=/data/bandcamp_cookies.json
+    volumes:
+      - sm_scraper_data:/data
     restart: unless-stopped
 
   sm-audio-analyzer:
@@ -149,3 +165,4 @@ volumes:
   slskd_app:
   navidrome_data:
   icecast_logs:
+  sm_scraper_data:

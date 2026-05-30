@@ -51,9 +51,6 @@ public interface SearchRequestExtractor {
             - Has track indicators (track, song, single):
               → Fill ONLY recording field.
 
-            LANGUAGE DETECTION:
-            - If query contains Ukrainian Cyrillic (і, ї, є) or Ukrainian words -> UA. Otherwise -> EN.
-
             OUTPUT STRUCTURE:
             Return ONLY valid JSON without any markdown formatting or code blocks.
             DO NOT wrap JSON in ```json or ``` blocks.
@@ -62,15 +59,14 @@ public interface SearchRequestExtractor {
               "artist": "extracted artist (empty if not found)",
               "release": "extracted release (empty if not found)",
               "recording": "extracted track (empty if not found)",
-              "dateRange": {from: year, to: year} or null,
+              "dateRange": {"from": year, "to": year} or null,
               "format": "Vinyl | CD | etc (empty if not found)",
               "type": "Album | EP | etc (empty if not found)",
               "country": "US | GB | etc (empty if not found)",
               "status": "Official | etc (empty if not found)",
               "style": "techno | ambient | etc (empty if not found)",
               "label": "label name (empty if not found)",
-              "catno": "catalog number (empty if not found)",
-              "language": "UA or EN"
+              "catno": "catalog number (empty if not found)"
             }
 
             EXAMPLES:

@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import com.sashkomusic.mainagent.shared.model.DateRange;
+
 import java.util.List;
 import java.util.Map;
 
@@ -58,9 +60,18 @@ public class DiscoveryAgentTools {
         }
     }
 
+    private MetadataSearchRequest extractRequest(String query) {
+        try {
+            return searchRequestExtractor.extract(query);
+        } catch (Exception e) {
+            log.warn("SearchRequestExtractor failed for query '{}': {} — falling back to raw query", query, e.getMessage());
+            return new MetadataSearchRequest(null, query, "", "", DateRange.empty(), "", "", "", "", "", "", "");
+        }
+    }
+
     private String runSearch(SearchEngine engine, String query, long chatId) {
         log.info("Discovery tool: searching {} query='{}' chatId={}", engine, query, chatId);
-        MetadataSearchRequest request = searchRequestExtractor.extract(query);
+        MetadataSearchRequest request = extractRequest(query);
         log.info("Extracted: artist='{}' release='{}' recording='{}' dateRange={} country={} format={}",
                 request.artist(), request.release(), request.recording(),
                 request.dateRange(), request.country(), request.format());

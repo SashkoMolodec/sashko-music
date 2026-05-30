@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.bot;
 
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
+import com.sashkomusic.agents.config.AgentTraceListener;
 import com.sashkomusic.agents.main.MainAgent;
 import com.sashkomusic.mainagent.download.DownloadContextHolder;
 import com.sashkomusic.mainagent.library.DjTagContextHolder;
@@ -12,6 +13,8 @@ import com.sashkomusic.mainagent.search.SearchContextService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import org.slf4j.MDC;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +44,17 @@ public class UserInteractionOrchestrator {
         res = processUserCommands(chatId, rawInput);
         if (!res.isEmpty()) return res;
 
-        return runMainAgent(chatId, rawInput);
+        res = runMainAgent(chatId, rawInput);
+        logFlowCost();
+        return res;
+    }
+
+    private void logFlowCost() {
+        String flowId = MDC.get("flowId");
+        double total = AgentTraceListener.drainFlowCost(flowId);
+        if (total > 0) {
+            log.info("[flow={}] TOTAL cost=${}", flowId, String.format("%.4f", total));
+        }
     }
 
     public List<BotResponse> handleCallback(long chatId, String data) {
