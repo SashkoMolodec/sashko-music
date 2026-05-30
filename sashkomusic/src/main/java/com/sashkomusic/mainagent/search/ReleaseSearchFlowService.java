@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Slf4j
@@ -25,6 +27,7 @@ public class ReleaseSearchFlowService {
     private final SearchRequestExtractor searchRequestExtractor;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
     private final SearchContextService contextService;
+    private final SearchSummaryGenerator summaryGenerator;
 
     public List<BotResponse> searchDefault(long chatId, String rawInput) {
         var searchRequest = searchRequestExtractor.extract(rawInput);
@@ -119,6 +122,19 @@ public class ReleaseSearchFlowService {
         if (end < releases.size()) {
             responses.add(buildPageNavigation(releases, page, end));
         }
+
+        if (page == 0) {
+            try {
+                String rawInput = contextService.getRawInput(chatId);
+                String summary = summaryGenerator.summarize(buildSummaryInput(rawInput, releases)).toLowerCase();
+                if (summary != null && !summary.isBlank()) {
+                    responses.add(BotResponse.aiText(summary));
+                }
+            } catch (Exception e) {
+                log.warn("Summary generation failed: {}", e.getMessage());
+            }
+        }
+
         return responses;
     }
 
@@ -181,6 +197,28 @@ public class ReleaseSearchFlowService {
         } else {
             return "📄 сторінка %d".formatted(page + 1);
         }
+    }
+
+    private static String buildSummaryInput(String query, List<ReleaseMetadata> releases) {
+        var sb = new StringBuilder();
+        sb.append("Запит: ").append(query).append("\n");
+        sb.append("Знайдено релізів: ").append(releases.size()).append("\n\n");
+
+        for (int i = 0; i < Math.min(releases.size(), 12); i++) {
+            var r = releases.get(i);
+            sb.append("- ");
+            if (r.artist() != null && !r.artist().isBlank()) sb.append(r.artist()).append(" — ");
+            sb.append(r.title() != null ? r.title() : "?");
+            if (r.years() != null && !r.years().isEmpty()) sb.append(" (").append(r.getYearsDisplay()).append(")");
+            if (r.label() != null && !r.label().isBlank()) sb.append(", ").append(r.label());
+            if (r.types() != null && !r.types().isEmpty()) sb.append(" [").append(r.getTypesDisplay()).append("]");
+            if (r.tags() != null && !r.tags().isEmpty()) {
+                sb.append(" #").append(String.join(" #", r.tags().stream().limit(3).toList()));
+            }
+            sb.append("\n");
+        }
+
+        return sb.toString().strip();
     }
 
     private static LinkedHashMap<String, String> buildEmptyResultsButtons(MetadataSearchRequest searchRequest) {

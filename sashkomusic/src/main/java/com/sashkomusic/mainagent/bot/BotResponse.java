@@ -13,6 +13,10 @@ public record BotResponse(
         return new BotResponse(text, null, null, null);
     }
 
+    public static BotResponse aiText(String text) {
+        return new BotResponse("🤖 _" + text + "_", null, null, null);
+    }
+
     public static BotResponse withButtons(String text, Map<String, String> buttons) {
         return new BotResponse(text, null, buttons, null);
     }

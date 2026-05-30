@@ -74,7 +74,7 @@ public class UserInteractionOrchestrator {
         List<BotResponse> drained = responseAccumulator.drain(chatId);
         List<BotResponse> all = new ArrayList<>(drained);
         if (summary != null && !summary.isBlank() && all.isEmpty()) {
-            all.add(BotResponse.text(summary));
+            all.add(BotResponse.aiText(summary));
         }
         return all;
     }

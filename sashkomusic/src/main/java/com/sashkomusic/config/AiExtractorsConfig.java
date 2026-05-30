@@ -2,6 +2,8 @@ package com.sashkomusic.config;
 
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
+import com.sashkomusic.mainagent.process.MetadataSuggester;
+import com.sashkomusic.mainagent.search.SearchSummaryGenerator;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderNameParser;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
@@ -29,5 +31,15 @@ public class AiExtractorsConfig {
     @Bean
     public FolderNameParser folderNameParser(@Qualifier("haikuChatModel") ChatModel haiku) {
         return AiServices.builder(FolderNameParser.class).chatModel(haiku).build();
+    }
+
+    @Bean
+    public SearchSummaryGenerator searchSummaryGenerator(@Qualifier("haikuChatModel") ChatModel haiku) {
+        return AiServices.builder(SearchSummaryGenerator.class).chatModel(haiku).build();
+    }
+
+    @Bean
+    public MetadataSuggester metadataSuggester(@Qualifier("haikuChatModel") ChatModel haiku) {
+        return AiServices.builder(MetadataSuggester.class).chatModel(haiku).build();
     }
 }

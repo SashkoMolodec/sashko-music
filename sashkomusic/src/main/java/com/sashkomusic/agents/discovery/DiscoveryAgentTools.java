@@ -26,25 +26,27 @@ public class DiscoveryAgentTools {
     private final SearchContextService searchContextService;
     private final SearchRequestExtractor searchRequestExtractor;
 
-    @Tool("Search MusicBrainz. Best for canonical metadata, releases, recordings.")
-    public String searchMusicBrainz(
-            @P("The user's search query as-is, e.g. 'паліндром 2019', 'Aphex Twin vinyl 90s', 'лінч мій дідо трек'") String query,
+    @Tool("""
+            Search for music releases. Tries MusicBrainz → Discogs → Bandcamp in order, stops at first hit.
+            Use this for ANY music search request. Do NOT call this multiple times for the same query.
+            Returns found releases count and source, or asks for clarification if nothing found anywhere.
+            """)
+    public String search(
+            @P("The user's search query as-is, e.g. 'паліндром 2019', 'Aphex Twin vinyl 90s'") String query,
             @ToolMemoryId long chatId) {
-        return runSearch(SearchEngine.MUSICBRAINZ, query, chatId);
-    }
-
-    @Tool("Search Discogs. Best for vinyl, labels, catalog numbers, pressings.")
-    public String searchDiscogs(
-            @P("The user's search query as-is, e.g. 'паліндром 2019', 'Jeff Mills Axis Records vinyl'") String query,
-            @ToolMemoryId long chatId) {
-        return runSearch(SearchEngine.DISCOGS, query, chatId);
-    }
-
-    @Tool("Search Bandcamp. Best for independent and electronic music.")
-    public String searchBandcamp(
-            @P("The user's search query as-is, e.g. 'паліндром', 'dark ambient ukraine'") String query,
-            @ToolMemoryId long chatId) {
-        return runSearch(SearchEngine.BANDCAMP, query, chatId);
+        for (SearchEngine engine : SearchEngine.values()) {
+            try {
+                String result = runSearch(engine, query, chatId);
+                if (!result.startsWith("no results")) {
+                    log.info("Found results on {}", engine);
+                    return result;
+                }
+                log.info("Nothing on {} — trying next engine", engine);
+            } catch (Exception e) {
+                log.warn("Search on {} failed with exception: {} — skipping to next engine", engine, e.getMessage());
+            }
+        }
+        return "not found on any source. ask the user to provide more context: year, label, genre, or country.";
     }
 
     @Tool("Returns a short summary of the user's last search in this chat — useful when the user says 'show me more like before'.")

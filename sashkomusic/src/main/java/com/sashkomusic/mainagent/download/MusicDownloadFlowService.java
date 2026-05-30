@@ -115,6 +115,7 @@ public class MusicDownloadFlowService {
         log.info("User chose option #{}: {} from {}", optionNumber, option.id(), option.displayName());
 
         downloadTaskProducer.send(DownloadFilesTaskDto.of(chatId, releaseId, option));
+        downloadContextHolder.clearSession(chatId);
 
         var flowHandler = downloadFlowHandlers.get(option.source());
         String message = flowHandler.formatDownloadConfirmation(option);

@@ -42,6 +42,7 @@ public class ProcessFolderFlowService {
     private final FolderAudioScanner audioScanner;
     private final ProcessFolderSearcher searcher;
     private final ProcessOptionsFormatter optionsFormatter;
+    private final MetadataSuggester metadataSuggester;
     private final ReleaseIdentifierService identifierService;
     private final SearchContextService searchContextService;
     private final ProcessFolderContextHolder contextHolder;
@@ -85,7 +86,21 @@ public class ProcessFolderFlowService {
             }
 
             saveSearchContext(chatId, folder.name(), searchRequest, results, folder.path(), audioFiles);
-            return List.of(header, optionsFormatter.format(results));
+            downloadContextHolder.clearSession(chatId);
+
+            var responses = new java.util.ArrayList<BotResponse>();
+            responses.add(header);
+            responses.add(optionsFormatter.format(results));
+            try {
+                String suggestion = metadataSuggester.suggest(
+                        buildSuggesterInput(folder.name(), audioFiles, results.allResults()));
+                if (suggestion != null && !suggestion.isBlank()) {
+                    responses.add(BotResponse.aiText(suggestion.toLowerCase()));
+                }
+            } catch (Exception e) {
+                log.warn("MetadataSuggester failed: {}", e.getMessage());
+            }
+            return responses;
 
         } catch (Exception e) {
             log.error("Error processing folder: {}", e.getMessage(), e);
@@ -230,5 +245,28 @@ public class ProcessFolderFlowService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private static String buildSuggesterInput(String folderName, List<String> audioFiles,
+                                              List<ReleaseMetadata> options) {
+        var sb = new StringBuilder();
+        sb.append("Папка: ").append(folderName).append("\n");
+        sb.append("Файли: ").append(String.join(", ",
+                audioFiles.stream().map(f -> Path.of(f).getFileName().toString()).toList())).append("\n\n");
+        sb.append("Варіанти:\n");
+        for (int i = 0; i < options.size(); i++) {
+            var r = options.get(i);
+            sb.append(i + 1).append(". ");
+            if (r.artist() != null && !r.artist().isBlank()) sb.append(r.artist()).append(" - ");
+            sb.append(r.title() != null ? r.title() : "?");
+            if (r.years() != null && !r.years().isEmpty()) sb.append(" • ").append(r.getYearsDisplay());
+            String trackDisplay = r.getTrackCountDisplay();
+            if (!trackDisplay.isEmpty()) sb.append(" • ").append(trackDisplay).append(" тр.");
+            if (r.tags() != null && !r.tags().isEmpty()) {
+                sb.append(" • ").append(r.getTagsDisplay());
+            }
+            sb.append("\n");
+        }
+        return sb.toString().strip();
     }
 }
