@@ -62,18 +62,18 @@ public class UserInteractionOrchestrator {
     }
 
     private List<BotResponse> runMainAgent(long chatId, String rawInput) {
-        responseAccumulator.drain(chatId);
+        responseAccumulator.begin(chatId);
         String summary;
         try {
             summary = mainAgent.chat(chatId, rawInput);
         } catch (Exception ex) {
-            log.error("Main agent failure for chat {}: {}", chatId, ex.getMessage(), ex);
+            log.error("Maifn agent failure for chat {}: {}", chatId, ex.getMessage(), ex);
             return List.of(BotResponse.text("шось не то, попробуй ще раз"));
         }
 
         List<BotResponse> drained = responseAccumulator.drain(chatId);
         List<BotResponse> all = new ArrayList<>(drained);
-        if (summary != null && !summary.isBlank() && all.isEmpty()) {
+        if (summary != null && !summary.isBlank()) {
             all.add(BotResponse.aiText(summary));
         }
         return all;

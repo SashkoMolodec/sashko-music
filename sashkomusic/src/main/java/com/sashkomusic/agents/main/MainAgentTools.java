@@ -11,6 +11,7 @@ import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.download.DownloadAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.shared.model.TrackMetadata;
 import dev.langchain4j.agent.tool.P;
@@ -37,7 +38,29 @@ public class MainAgentTools {
             @ToolMemoryId long chatId) {
         progressNotifier.notify(chatId, "🔍 шукаю...");
         DiscoverResult result = discoveryAgent.handle(DiscoverRequest.of(chatId, query));
+        if (!result.releases().isEmpty()) {
+            return formatReleasesForSonnet(result.releases(), result.engineUsed());
+        }
         return result.summary();
+    }
+
+    private static String formatReleasesForSonnet(List<ReleaseMetadata> releases, SearchEngine engine) {
+        var sb = new StringBuilder();
+        String engineName = engine != null ? engine.getName() : "unknown";
+        sb.append("Found ").append(releases.size()).append(" releases on ").append(engineName).append(":\n");
+        for (var r : releases) {
+            sb.append("- ");
+            if (r.artist() != null && !r.artist().isBlank()) sb.append(r.artist()).append(" — ");
+            sb.append(r.title() != null ? r.title() : "?");
+            if (r.years() != null && !r.years().isEmpty()) sb.append(" (").append(r.getYearsDisplay()).append(")");
+            if (r.label() != null && !r.label().isBlank()) sb.append(", ").append(r.label());
+            if (r.types() != null && !r.types().isEmpty()) sb.append(" [").append(r.getTypesDisplay()).append("]");
+            if (r.tags() != null && !r.tags().isEmpty()) {
+                sb.append(" #").append(String.join(" #", r.tags().stream().limit(3).toList()));
+            }
+            sb.append("\n");
+        }
+        return sb.toString().strip();
     }
 
     @Tool("Download music by artist and album. Use ONLY for explicit download commands (скачай / завантаж / download).")

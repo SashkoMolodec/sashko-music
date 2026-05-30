@@ -29,12 +29,12 @@ public class AgentModelsConfig {
 
     @Bean("mainMemoryProvider")
     public ChatMemoryProvider mainMemoryProvider() {
-        return chatId -> MessageWindowChatMemory.withMaxMessages(16);
+        return chatId -> MessageWindowChatMemory.withMaxMessages(32);
     }
 
     @Bean("discoveryMemoryProvider")
     public ChatMemoryProvider discoveryMemoryProvider() {
-        return chatId -> MessageWindowChatMemory.withMaxMessages(8);
+        return chatId -> MessageWindowChatMemory.withMaxMessages(16);
     }
 
     private ChatModel build(Environment env, String modelKey, String modelDefault,
@@ -53,6 +53,8 @@ public class AgentModelsConfig {
                 .timeout(Duration.ofSeconds(60))
                 .maxRetries(3)
                 .listeners(java.util.List.of(new AgentTraceListener(agentName)))
+                .cacheSystemMessages(true)
+                .cacheTools(true)
                 .build();
     }
 }

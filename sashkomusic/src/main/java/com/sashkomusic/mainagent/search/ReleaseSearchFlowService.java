@@ -27,7 +27,6 @@ public class ReleaseSearchFlowService {
     private final SearchRequestExtractor searchRequestExtractor;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
     private final SearchContextService contextService;
-    private final SearchSummaryGenerator summaryGenerator;
 
     public List<BotResponse> searchDefault(long chatId, String rawInput) {
         var searchRequest = searchRequestExtractor.extract(rawInput);
@@ -103,7 +102,6 @@ public class ReleaseSearchFlowService {
     public List<BotResponse> buildPageResponse(long chatId, int page) {
         var releases = contextService.getSearchResults(chatId);
         var searchRequest = contextService.getSearchRequest(chatId);
-        var searchEngine = contextService.getSource(chatId);
         var responses = new ArrayList<BotResponse>();
 
         int start = page * PAGE_SIZE;
@@ -111,7 +109,9 @@ public class ReleaseSearchFlowService {
             return List.of(BotResponse.text("більше результатів немає."));
         }
 
-        responses.add(BotResponse.text(resolveFoundReleasesMessage(releases, page, searchEngine)));
+        if (page > 0) {
+            responses.add(BotResponse.text("📄 сторінка %d".formatted(page + 1)));
+        }
 
         int end = Math.min(start + PAGE_SIZE, releases.size());
         for (int i = start; i < end; i++) {
@@ -121,18 +121,6 @@ public class ReleaseSearchFlowService {
 
         if (end < releases.size()) {
             responses.add(buildPageNavigation(releases, page, end));
-        }
-
-        if (page == 0) {
-            try {
-                String rawInput = contextService.getRawInput(chatId);
-                String summary = summaryGenerator.summarize(buildSummaryInput(rawInput, releases)).toLowerCase();
-                if (summary != null && !summary.isBlank()) {
-                    responses.add(BotResponse.aiText(summary));
-                }
-            } catch (Exception e) {
-                log.warn("Summary generation failed: {}", e.getMessage());
-            }
         }
 
         return responses;
@@ -182,43 +170,6 @@ public class ReleaseSearchFlowService {
 
         String navText = "залишилось ще %d релізів".formatted(remaining);
         return BotResponse.withButtons(navText, navButtons);
-    }
-
-    private static String resolveFoundReleasesMessage(List<ReleaseMetadata> releases, int page, SearchEngine searchEngine) {
-        String engineSuffix = searchEngine != SearchEngine.MUSICBRAINZ
-                ? " (%s)".formatted(searchEngine.getName())
-                : "";
-
-        if (page == 0) {
-            if (releases.size() == 1) {
-                return "🔎 знайдено реліз%s".formatted(engineSuffix);
-            }
-            return "🔎 знайдено релізів: %d%s".formatted(releases.size(), engineSuffix);
-        } else {
-            return "📄 сторінка %d".formatted(page + 1);
-        }
-    }
-
-    private static String buildSummaryInput(String query, List<ReleaseMetadata> releases) {
-        var sb = new StringBuilder();
-        sb.append("Запит: ").append(query).append("\n");
-        sb.append("Знайдено релізів: ").append(releases.size()).append("\n\n");
-
-        for (int i = 0; i < Math.min(releases.size(), 12); i++) {
-            var r = releases.get(i);
-            sb.append("- ");
-            if (r.artist() != null && !r.artist().isBlank()) sb.append(r.artist()).append(" — ");
-            sb.append(r.title() != null ? r.title() : "?");
-            if (r.years() != null && !r.years().isEmpty()) sb.append(" (").append(r.getYearsDisplay()).append(")");
-            if (r.label() != null && !r.label().isBlank()) sb.append(", ").append(r.label());
-            if (r.types() != null && !r.types().isEmpty()) sb.append(" [").append(r.getTypesDisplay()).append("]");
-            if (r.tags() != null && !r.tags().isEmpty()) {
-                sb.append(" #").append(String.join(" #", r.tags().stream().limit(3).toList()));
-            }
-            sb.append("\n");
-        }
-
-        return sb.toString().strip();
     }
 
     private static LinkedHashMap<String, String> buildEmptyResultsButtons(MetadataSearchRequest searchRequest) {

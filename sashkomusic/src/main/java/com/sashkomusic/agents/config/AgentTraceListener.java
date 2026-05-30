@@ -1,6 +1,7 @@
 package com.sashkomusic.agents.config;
 
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.model.anthropic.AnthropicTokenUsage;
 import dev.langchain4j.model.chat.listener.ChatModelErrorContext;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
@@ -35,6 +36,14 @@ public class AgentTraceListener implements ChatModelListener {
         int messageCount = req.messages() == null ? 0 : req.messages().size();
         int toolCount = req.toolSpecifications() == null ? 0 : req.toolSpecifications().size();
         log.info("[agent={}] → request messages={} tools={}", agentName, messageCount, toolCount);
+
+        if (req.messages() != null) {
+            req.messages().stream()
+                    .filter(m -> m instanceof ToolExecutionResultMessage)
+                    .map(m -> (ToolExecutionResultMessage) m)
+                    .forEach(r -> log.info("[agent={}]   ↩ tool-result name={} result={}",
+                            agentName, r.toolName(), truncate(r.text(), 300)));
+        }
     }
 
     @Override
@@ -58,10 +67,18 @@ public class AgentTraceListener implements ChatModelListener {
         log.info("[agent={}] [flow={}] ← response toolCalls={} tokensIn={} tokensOut={} cacheRead={} cacheWrite={} cost=${}",
                 agentName, flowId, toolCalls, inputTokens, outputTokens, cacheRead, cacheWrite,
                 String.format("%.4f", costUsd));
+        if (aiMessage.text() != null && !aiMessage.text().isBlank()) {
+            log.info("[agent={}]   💬 text={}", agentName, truncate(aiMessage.text(), 300));
+        }
         if (toolCalls > 0) {
             aiMessage.toolExecutionRequests().forEach(t ->
                     log.info("[agent={}]   tool={} args={}", agentName, t.name(), t.arguments()));
         }
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return "null";
+        return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
     // Anthropic pricing per million tokens (May 2026): Sonnet 4.6 / Haiku 4.5
