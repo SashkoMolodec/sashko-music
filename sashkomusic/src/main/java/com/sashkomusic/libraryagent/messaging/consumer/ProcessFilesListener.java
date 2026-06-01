@@ -25,14 +25,14 @@ public class ProcessFilesListener {
     @Async
     public void handleProcessFilesTask(ProcessLibraryTaskEvent event) {
         ProcessLibraryTaskDto task = event.payload();
-        log.info("Received library processing task: chatId={}, masterId={}, files={}",
-                task.chatId(), task.metadata().masterId(), task.downloadedFiles().size());
+        log.info("Received library processing task: conversationId={}, masterId={}, files={}",
+                task.conversationId(), task.metadata().masterId(), task.downloadedFiles().size());
 
         try {
             LibraryProcessingService.ProcessingResult result = processingService.processLibrary(task);
 
             LibraryProcessingCompleteDto completeDto = new LibraryProcessingCompleteDto(
-                    task.chatId(), task.metadata().masterId(), result.directoryPath(),
+                    task.conversationId(), task.metadata().masterId(), result.directoryPath(),
                     result.processedFiles(), result.success(), result.message(), result.errors()
             );
 
@@ -44,7 +44,7 @@ public class ProcessFilesListener {
             log.error("Fatal error processing library task: {}", ex.getMessage(), ex);
 
             LibraryProcessingCompleteDto errorDto = new LibraryProcessingCompleteDto(
-                    task.chatId(), task.metadata().masterId(), task.directoryPath(),
+                    task.conversationId(), task.metadata().masterId(), task.directoryPath(),
                     List.of(), false, "Fatal error: " + ex.getMessage(), List.of(ex.getMessage())
             );
             resultProducer.send(errorDto);

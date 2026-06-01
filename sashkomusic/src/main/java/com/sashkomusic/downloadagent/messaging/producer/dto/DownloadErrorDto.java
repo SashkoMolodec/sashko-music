@@ -4,10 +4,15 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 
 @JsonTypeName("download_error")
 public record DownloadErrorDto(
-        long chatId,
+        String conversationId,
         String errorMessage
 ) {
-    public static DownloadErrorDto of(long chatId, String errorMessage) {
-        return new DownloadErrorDto(chatId, errorMessage);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
+
+    public static DownloadErrorDto of(String conversationId, String errorMessage) {
+        return new DownloadErrorDto(conversationId, errorMessage);
     }
 }

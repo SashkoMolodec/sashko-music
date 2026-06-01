@@ -24,7 +24,7 @@ RUN if [ "$SERVICE_NAME" = "sm-download-agent" ] || [ "$SERVICE_NAME" = "sashkom
         python3-pip \
         python3-venv \
         ffmpeg && \
-    pip3 install --break-system-packages qobuz-dl gamdl bandcamp-downloader && \
+    pip3 install --break-system-packages qobuz-dl gamdl bandcamp-downloader yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*; \
     fi

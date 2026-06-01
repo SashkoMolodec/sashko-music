@@ -1,8 +1,7 @@
 package com.sashkomusic.mainagent.bot;
 
-import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchSessionExpiredException;
-import com.sashkomusic.mainagent.bot.UserInteractionOrchestrator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -13,7 +12,12 @@ import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateC
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -26,21 +30,30 @@ import org.slf4j.MDC;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 @Slf4j
 public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
     private static final int MAX_TEXT_LENGTH = 4096;
+    private static final String FILE_ID_PREFIX = "FILE_ID:";
+
     private final UserInteractionOrchestrator orchestrator;
+    private final FileIdCacheService fileIdCacheService;
     private final TelegramClient client;
     private final String botToken;
+    private final Long allowedGroupId;
 
     public TelegramChatBot(@Value("${telegram.bot.token}") String token,
+                           @Value("${telegram.allowed-group-id:}") String allowedGroupIdStr,
                            UserInteractionOrchestrator orchestrator,
+                           FileIdCacheService fileIdCacheService,
                            TelegramClient telegramClient) {
         this.botToken = token;
         this.client = telegramClient;
         this.orchestrator = orchestrator;
+        this.fileIdCacheService = fileIdCacheService;
+        this.allowedGroupId = allowedGroupIdStr.isBlank() ? null : Long.parseLong(allowedGroupIdStr);
     }
 
     @Override
@@ -58,24 +71,29 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         MDC.put("flowId", String.valueOf(update.getUpdateId()));
         try {
             if (update.hasMessage() && update.getMessage().hasText()) {
-                var text = update.getMessage().getText();
-                final long chatId = update.getMessage().getChatId();
-                log.info("📩 Text from [{}]: {}", chatId, text);
+                Message msg = update.getMessage();
+                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
+                if (!isAllowed(ctx)) return;
 
-                orchestrator.handleUserRequest(chatId, text)
-                        .forEach(res -> sendResponse(chatId, res));
+                var text = msg.getText();
+                log.info("📩 Text from [{}]: {}", ctx.conversationId(), text);
+
+                orchestrator.handleUserRequest(ctx, text)
+                        .forEach(res -> sendResponse(ctx, res));
 
             } else if (update.hasCallbackQuery()) {
                 var callback = update.getCallbackQuery();
                 var data = callback.getData();
-                final long chatId = callback.getMessage().getChatId();
-                var queryId = callback.getId();
+                Message msg = (Message) callback.getMessage();
+                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
+                if (!isAllowed(ctx)) return;
 
-                log.info("👆 Click from [{}]: {}", chatId, data);
-                answerCallback(queryId);
+                log.info("👆 Click from [{}]: {}", ctx.conversationId(), data);
+                answerCallback(callback.getId());
 
-                orchestrator.handleCallback(chatId, data)
-                        .forEach(response -> sendResponse(chatId, response));
+                Integer sourceMessageId = msg.getMessageId();
+                orchestrator.handleCallback(ctx, data, sourceMessageId)
+                        .forEach(response -> sendResponse(ctx, response));
             }
         } catch (SearchSessionExpiredException e) {
             log.warn("Session expired: {}", e.getMessage());
@@ -86,63 +104,160 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         }
     }
 
-    public void sendResponse(long chatId, BotResponse response) {
+    private ConversationContext buildContext(long chatId, Integer threadId) {
+        if (threadId != null && threadId > 0) {
+            return ConversationContext.topic(chatId, threadId);
+        }
+        return ConversationContext.dm(chatId);
+    }
+
+    private boolean isAllowed(ConversationContext ctx) {
+        if (allowedGroupId == null) return true;
+        // Always allow DMs; for group messages check the group ID
+        if (!ctx.isGroupTopic()) return true;
+        return ctx.chatId() == allowedGroupId;
+    }
+
+    public void sendResponse(ConversationContext ctx, BotResponse response) {
         var keyboardMarkup = createKeyboard(response.buttons(), response.buttonRows());
+        String formattedText = TelegramHtmlFormatter.format(response.text());
         boolean hasImage = response.imageUrl() != null && !response.imageUrl().isBlank();
+
+        if (response.editMessageId() != null) {
+            editExistingMessage(ctx, response, formattedText, hasImage, keyboardMarkup);
+            return;
+        }
 
         if (hasImage) {
             try {
-                SendPhoto photo = SendPhoto.builder()
-                        .chatId(chatId)
+                SendPhoto.SendPhotoBuilder<?, ?> photoBuilder = SendPhoto.builder()
+                        .chatId(ctx.chatId())
                         .photo(new InputFile(response.imageUrl()))
-                        .caption(response.text())
-                        .parseMode("Markdown")
-                        .replyMarkup(keyboardMarkup)
-                        .build();
-                client.execute(photo);
+                        .caption(formattedText)
+                        .parseMode("HTML")
+                        .replyMarkup(keyboardMarkup);
+                if (ctx.isGroupTopic()) {
+                    photoBuilder.messageThreadId(ctx.topicId());
+                }
+                Message sent = client.execute(photoBuilder.build());
+                cachePhotoFileId(ctx, response.imageUrl(), sent);
                 return;
-
             } catch (TelegramApiException e) {
                 log.warn("⚠️ Failed to send photo to [{}]. URL: {}. Error: {}",
-                        chatId, response.imageUrl(), e.getMessage());
+                        ctx.conversationId(), response.imageUrl(), e.getMessage());
             }
         }
 
         try {
-            SendMessage message = SendMessage.builder()
-                    .chatId(chatId)
-                    .text(response.text())
-                    .parseMode("Markdown")
-                    .replyMarkup(keyboardMarkup)
-                    .build();
-            client.execute(message);
+            SendMessage.SendMessageBuilder<?, ?> msgBuilder = SendMessage.builder()
+                    .chatId(ctx.chatId())
+                    .text(formattedText)
+                    .parseMode("HTML")
+                    .replyMarkup(keyboardMarkup);
+            if (ctx.isGroupTopic()) {
+                msgBuilder.messageThreadId(ctx.topicId());
+            }
+            client.execute(msgBuilder.build());
         } catch (TelegramApiException e) {
-            log.error("❌ Failed to send with Markdown parsing to [{}]: {}. Retrying as plain text",
-                    chatId, e.getMessage());
+            log.error("❌ Failed to send with HTML parsing to [{}]: {}. Retrying as plain text",
+                    ctx.conversationId(), e.getMessage());
 
             try {
-                SendMessage plainMessage = SendMessage.builder()
-                        .chatId(chatId)
+                SendMessage.SendMessageBuilder<?, ?> plainBuilder = SendMessage.builder()
+                        .chatId(ctx.chatId())
                         .text(response.text())
-                        .replyMarkup(keyboardMarkup)
-                        .build();
-                client.execute(plainMessage);
+                        .replyMarkup(keyboardMarkup);
+                if (ctx.isGroupTopic()) {
+                    plainBuilder.messageThreadId(ctx.topicId());
+                }
+                client.execute(plainBuilder.build());
                 log.info("✅ Successfully sent as plain text");
             } catch (TelegramApiException ex) {
-                log.error("❌ Failed to send even as plain text to [{}]: {}", chatId, ex.getMessage());
+                log.error("❌ Failed to send even as plain text to [{}]: {}", ctx.conversationId(), ex.getMessage());
             }
         }
     }
 
-    public void sendMessage(long chatId, String text) {
+    private void editExistingMessage(ConversationContext ctx, BotResponse response,
+                                     String formattedText, boolean hasImage,
+                                     InlineKeyboardMarkup keyboardMarkup) {
+        int messageId = response.editMessageId();
+        try {
+            if (hasImage) {
+                boolean isFileId = response.imageUrl().startsWith(FILE_ID_PREFIX);
+                String mediaRef = isFileId ? response.imageUrl().substring(FILE_ID_PREFIX.length())
+                                           : response.imageUrl();
+                InputMediaPhoto media = InputMediaPhoto.builder()
+                        .media(mediaRef)
+                        .caption(formattedText)
+                        .parseMode("HTML")
+                        .build();
+                var result = client.execute(EditMessageMedia.builder()
+                        .chatId(ctx.chatId())
+                        .messageId(messageId)
+                        .media(media)
+                        .replyMarkup(keyboardMarkup)
+                        .build());
+                if (!isFileId && result instanceof Message msg) {
+                    cachePhotoFileId(ctx, response.imageUrl(), msg);
+                }
+            } else {
+                client.execute(EditMessageText.builder()
+                        .chatId(ctx.chatId())
+                        .messageId(messageId)
+                        .text(formattedText)
+                        .parseMode("HTML")
+                        .replyMarkup(keyboardMarkup)
+                        .build());
+            }
+        } catch (TelegramApiException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (msg.contains("message is not modified")) {
+                return;
+            }
+            log.warn("Failed to edit message {} in [{}]: {}. Falling back to caption edit.",
+                    messageId, ctx.conversationId(), msg);
+            try {
+                client.execute(EditMessageCaption.builder()
+                        .chatId(ctx.chatId())
+                        .messageId(messageId)
+                        .caption(formattedText)
+                        .parseMode("HTML")
+                        .replyMarkup(keyboardMarkup)
+                        .build());
+            } catch (TelegramApiException ex) {
+                log.error("❌ Failed to edit message {} in [{}]: {}",
+                        messageId, ctx.conversationId(), ex.getMessage());
+            }
+        }
+    }
+
+    private void cachePhotoFileId(ConversationContext ctx, String imageUrl, Message message) {
+        if (message == null || message.getPhoto() == null || message.getPhoto().isEmpty()) return;
+        String fileId = message.getPhoto().stream()
+                .filter(Objects::nonNull)
+                .reduce((a, b) -> b)
+                .map(p -> p.getFileId())
+                .orElse(null);
+        if (fileId != null) {
+            fileIdCacheService.put(ctx.conversationId(), imageUrl, fileId);
+        }
+    }
+
+    public void sendMessage(ConversationContext ctx, String text) {
         if (text != null && text.length() > MAX_TEXT_LENGTH) {
             List<String> chunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH);
             for (String chunk : chunks) {
-                sendResponse(chatId, BotResponse.text(chunk));
+                sendResponse(ctx, BotResponse.text(chunk));
             }
         } else {
-            sendResponse(chatId, BotResponse.text(text));
+            sendResponse(ctx, BotResponse.text(text));
         }
+    }
+
+    /** Convenience overload for async listeners that only know chatId (DM context assumed). */
+    public void sendMessage(long chatId, String text) {
+        sendMessage(ConversationContext.dm(chatId), text);
     }
 
     private InlineKeyboardMarkup createKeyboard(Map<String, String> buttons, List<List<BotResponse.ButtonDto>> buttonRows) {
@@ -151,10 +266,14 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
             for (List<BotResponse.ButtonDto> row : buttonRows) {
                 List<InlineKeyboardButton> rowButtons = new ArrayList<>();
                 for (BotResponse.ButtonDto btn : row) {
-                    rowButtons.add(InlineKeyboardButton.builder()
-                            .text(btn.label())
-                            .callbackData(btn.callbackData())
-                            .build());
+                    var builder = InlineKeyboardButton.builder().text(btn.label());
+                    String data = btn.callbackData();
+                    if (data != null && data.startsWith("URL:")) {
+                        builder.url(data.substring(4));
+                    } else {
+                        builder.callbackData(data);
+                    }
+                    rowButtons.add(builder.build());
                 }
                 rows.add(new InlineKeyboardRow(rowButtons));
             }
@@ -201,10 +320,8 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         while (remaining.length() > maxLength) {
             int splitIndex = maxLength;
 
-            // Try to find a newline character before the limit
             int lastNewline = remaining.lastIndexOf('\n', maxLength);
             if (lastNewline > 0 && lastNewline > maxLength * 0.5) {
-                // Use newline if it's not too far back (at least 50% of maxLength)
                 splitIndex = lastNewline;
             }
 

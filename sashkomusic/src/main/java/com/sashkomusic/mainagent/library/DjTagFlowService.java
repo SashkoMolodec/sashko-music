@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.api.dto.TrackDto;
 import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.SetEnergyTaskProducer;
@@ -26,21 +27,21 @@ public class DjTagFlowService {
     private final AddCommentTaskProducer addCommentTaskProducer;
     private final DjTagContextHolder djTagContextHolder;
 
-    public boolean isWaitingForComment(long chatId) {
-        return djTagContextHolder.isWaitingForComment(chatId);
+    public boolean isWaitingForComment(ConversationContext ctx) {
+        return djTagContextHolder.isWaitingForComment(ctx.conversationId());
     }
 
-    public List<BotResponse> handleCommentInput(long chatId, String commentText) {
-        DjTagContextHolder.DjTagContext ctx = djTagContextHolder.getContext(chatId);
-        if (ctx == null) {
+    public List<BotResponse> handleCommentInput(ConversationContext ctx, String commentText) {
+        DjTagContextHolder.DjTagContext tagCtx = djTagContextHolder.getContext(ctx.conversationId());
+        if (tagCtx == null) {
             return List.of(BotResponse.text("помилка: контекст втрачено"));
         }
 
-        djTagContextHolder.clearContext(chatId);
-        return addComment(chatId, ctx.trackId(), commentText);
+        djTagContextHolder.clearContext(ctx.conversationId());
+        return addComment(ctx, tagCtx.trackId(), commentText);
     }
 
-    public List<BotResponse> expandDjRatePanel(long chatId, String data) {
+    public List<BotResponse> expandDjRatePanel(ConversationContext ctx, String data) {
         String[] parts = data.split(":");
         if (parts.length != 3) {
             return List.of(BotResponse.text("невірний формат"));
@@ -49,19 +50,20 @@ public class DjTagFlowService {
         try {
             Long trackId = Long.parseLong(parts[1]);
             String navidromeId = parts[2];
-            return buildDjRatePanel(chatId, trackId, navidromeId);
+            return buildDjRatePanel(ctx, trackId, navidromeId);
         } catch (NumberFormatException e) {
             log.error("Failed to parse expand callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));
         }
     }
 
-    private List<BotResponse> buildDjRatePanel(long chatId, Long trackId, String navidromeId) {
-        DjTagContextHolder.DjTagContext context = djTagContextHolder.getContext(chatId);
+    private List<BotResponse> buildDjRatePanel(ConversationContext ctx, Long trackId, String navidromeId) {
+        DjTagContextHolder.DjTagContext context = djTagContextHolder.getContext(ctx.conversationId());
         TrackDto track = context != null ? context.track() : null;
 
         if (track == null || !track.id().equals(trackId)) {
-            log.warn("Track context mismatch or not found for chat {}, trackId {}", chatId, trackId);
+            log.warn("Track context mismatch or not found for conversationId={}, trackId {}",
+                    ctx.conversationId(), trackId);
             return List.of(BotResponse.text("помилка: контекст треку втрачено, спробуй /np знову"));
         }
 
@@ -93,7 +95,7 @@ public class DjTagFlowService {
         return List.of(BotResponse.withMultiRowButtons(message.toString(), rows));
     }
 
-    public List<BotResponse> handleEnergyRate(long chatId, String data) {
+    public List<BotResponse> handleEnergyRate(ConversationContext ctx, String data) {
         String[] parts = data.split(":");
         if (parts.length != 4) {
             return List.of(BotResponse.text("невірний формат"));
@@ -102,14 +104,14 @@ public class DjTagFlowService {
         try {
             Long trackId = Long.parseLong(parts[1]);
             String energyLevel = parts[2];
-            return setDjEnergy(chatId, trackId, energyLevel);
+            return setDjEnergy(ctx, trackId, energyLevel);
         } catch (NumberFormatException e) {
             log.error("Failed to parse energy callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));
         }
     }
 
-    public List<BotResponse> handleFunctionRate(long chatId, String data) {
+    public List<BotResponse> handleFunctionRate(ConversationContext ctx, String data) {
         String[] parts = data.split(":");
         if (parts.length != 4) {
             return List.of(BotResponse.text("невірний формат"));
@@ -118,21 +120,21 @@ public class DjTagFlowService {
         try {
             Long trackId = Long.parseLong(parts[1]);
             String functionType = parts[2];
-            return setDjFunction(chatId, trackId, functionType);
+            return setDjFunction(ctx, trackId, functionType);
         } catch (NumberFormatException e) {
             log.error("Failed to parse function callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));
         }
     }
 
-    public List<BotResponse> handleCommentAdd(long chatId, String data) {
+    public List<BotResponse> handleCommentAdd(ConversationContext ctx, String data) {
         String[] parts = data.split(":");
         if (parts.length != 3) {
             return List.of(BotResponse.text("невірний формат"));
         }
 
         try {
-            djTagContextHolder.activateCommentMode(chatId);
+            djTagContextHolder.activateCommentMode(ctx.conversationId());
             return List.of(BotResponse.text("✍️ шось туту во пиши:"));
         } catch (NumberFormatException e) {
             log.error("Failed to parse comment activation callback: {}", data, e);
@@ -140,23 +142,23 @@ public class DjTagFlowService {
         }
     }
 
-    public List<BotResponse> setDjEnergy(long chatId, Long trackId, String energyLevel) {
-        log.info("Setting DJ energy {} for track {} from chatId={}", energyLevel, trackId, chatId);
-        SetEnergyTaskDto task = new SetEnergyTaskDto(trackId, energyLevel, chatId);
+    public List<BotResponse> setDjEnergy(ConversationContext ctx, Long trackId, String energyLevel) {
+        log.info("Setting DJ energy {} for track {} from conversationId={}", energyLevel, trackId, ctx.conversationId());
+        SetEnergyTaskDto task = new SetEnergyTaskDto(trackId, energyLevel, ctx.conversationId());
         setEnergyTaskProducer.send(task);
         return Collections.emptyList();
     }
 
-    public List<BotResponse> setDjFunction(long chatId, Long trackId, String functionType) {
-        log.info("Setting DJ function {} for track {} from chatId={}", functionType, trackId, chatId);
-        SetFunctionTaskDto task = new SetFunctionTaskDto(trackId, functionType, chatId);
+    public List<BotResponse> setDjFunction(ConversationContext ctx, Long trackId, String functionType) {
+        log.info("Setting DJ function {} for track {} from conversationId={}", functionType, trackId, ctx.conversationId());
+        SetFunctionTaskDto task = new SetFunctionTaskDto(trackId, functionType, ctx.conversationId());
         setFunctionTaskProducer.send(task);
         return List.of(BotResponse.text("⏳ маркуємо як " + functionType + "..."));
     }
 
-    public List<BotResponse> addComment(long chatId, Long trackId, String comment) {
-        log.info("Adding comment for track {} from chatId={}: {}", trackId, chatId, comment);
-        AddCommentTaskDto task = new AddCommentTaskDto(trackId, comment, chatId);
+    public List<BotResponse> addComment(ConversationContext ctx, Long trackId, String comment) {
+        log.info("Adding comment for track {} from conversationId={}: {}", trackId, ctx.conversationId(), comment);
+        AddCommentTaskDto task = new AddCommentTaskDto(trackId, comment, ctx.conversationId());
         addCommentTaskProducer.send(task);
         return List.of(BotResponse.text("🗿 крутий"));
     }

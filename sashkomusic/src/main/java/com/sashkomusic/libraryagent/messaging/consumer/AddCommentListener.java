@@ -23,14 +23,14 @@ public class AddCommentListener {
     @Async
     public void handleAddComment(AddCommentTaskEvent event) {
         AddCommentTaskDto task = event.payload();
-        log.info("Received add comment task: trackId={}, chatId={}", task.trackId(), task.chatId());
+        log.info("Received add comment task: trackId={}, conversationId={}", task.trackId(), task.conversationId());
 
         try {
             RateTrackService.RateResult result = rateTrackService.addComment(task.trackId(), task.comment());
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "comment", task.comment(), result.success(), result.message(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "comment", task.comment(), result.success(), result.message(), task.conversationId()));
         } catch (Exception ex) {
             log.error("Error adding comment: {}", ex.getMessage(), ex);
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "comment", task.comment(), false, "критична помилка: " + ex.getMessage(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "comment", task.comment(), false, "критична помилка: " + ex.getMessage(), task.conversationId()));
         }
     }
 }

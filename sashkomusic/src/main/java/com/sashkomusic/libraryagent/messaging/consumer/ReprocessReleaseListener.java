@@ -23,8 +23,8 @@ public class ReprocessReleaseListener {
     @Async
     public void handleReprocessTask(ReprocessReleaseTaskEvent event) {
         ReprocessReleaseTaskDto task = event.payload();
-        log.info("Received reprocess task: chatId={}, directoryPath={}, version={}, options={}",
-                task.chatId(), task.directoryPath(), task.newMetadataVersion(), task.options());
+        log.info("Received reprocess task: conversationId={}, directoryPath={}, version={}, options={}",
+                task.conversationId(), task.directoryPath(), task.newMetadataVersion(), task.options());
 
         try {
             ReprocessingService.ReprocessResult result = reprocessingService.reprocess(
@@ -32,7 +32,7 @@ public class ReprocessReleaseListener {
             );
 
             ReprocessReleaseResultDto resultDto = new ReprocessReleaseResultDto(
-                    task.chatId(), task.directoryPath(), result.success(), result.message(),
+                    task.conversationId(), task.directoryPath(), result.success(), result.message(),
                     result.filesProcessed(), result.errors()
             );
             resultProducer.send(resultDto);
@@ -42,7 +42,7 @@ public class ReprocessReleaseListener {
         } catch (Exception ex) {
             log.error("Fatal error during reprocessing: {}", ex.getMessage(), ex);
             ReprocessReleaseResultDto errorDto = new ReprocessReleaseResultDto(
-                    task.chatId(), task.directoryPath(), false, "Fatal error: " + ex.getMessage(), 0, 1
+                    task.conversationId(), task.directoryPath(), false, "Fatal error: " + ex.getMessage(), 0, 1
             );
             resultProducer.send(errorDto);
         }

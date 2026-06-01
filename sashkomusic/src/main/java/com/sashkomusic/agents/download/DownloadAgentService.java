@@ -4,6 +4,7 @@ import com.sashkomusic.agents.contract.DownloadRequest;
 import com.sashkomusic.agents.contract.DownloadResult;
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,26 +22,27 @@ public class DownloadAgentService {
     private final ChatResponseAccumulator accumulator;
 
     public DownloadResult handle(DownloadRequest request) {
-        log.info("Download agent handling: chatId={}, releaseId={}, artist={}, album={}",
-                request.chatId(), request.releaseId(), request.artist(), request.album());
+        log.info("Download agent handling: conversationId={}, releaseId={}, artist={}, album={}",
+                request.conversationId(), request.releaseId(), request.artist(), request.album());
 
+        ConversationContext ctx = ConversationContext.from(request.conversationId());
         List<BotResponse> responses;
         try {
             if (request.releaseId() != null && !request.releaseId().isBlank()) {
-                responses = musicDownloadFlowService.handleDownload(request.chatId(), "DL:" + request.releaseId());
+                responses = musicDownloadFlowService.handleDownload(ctx, "DL:" + request.releaseId());
             } else {
                 String query = buildQuery(request);
                 if (query.isBlank()) {
                     return DownloadResult.failed("нема що качати — порожній запит");
                 }
-                responses = musicDownloadFlowService.getDownloadOptions(request.chatId(), query);
+                responses = musicDownloadFlowService.getDownloadOptions(ctx, query);
             }
         } catch (Exception ex) {
             log.error("Download flow failure: {}", ex.getMessage(), ex);
             return DownloadResult.failed("не вдалось почати: " + ex.getMessage());
         }
 
-        responses.forEach(r -> accumulator.push(request.chatId(), r));
+        responses.forEach(r -> accumulator.push(request.conversationId(), r));
 
         String summary = responses.stream()
                 .map(BotResponse::text)

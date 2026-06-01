@@ -3,3 +3,4 @@ uvicorn==0.30.0
 playwright==1.47.0
 playwright-stealth==1.0.6
 beautifulsoup4==4.12.3
+ytmusicapi>=1.12.0

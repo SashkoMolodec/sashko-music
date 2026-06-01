@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.search;
 
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.shared.model.DateRange;
 import com.sashkomusic.mainagent.shared.model.Language;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.when;
 class SearchFlowIntegrationTest {
 
     private static final long CHAT_ID = 42L;
+    private static final ConversationContext CTX = ConversationContext.dm(CHAT_ID);
 
     @Autowired ReleaseSearchFlowService searchFlow;
     @Autowired SearchContextService contextService;
@@ -56,12 +58,12 @@ class SearchFlowIntegrationTest {
                 release("mb-2", "Burial", "Burial",  SearchEngine.MUSICBRAINZ)
         ));
 
-        List<BotResponse> resp = searchFlow.searchDefault(CHAT_ID, "Burial");
+        List<BotResponse> resp = searchFlow.searchDefault(CTX, "Burial");
 
         assertThat(resp).isNotEmpty();
         assertThat(resp.get(0).text()).contains("знайдено релізів: 2");
-        assertThat(contextService.getSearchResults(CHAT_ID)).hasSize(2);
-        assertThat(contextService.getSource(CHAT_ID)).isEqualTo(SearchEngine.MUSICBRAINZ);
+        assertThat(contextService.getSearchResults(CTX.conversationId())).hasSize(2);
+        assertThat(contextService.getSource(CTX.conversationId())).isEqualTo(SearchEngine.MUSICBRAINZ);
     }
 
     @Test
@@ -70,14 +72,14 @@ class SearchFlowIntegrationTest {
                 release("dg-1", "Burial", "Untrue", SearchEngine.DISCOGS)
         ));
 
-        searchFlow.searchDefault(CHAT_ID, "Burial");
+        searchFlow.searchDefault(CTX, "Burial");
 
-        assertThat(contextService.getSource(CHAT_ID)).isEqualTo(SearchEngine.DISCOGS);
+        assertThat(contextService.getSource(CTX.conversationId())).isEqualTo(SearchEngine.DISCOGS);
     }
 
     @Test
     void searchDefault_returns_empty_message_when_no_engine_has_results() {
-        List<BotResponse> resp = searchFlow.searchDefault(CHAT_ID, "noexist");
+        List<BotResponse> resp = searchFlow.searchDefault(CTX, "noexist");
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("нич не знайшов");
@@ -88,14 +90,14 @@ class SearchFlowIntegrationTest {
         when(musicBrainz.searchReleases(any())).thenReturn(List.of(
                 release("mb-1", "Burial", "Untrue", SearchEngine.MUSICBRAINZ)
         ));
-        searchFlow.searchDefault(CHAT_ID, "Burial");
+        searchFlow.searchDefault(CTX, "Burial");
 
         when(discogs.searchReleases(any())).thenReturn(List.of(
                 release("dg-1", "Burial", "Untrue", SearchEngine.DISCOGS)
         ));
-        searchFlow.switchStrategyAndSearch(CHAT_ID);
+        searchFlow.switchStrategyAndSearch(CTX);
 
-        assertThat(contextService.getSource(CHAT_ID)).isEqualTo(SearchEngine.DISCOGS);
+        assertThat(contextService.getSource(CTX.conversationId())).isEqualTo(SearchEngine.DISCOGS);
     }
 
     private static ReleaseMetadata release(String id, String artist, String title, SearchEngine source) {

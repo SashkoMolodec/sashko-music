@@ -1,66 +1,134 @@
 # DiscoveryAgent — Spec
 
 ## Purpose
-Music search reasoning. Given a free-form query, chooses one or more search
-engines, calls them via tools, and returns a one-line Ukrainian summary.
-Owns its own per-chat memory — basis for future RAG.
+Пошук музики. Отримує вільний запит, обирає пошуковий движок, викликає його через tool,
+повертає короткий укр. summary. Результати зберігає в `SearchContextService` — по них
+потім будуються release картки для Telegram.
 
-## Inputs (LangChain4j surface)
-- `@MemoryId long chatId`
-- `@UserMessage String userMessage` — query text (possibly with `(prefer: discogs)` hint
-  appended by `DiscoveryAgentService` if the caller had a preference)
+---
 
-## Inputs (service contract — `DiscoveryAgentService.handle`)
-- `DiscoverRequest(chatId, query, preferredEngine)`
+## Місце в потоці
 
-## Outputs (service contract)
-- `DiscoverResult(success, summary, releases, engineUsed)`
-- Side-effect 1: search results are saved into `SearchContextService`
-  (so the user can later click `DL:` / `STREAM:` / `PAGE:` buttons on the cards).
-- Side-effect 2 (when results non-empty): release cards are pushed into
-  `ChatResponseAccumulator` via `ReleaseSearchFlowService.buildPageResponse(chatId, 0)`.
-  This is **this agent's job**, not the main agent's — main only sees the
-  `summary` string.
+`DiscoveryAgentService.handle(DiscoverRequest)` має два шляхи залежно від `preferredEngine`:
 
-## Model
-- `claude-haiku-4-5-20251001` (overridable via `agents.discovery.model-name`)
-- `maxTokens` = 1024
-- Memory: `MessageWindowChatMemory.withMaxMessages(20)` per `chatId`
+```
+MainAgentTools.findMusic()                              MainAgentTools.findMusicOnDiscogs()
+  └─ DiscoverRequest(preferredEngine=null)                └─ DiscoverRequest(preferredEngine=DISCOGS)
+       └─ DiscoveryAgentService.handle()                       └─ DiscoveryAgentService.handle()
+            └─ [LLM path]                                           └─ [direct path]
+                 discoveryAgent.chat(":d", query)                        discoveryAgentTools.runSearch(DISCOGS, query, ":d")
+                   └─ [tool: search()]                                        └─ SearchEngineService.searchReleases()
+                        └─ sequential MusicBrainz→Discogs→Bandcamp                 └─ searchContextService.saveSearchContext(":d", ...)
+                             └─ saveSearchContext(":d", ...)
+            ↓ (обидва шляхи зливаються тут)
+            ├─ getSearchResults(discoveryMemoryId)
+            ├─ copySearchContext(":d", conversationId)
+            └─ accumulator.pushAll(conversationId, buildPageResponse(...))
+```
 
-## Tools (every public `@Tool` on `DiscoveryAgentTools`)
+`digDeeper` теж використовує **direct path** — вибирає наступний движок по колу від останнього використаного.
 
-| Tool                  | Backend                  | Use when                                         |
-|-----------------------|--------------------------|--------------------------------------------------|
-| `searchMusicBrainz`   | MusicBrainz REST         | Default / canonical metadata                      |
-| `searchDiscogs`       | Discogs REST             | Vinyl, labels, catalog numbers; user says discogs |
-| `searchBandcamp`      | Bandcamp (jsoup)         | Independent / electronic; user says bandcamp      |
-| `getPreviousSearches` | `SearchContextService`   | User refers to earlier search ("як минулого разу")|
+---
 
-Each search tool persists results into `SearchContextService` via
-`saveSearchContext(...)`. That side-effect is the contract: callers expect
-`SearchContextService` to reflect the latest search after `handle()` returns.
+## LangChain4j interface
+
+```java
+public interface DiscoveryAgent {
+    @SystemMessage(DiscoveryAgentPrompts.SYSTEM)
+    String chat(@MemoryId String conversationId, @UserMessage String userMessage);
+}
+```
+
+| Параметр        | Значення                                                              |
+|-----------------|-----------------------------------------------------------------------|
+| `conversationId`| `conversationId + ":d"` — **ізольований** від MainAgent memory ID     |
+| `userMessage`   | Query вербатимно (LLM path only; direct path не кличе `chat()`)       |
+| Return          | Summary для LLM (наприклад `"знайшов 5 релізів на musicbrainz"`)      |
+
+**Увага:** LangChain4j interface використовується тільки для **LLM path** (`preferredEngine == null`).
+При **direct path** `DiscoveryAgentService` кличе `DiscoveryAgentTools.runSearch()` напряму,
+минаючи `chat()` повністю.
+
+---
+
+## Модель і пам'ять
+
+| Параметр         | Значення                                                                            |
+|------------------|-------------------------------------------------------------------------------------|
+| Модель           | `claude-haiku-4-5-20251001` (override: `agents.discovery.model-name`)               |
+| maxTokens        | 1024 (override: `agents.discovery.max-tokens`)                                      |
+| Memory window    | `MessageWindowChatMemory.maxMessages(16)` — ~8 ходів                               |
+| Memory store     | `PostgresChatMemoryStore` → `conversation_messages`, ключ: `conversationId + ":d"` |
+| Memory ID        | Приклад: `"-1003551198668:d"` або `"-1003551198668:42:d"`                           |
+
+**Чому окремий memory ID:** якби Main і Discovery ділили один memory ID, то після
+`tool_use` від MainAgent і подальшого виклику Discovery його history виглядало б як
+`[..., AI(tool_use), SYSTEM, USER]` — Claude API відхиляє таку послідовність
+(`tool_use` без `tool_result`). Суфікс `:d` ізолює histories.
+
+---
+
+## Tools (`DiscoveryAgentTools`)
+
+### `search(query, conversationId)`
+Єдиний основний tool. Послідовно пробує всі движки поки не знайде результат.
+
+| Крок | Дія                                                                          |
+|------|------------------------------------------------------------------------------|
+| 1    | `SearchRequestExtractor.extract(query)` → структурований `MetadataSearchRequest` |
+| 2    | Перебір `SearchEngine.values()` (MusicBrainz → Discogs → Bandcamp)           |
+| 3    | `SearchEngineService.searchReleases(request)` для кожного движка              |
+| 4    | Перший hit → `searchContextService.saveSearchContext(conversationId, engine, query, request, releases)` |
+| 5    | Return: `"found N releases on engine"` або `"not found on any source"`        |
+
+Зберігання в `SearchContextService` (in-memory `ConcurrentHashMap`):
+- `userSearches[conversationId]` → `SearchContext(source, request, rawInput, releaseIds)`
+- `releaseMetadata[releaseId]` → `ReleaseMetadata` (shared, keyed by release ID)
+
+### `getPreviousSearches(conversationId)`
+Читає `SearchContextService` — що шукали в цій розмові.
+Повертає: `"last search on MusicBrainz for artist='X' release='Y' returned 5 releases"`.
+Використовується коли юзер каже "як минулого разу" / "ще таке".
+
+---
+
+## SearchContext flow після discovery
+
+```
+DiscoveryAgentService після chat():
+  1. getSearchResults(discoveryMemoryId)          → releases під ключем ":d"
+  2. copySearchContext(discoveryMemoryId, convId) → дублює під основний ключ
+  3. buildPageResponse(ConversationContext, page=0) → перша сторінка карток
+  4. accumulator.pushAll(conversationId, cards)
+  5. return DiscoverResult.found(summary, releases, engine)
+```
+
+`copySearchContext` потрібен тому що `ReleaseSearchFlowService.buildPageResponse()`
+читає `SearchContextService` по `ctx.conversationId()` (без `:d`), а tools зберегли
+під `discoveryMemoryId`.
+
+---
 
 ## Hard rules
-1. Default to `searchMusicBrainz` first. Honor explicit hints (`discogs`,
-   `bandcamp`) when present in the query.
-2. On empty result, try **at most one** other source.
-3. On user phrases like "ще / копай / дай ще" — switch to a source different
-   from the last one used.
-4. Never list each release in the reply — the calling tool renders cards.
-   Reply with one short Ukrainian line (e.g. "знайшов 5 релізів на musicbrainz").
-5. Reply ≤120 chars, lowercase, no markdown.
-6. Never translate or transliterate artist / release names byte-for-byte —
-   the underlying extractors (`SearchRequestExtractor`) already enforce this.
+1. LLM path: Default → `searchMusicBrainz` першим (порядок `SearchEngine.values()`).
+2. Direct path: `preferredEngine != null` → LLM не викликається, `runSearch(engine)` напряму.
+3. Не переформатовувати запит — `SearchRequestExtractor` сам розбере artist/album/year.
+4. Відповідь LLM path — один рядок Ukrainian summary, ≤120 символів, lowercase, без markdown.
+5. Не описувати кожен реліз в тексті — картки будує `ReleaseSearchFlowService`.
+6. Якщо нічого не знайшов — повернути `"not found"`, попросити уточнення.
+
+---
 
 ## Out of scope
-- Talking to the user (only main does).
-- Choosing a download source — that is the download agent's domain.
-- Fetching tracklists / cover art — search engines do that, not the agent.
+- Говорити до користувача (тільки MainAgent)
+- Обирати джерело для завантаження (це DownloadAgent)
+- Завантажувати треклисти / обкладинки (це SearchEngineService)
 
-## SDD checkpoints (change here BEFORE code)
-- New search engine → add a tool in `DiscoveryAgentTools` AND a
-  `SearchEngineService` impl. Register in `SearchEngine` enum.
-- Future RAG (vector store over past searches) → likely belongs as a new tool
-  here (e.g. `searchSimilarToHistory`); the memory window already isolates
-  per-chat context.
-- Token spend → check `[agent=discovery]` trace logs.
+---
+
+## SDD checkpoints (змінювати spec ДО коду)
+- Новий пошуковий движок → додати `SearchEngine` enum value + `SearchEngineService` impl.
+  Tool-код не змінюється — він перебирає `SearchEngine.values()`.
+- Змінити порядок пошуку → змінити порядок у `SearchEngine.values()`.
+- RAG / vector search → новий tool тут (наприклад `searchSimilarToHistory`).
+- Перевірити cost → `[agent=discovery]` trace logs (`tokensIn/tokensOut`).

@@ -257,11 +257,11 @@ public class QobuzClient implements MusicSourcePort {
     }
 
     @Override
-    public void handleDownloadCompletion(long chatId, String releaseId, DownloadOption option, String downloadPath) {
+    public void handleDownloadCompletion(String conversationId, String releaseId, DownloadOption option, String downloadPath) {
         String artist = option.technicalMetadata().get("artist");
         String title = option.technicalMetadata().get("title");
         int expectedFileCount = option.files().isEmpty() ? 1 : option.files().size();
-        monitorService.startMonitoring(chatId, releaseId, downloadPath, expectedFileCount, artist, title);
+        monitorService.startMonitoring(conversationId, releaseId, downloadPath, expectedFileCount, artist, title);
         log.info("Started monitoring for Qobuz download: {}", downloadPath);
     }
 

@@ -19,7 +19,7 @@ public class QobuzDownloadFlowHandler implements DownloadFlowHandler {
     );
 
     @Override
-    public AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, long chatId) {
+    public AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, String conversationId) {
         if (options.isEmpty()) {
             return new AnalysisResult(List.of(), "");
         }

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -5,6 +6,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
 import bandcamp as bc
+import ytmusic as ym
 from config import PORT
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -32,6 +34,16 @@ async def bandcamp_release(url: str = Query(..., min_length=1)):
     if result is None:
         return JSONResponse(content={"error": "Failed to fetch release"}, status_code=502)
     return JSONResponse(content=result)
+
+
+@app.get("/ytmusic/search")
+async def ytmusic_search(
+    artist: str = Query(..., min_length=1),
+    album: str = Query(..., min_length=1),
+    limit: int = Query(5, ge=1, le=20),
+):
+    results = await asyncio.to_thread(ym.search, artist, album, limit)
+    return JSONResponse(content=results)
 
 
 @app.get("/health")

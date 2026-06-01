@@ -4,10 +4,15 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 
 @JsonTypeName("download_cancel")
 public record DownloadCancelTaskDto(
-        long chatId,
+        String conversationId,
         String releaseId
 ) {
-    public static DownloadCancelTaskDto of(long chatId, String releaseId) {
-        return new DownloadCancelTaskDto(chatId, releaseId);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
+
+    public static DownloadCancelTaskDto of(String conversationId, String releaseId) {
+        return new DownloadCancelTaskDto(conversationId, releaseId);
     }
 }

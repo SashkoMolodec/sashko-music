@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.download.messaging;
 
 import com.sashkomusic.events.DownloadErrorEvent;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadErrorDto;
 import lombok.RequiredArgsConstructor;
@@ -20,8 +21,8 @@ public class DownloadErrorListener {
     @Async
     public void handleDownloadError(DownloadErrorEvent event) {
         var error = event.payload();
-        log.error("Received download error for chatId={}: {}", error.chatId(), error.errorMessage());
+        log.error("Received download error for conversationId={}: {}", error.conversationId(), error.errorMessage());
         String message = "🤡 **не получилосі скачати:**\n" + error.errorMessage();
-        chatBot.sendMessage(error.chatId(), message);
+        chatBot.sendMessage(ConversationContext.from(error.conversationId()), message);
     }
 }

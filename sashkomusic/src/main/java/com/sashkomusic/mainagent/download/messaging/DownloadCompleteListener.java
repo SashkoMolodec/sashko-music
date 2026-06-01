@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.download.messaging;
 
 import com.sashkomusic.events.DownloadCompleteEvent;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadCompleteDto;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +21,11 @@ public class DownloadCompleteListener {
     @Async
     public void handleDownloadComplete(DownloadCompleteEvent event) {
         DownloadCompleteDto complete = event.payload();
-        log.info("Received download complete for chatId={}: {} ({} MB)", complete.chatId(), complete.filename(), complete.sizeMB());
+        log.info("Received download complete for conversationId={}: {} ({} MB)", complete.conversationId(), complete.filename(), complete.sizeMB());
 
         String displayName = extractDisplayName(complete.filename());
         String message = "✅ `%s` (%d MB)".formatted(displayName, complete.sizeMB());
-        chatBot.sendMessage(complete.chatId(), message);
+        chatBot.sendMessage(ConversationContext.from(complete.conversationId()), message);
     }
 
     private String extractDisplayName(String filename) {

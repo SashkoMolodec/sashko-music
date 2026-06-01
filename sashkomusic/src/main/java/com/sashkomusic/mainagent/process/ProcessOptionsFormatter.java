@@ -1,17 +1,24 @@
 package com.sashkomusic.mainagent.process;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.mainagent.search.SearchEngineService;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Pure formatter — turns grouped search results into a Telegram options card
  * with numbered emoji bullets per source.
  */
 @Component
+@RequiredArgsConstructor
 public class ProcessOptionsFormatter {
+
+    private final Map<SearchEngine, SearchEngineService> searchEngines;
 
     public BotResponse format(ProcessFolderSearcher.SearchResults results) {
         StringBuilder message = new StringBuilder();
@@ -59,10 +66,26 @@ public class ProcessOptionsFormatter {
                 message.append(" • ").append(result.getTagsDisplay().toLowerCase());
             }
 
+            String releaseUrl = buildReleaseUrl(result);
+            if (releaseUrl != null) {
+                message.append(" [🔗](").append(releaseUrl).append(")");
+            }
+
             message.append("\n");
             index++;
         }
         return index;
+    }
+
+    private String buildReleaseUrl(ReleaseMetadata result) {
+        if (result.source() == null) return null;
+        SearchEngineService service = searchEngines.get(result.source());
+        if (service == null) return null;
+        try {
+            return service.buildReleaseUrl(result);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String toEmojiNumber(int number) {

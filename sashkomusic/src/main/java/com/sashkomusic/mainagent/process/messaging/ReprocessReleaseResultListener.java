@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.process.messaging;
 
 import com.sashkomusic.events.ReprocessReleaseCompleteEvent;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.libraryagent.messaging.producer.dto.ReprocessReleaseResultDto;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +21,11 @@ public class ReprocessReleaseResultListener {
     @Async
     public void handleReprocessResult(ReprocessReleaseCompleteEvent event) {
         ReprocessReleaseResultDto result = event.payload();
-        log.info("Received reprocess result: chatId={}, success={}, filesProcessed={}",
-                result.chatId(), result.success(), result.filesProcessed());
+        log.info("Received reprocess result: conversationId={}, success={}, filesProcessed={}",
+                result.conversationId(), result.success(), result.filesProcessed());
 
         String message = buildResultMessage(result);
-        chatBot.sendMessage(result.chatId(), message);
+        chatBot.sendMessage(ConversationContext.from(result.conversationId()), message);
     }
 
     private String buildResultMessage(ReprocessReleaseResultDto result) {

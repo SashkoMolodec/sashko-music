@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class SearchContextService {
     private final Map<String, ReleaseMetadata> releaseMetadata = new ConcurrentHashMap<>();
-    private final Map<Long, SearchContext> userSearches = new ConcurrentHashMap<>();
+    private final Map<String, SearchContext> userSearches = new ConcurrentHashMap<>();
     private final Map<SearchEngine, SearchEngineService> searchEngines;
 
     public SearchContextService(Map<SearchEngine, SearchEngineService> searchEngines) {
@@ -29,48 +29,48 @@ public class SearchContextService {
         releaseMetadata.put(metadata.id(), metadata);
     }
 
-    public void saveSearchContext(long chatId, SearchEngine source, String rawInput, MetadataSearchRequest request, List<ReleaseMetadata> results) {
+    public void saveSearchContext(String conversationId, SearchEngine source, String rawInput, MetadataSearchRequest request, List<ReleaseMetadata> results) {
         results.forEach(r -> releaseMetadata.put(r.id(), r));
 
         List<String> releaseIds = results.stream()
                 .map(ReleaseMetadata::id)
                 .toList();
 
-        userSearches.put(chatId, new SearchContext(source, request, rawInput, releaseIds));
+        userSearches.put(conversationId, new SearchContext(source, request, rawInput, releaseIds));
     }
 
-    public void validateSession(long chatId) {
-        SearchContext context = userSearches.get(chatId);
+    public void validateSession(String conversationId) {
+        SearchContext context = userSearches.get(conversationId);
         if (context == null) {
-            throw new SearchSessionExpiredException("Search session not found for chatId: " + chatId);
+            throw new SearchSessionExpiredException("Search session not found for conversation: " + conversationId);
         }
     }
 
-    public List<ReleaseMetadata> getSearchResults(long chatId) {
-        validateSession(chatId);
-        SearchContext context = userSearches.get(chatId);
+    public List<ReleaseMetadata> getSearchResults(String conversationId) {
+        validateSession(conversationId);
+        SearchContext context = userSearches.get(conversationId);
         return context.releaseIds().stream()
                 .map(releaseMetadata::get)
                 .filter(Objects::nonNull)
                 .toList();
     }
 
-    public MetadataSearchRequest getSearchRequest(long chatId) {
-        validateSession(chatId);
-        return userSearches.get(chatId).request();
+    public MetadataSearchRequest getSearchRequest(String conversationId) {
+        validateSession(conversationId);
+        return userSearches.get(conversationId).request();
     }
 
-    public SearchEngine getSource(long chatId) {
-        validateSession(chatId);
-        return userSearches.get(chatId).source();
+    public SearchEngine getSource(String conversationId) {
+        validateSession(conversationId);
+        return userSearches.get(conversationId).source();
     }
 
-    public String getRawInput(long chatId) {
-        validateSession(chatId);
-        return userSearches.get(chatId).rawInput();
+    public String getRawInput(String conversationId) {
+        validateSession(conversationId);
+        return userSearches.get(conversationId).rawInput();
     }
 
-    public ReleaseMetadata getMetadataWithTracks(String releaseId, long chatId) {
+    public ReleaseMetadata getMetadataWithTracks(String releaseId, String conversationId) {
         ReleaseMetadata metadata = getReleaseMetadata(releaseId);
         if (metadata == null) {
             log.warn("No metadata found for releaseId={}", releaseId);
@@ -85,7 +85,7 @@ public class SearchContextService {
         log.info("Fetching tracks for releaseId={}, source={}", releaseId, metadata.source());
 
         try {
-            SearchEngine source = getSource(chatId);
+            SearchEngine source = getSource(conversationId);
             SearchEngineService engine = searchEngines.get(source);
 
             List<TrackMetadata> tracks = engine.getTracks(releaseId);
@@ -105,8 +105,15 @@ public class SearchContextService {
         }
     }
 
-    public void clearSearch(long chatId) {
-        userSearches.remove(chatId);
+    public void copySearchContext(String fromId, String toId) {
+        SearchContext ctx = userSearches.get(fromId);
+        if (ctx != null) {
+            userSearches.put(toId, ctx);
+        }
+    }
+
+    public void clearSearch(String conversationId) {
+        userSearches.remove(conversationId);
     }
 
     public void clearAllCaches() {

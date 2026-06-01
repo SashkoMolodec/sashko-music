@@ -23,23 +23,24 @@ public class CallbackDispatcher {
                               StreamingFlowService streaming,
                               NowPlayingFlowService nowPlaying,
                               DjTagFlowService djTag) {
-        handlers.put("PAGE:", search::handlePageCallback);
-        handlers.put("DIG_DEEPER", (chatId, data) -> search.switchStrategyAndSearch(chatId));
-        handlers.put("CANCEL_DL:", download::handleDownloadCancel);
-        handlers.put("SEARCH_ALT:", download::handleSearchAlternative);
-        handlers.put("DL:", download::handleDownload);
-        handlers.put("STREAM:", streaming::handleStreamingPlatforms);
-        handlers.put("RATE:", nowPlaying::handleRate);
-        handlers.put("EXPAND_DJ_RATE:", djTag::expandDjRatePanel);
-        handlers.put("ENERGY_RATE:", djTag::handleEnergyRate);
-        handlers.put("FUNCTION_RATE:", djTag::handleFunctionRate);
-        handlers.put("ADD_COMMENT:", djTag::handleCommentAdd);
+        handlers.put("CARD:", search::handleCardCallback);
+        handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
+        handlers.put("NOOP", (ctx, data, msgId) -> List.of());
+        handlers.put("CANCEL_DL:", (ctx, data, msgId) -> download.handleDownloadCancel(ctx, data));
+        handlers.put("SEARCH_ALT:", (ctx, data, msgId) -> download.handleSearchAlternative(ctx, data));
+        handlers.put("DL:", (ctx, data, msgId) -> download.handleDownload(ctx, data));
+        handlers.put("STREAM:", (ctx, data, msgId) -> streaming.handleStreamingPlatforms(ctx, data));
+        handlers.put("RATE:", (ctx, data, msgId) -> nowPlaying.handleRate(ctx, data));
+        handlers.put("EXPAND_DJ_RATE:", (ctx, data, msgId) -> djTag.expandDjRatePanel(ctx, data));
+        handlers.put("ENERGY_RATE:", (ctx, data, msgId) -> djTag.handleEnergyRate(ctx, data));
+        handlers.put("FUNCTION_RATE:", (ctx, data, msgId) -> djTag.handleFunctionRate(ctx, data));
+        handlers.put("ADD_COMMENT:", (ctx, data, msgId) -> djTag.handleCommentAdd(ctx, data));
     }
 
-    public List<BotResponse> dispatch(long chatId, String data) {
+    public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {
         for (var entry : handlers.entrySet()) {
             if (data.startsWith(entry.getKey())) {
-                return entry.getValue().handle(chatId, data);
+                return entry.getValue().handle(ctx, data, messageId);
             }
         }
         log.warn("No callback handler matched: {}", data);

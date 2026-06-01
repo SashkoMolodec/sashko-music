@@ -6,13 +6,18 @@ import java.util.List;
 
 @JsonTypeName("download_batch_complete")
 public record DownloadBatchCompleteDto(
-        long chatId,
+        String conversationId,
         String releaseId,
         String directoryPath,
         List<String> allFiles,
         int totalFiles
 ) {
-    public static DownloadBatchCompleteDto of(long chatId, String releaseId, String directoryPath, List<String> allFiles) {
-        return new DownloadBatchCompleteDto(chatId, releaseId, directoryPath, allFiles, allFiles.size());
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
+
+    public static DownloadBatchCompleteDto of(String conversationId, String releaseId, String directoryPath, List<String> allFiles) {
+        return new DownloadBatchCompleteDto(conversationId, releaseId, directoryPath, allFiles, allFiles.size());
     }
 }

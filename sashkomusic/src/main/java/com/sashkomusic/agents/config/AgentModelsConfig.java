@@ -1,13 +1,16 @@
 package com.sashkomusic.agents.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
+import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 
@@ -27,14 +30,27 @@ public class AgentModelsConfig {
                 "agents.discovery.max-tokens", "1024");
     }
 
+    @Bean
+    public ChatMemoryStore postgresChatMemoryStore(JdbcTemplate jdbcTemplate) {
+        return new PostgresChatMemoryStore(jdbcTemplate);
+    }
+
     @Bean("mainMemoryProvider")
-    public ChatMemoryProvider mainMemoryProvider() {
-        return chatId -> MessageWindowChatMemory.withMaxMessages(32);
+    public ChatMemoryProvider mainMemoryProvider(ChatMemoryStore store) {
+        return convId -> MessageWindowChatMemory.builder()
+                .maxMessages(32)
+                .id(convId)
+                .chatMemoryStore(store)
+                .build();
     }
 
     @Bean("discoveryMemoryProvider")
-    public ChatMemoryProvider discoveryMemoryProvider() {
-        return chatId -> MessageWindowChatMemory.withMaxMessages(16);
+    public ChatMemoryProvider discoveryMemoryProvider(ChatMemoryStore store) {
+        return convId -> MessageWindowChatMemory.builder()
+                .maxMessages(16)
+                .id(convId)
+                .chatMemoryStore(store)
+                .build();
     }
 
     private ChatModel build(Environment env, String modelKey, String modelDefault,

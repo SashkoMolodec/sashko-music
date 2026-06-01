@@ -6,6 +6,10 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 public record RateTrackTaskDto(
         Long trackId,
         int rating,
-        long chatId
+        String conversationId
 ) {
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
 }

@@ -27,14 +27,17 @@ public class DownloadOptionsCardFormatter {
             var suitability = report.suitability();
 
             if (option.files().isEmpty()) {
-                sb.append("%s **%s**\n"
-                        .formatted(getIndexIcon(i), "`%s`".formatted(option.displayName())));
+                String nameWithFormat = option.displayName();
+                String sourceLink = buildSourceLink(option);
+                sb.append("%s **%s** (%s)%s\n\n"
+                        .formatted(getIndexIcon(i), nameWithFormat, suitability.icon, sourceLink));
             } else {
                 String format = detectFormat(option);
                 int fileCount = option.files().size();
+                String sourceLink = buildSourceLink(option);
 
-                sb.append("%s **[%s]** • %d ф. • %d MB (%s)\n"
-                        .formatted(getIndexIcon(i), format, fileCount, option.totalSize(), suitability.icon));
+                sb.append("%s **[%s]** • %d ф. • %d MB (%s)%s\n"
+                        .formatted(getIndexIcon(i), format, fileCount, option.totalSize(), suitability.icon, sourceLink));
 
                 option.files().stream()
                         .limit(7)
@@ -75,6 +78,36 @@ public class DownloadOptionsCardFormatter {
             return filename.substring(lastDot + 1);
         }
         return "";
+    }
+
+    private static String extractFormatLabel(DownloadOption option) {
+        var meta = option.technicalMetadata();
+        if (meta != null) {
+            String q = meta.get("qualityLabel");
+            if (q != null && !q.isBlank()) return q;
+            String type = meta.get("type");
+            if (type != null && !type.isBlank()) return type.toUpperCase();
+        }
+        // fall back to last [...] in displayName
+        String name = option.displayName();
+        int open = name.lastIndexOf('[');
+        int close = name.lastIndexOf(']');
+        if (open >= 0 && close > open) return name.substring(open + 1, close);
+        return name;
+    }
+
+    private static String buildSourceLink(DownloadOption option) {
+        if (option.technicalMetadata() == null) return "";
+        String url = switch (option.source()) {
+            case QOBUZ -> option.technicalMetadata().get("albumUrl");
+            case BANDCAMP, APPLE_MUSIC -> option.technicalMetadata().get("url");
+            case YOUTUBE_MUSIC -> {
+                String playlistId = option.technicalMetadata().get("playlistId");
+                yield playlistId != null ? "https://music.youtube.com/playlist?list=" + playlistId : null;
+            }
+            default -> null;
+        };
+        return url != null ? " [🔗](" + url + ")" : "";
     }
 
     private static String getIndexIcon(int index) {

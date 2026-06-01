@@ -30,7 +30,7 @@ public class AcquisitionService {
         List<DownloadOption> results = source.search(artist, title);
 
         boolean autoDownload = source.autoDownloadEnabled() && hasAutoDownloadOption(artist, title, results);
-        searchResultProducer.sendResults(task.chatId(), task.releaseId(), task.source(), results, autoDownload);
+        searchResultProducer.sendResults(task.conversationId(), task.releaseId(), task.source(), results, autoDownload);
     }
 
     private boolean hasAutoDownloadOption(String artist, String title, List<DownloadOption> results) {

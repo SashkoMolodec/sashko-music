@@ -33,12 +33,12 @@ public class DownloadMonitorService {
     private final DownloadBatchCompleteProducer batchCompleteProducer;
     private final Map<String, DownloadMonitorTask> activeTasks = new ConcurrentHashMap<>();
 
-    public void startMonitoring(long chatId, String releaseId, String downloadPath,
+    public void startMonitoring(String conversationId, String releaseId, String downloadPath,
                                  int expectedFileCount, String artist, String title) {
-        String taskId = releaseId + ":" + chatId;
+        String taskId = releaseId + ":" + conversationId;
 
         DownloadMonitorTask task = new DownloadMonitorTask(
-                chatId, releaseId, downloadPath, expectedFileCount, artist, title
+                conversationId, releaseId, downloadPath, expectedFileCount, artist, title
         );
 
         activeTasks.put(taskId, task);
@@ -107,7 +107,7 @@ public class DownloadMonitorService {
                     log.info("Download complete (stable): taskId={}, files={}", taskId, currentCount);
                     batchCompleteProducer.sendBatchComplete(
                             DownloadBatchCompleteDto.of(
-                                    task.chatId(),
+                                    task.conversationId(),
                                     task.releaseId(),
                                     downloadDir.toString(),
                                     audioFiles
@@ -221,7 +221,7 @@ public class DownloadMonitorService {
     }
 
     public static class DownloadMonitorTask {
-        private final long chatId;
+        private final String conversationId;
         private final String releaseId;
         private final String downloadPath;
         private final int expectedFileCount;
@@ -230,9 +230,9 @@ public class DownloadMonitorService {
         private int lastFileCount = -1;
         private int stableChecks = 0;
 
-        public DownloadMonitorTask(long chatId, String releaseId, String downloadPath,
+        public DownloadMonitorTask(String conversationId, String releaseId, String downloadPath,
                                     int expectedFileCount, String artist, String title) {
-            this.chatId = chatId;
+            this.conversationId = conversationId;
             this.releaseId = releaseId;
             this.downloadPath = downloadPath;
             this.expectedFileCount = expectedFileCount;
@@ -240,7 +240,7 @@ public class DownloadMonitorService {
             this.title = title;
         }
 
-        public long chatId() { return chatId; }
+        public String conversationId() { return conversationId; }
         public String releaseId() { return releaseId; }
         public String downloadPath() { return downloadPath; }
         public int expectedFileCount() { return expectedFileCount; }

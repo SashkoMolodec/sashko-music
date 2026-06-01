@@ -19,19 +19,19 @@ public class JpaChatStateStore implements ChatStateStore {
 
     @Override
     @Transactional(readOnly = true)
-    public <T> Optional<T> get(long chatId, String flowKey, Class<T> type) {
-        return repository.findByChatIdAndFlowKey(chatId, flowKey)
+    public <T> Optional<T> get(String conversationId, String flowKey, Class<T> type) {
+        return repository.findByConversationIdAndFlowKey(conversationId, flowKey)
                 .map(entity -> deserialise(entity.getPayload(), type));
     }
 
     @Override
     @Transactional
-    public void put(long chatId, String flowKey, Object payload) {
+    public void put(String conversationId, String flowKey, Object payload) {
         String json = serialise(payload);
-        ChatStateEntity entity = repository.findByChatIdAndFlowKey(chatId, flowKey)
+        ChatStateEntity entity = repository.findByConversationIdAndFlowKey(conversationId, flowKey)
                 .orElseGet(() -> {
                     var fresh = new ChatStateEntity();
-                    fresh.setChatId(chatId);
+                    fresh.setConversationId(conversationId);
                     fresh.setFlowKey(flowKey);
                     return fresh;
                 });
@@ -41,8 +41,8 @@ public class JpaChatStateStore implements ChatStateStore {
 
     @Override
     @Transactional
-    public void remove(long chatId, String flowKey) {
-        repository.deleteByChatIdAndFlowKey(chatId, flowKey);
+    public void remove(String conversationId, String flowKey) {
+        repository.deleteByConversationIdAndFlowKey(conversationId, flowKey);
     }
 
     @Override

@@ -33,10 +33,10 @@ public class DiscoveryAgentTools {
             """)
     public String search(
             @P("The user's search query as-is, e.g. 'паліндром 2019', 'Aphex Twin vinyl 90s'") String query,
-            @ToolMemoryId long chatId) {
+            @ToolMemoryId String conversationId) {
         for (SearchEngine engine : SearchEngine.values()) {
             try {
-                String result = runSearch(engine, query, chatId);
+                String result = runSearch(engine, query, conversationId);
                 if (!result.startsWith("no results")) {
                     log.info("Found results on {}", engine);
                     return result;
@@ -50,11 +50,11 @@ public class DiscoveryAgentTools {
     }
 
     @Tool("Returns a short summary of the user's last search in this chat — useful when the user says 'show me more like before'.")
-    public String getPreviousSearches(@ToolMemoryId long chatId) {
+    public String getPreviousSearches(@ToolMemoryId String conversationId) {
         try {
-            var request = searchContextService.getSearchRequest(chatId);
-            var source = searchContextService.getSource(chatId);
-            int count = searchContextService.getSearchResults(chatId).size();
+            var request = searchContextService.getSearchRequest(conversationId);
+            var source = searchContextService.getSource(conversationId);
+            int count = searchContextService.getSearchResults(conversationId).size();
             return "last search on %s for artist='%s' release='%s' returned %d releases"
                     .formatted(source, request.artist(), request.release(), count);
         } catch (Exception e) {
@@ -71,8 +71,8 @@ public class DiscoveryAgentTools {
         }
     }
 
-    private String runSearch(SearchEngine engine, String query, long chatId) {
-        log.info("Discovery tool: searching {} query='{}' chatId={}", engine, query, chatId);
+    String runSearch(SearchEngine engine, String query, String conversationId) {
+        log.info("Discovery tool: searching {} query='{}' conversationId={}", engine, query, conversationId);
         MetadataSearchRequest request = extractRequest(query);
         log.info("Extracted: artist='{}' release='{}' recording='{}' dateRange={} country={} format={}",
                 request.artist(), request.release(), request.recording(),
@@ -86,7 +86,7 @@ public class DiscoveryAgentTools {
         if (releases.isEmpty()) {
             return "no results on " + engine.getName();
         }
-        searchContextService.saveSearchContext(chatId, engine, query, request, releases);
+        searchContextService.saveSearchContext(conversationId, engine, query, request, releases);
         return "found %d releases on %s".formatted(releases.size(), engine.getName());
     }
 }

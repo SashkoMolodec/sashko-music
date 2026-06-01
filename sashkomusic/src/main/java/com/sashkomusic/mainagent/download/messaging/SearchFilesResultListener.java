@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.download.messaging;
 
 import com.sashkomusic.events.FileSearchResultEvent;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,6 @@ public class SearchFilesResultListener {
     public void handleSearchResults(FileSearchResultEvent event) {
         var dto = event.payload();
         var response = musicDownloadFlowService.handleSearchResults(dto);
-        response.forEach(res -> telegramBot.sendResponse(dto.chatId(), res));
+        response.forEach(res -> telegramBot.sendResponse(ConversationContext.from(dto.conversationId()), res));
     }
 }

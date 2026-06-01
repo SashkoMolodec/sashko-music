@@ -24,8 +24,8 @@ public class InMemoryChatStateStore implements ChatStateStore {
     }
 
     @Override
-    public <T> Optional<T> get(long chatId, String flowKey, Class<T> type) {
-        String json = store.get(new Key(chatId, flowKey));
+    public <T> Optional<T> get(String conversationId, String flowKey, Class<T> type) {
+        String json = store.get(new Key(conversationId, flowKey));
         if (json == null) return Optional.empty();
         try {
             return Optional.of(mapper.readValue(json, type));
@@ -35,17 +35,17 @@ public class InMemoryChatStateStore implements ChatStateStore {
     }
 
     @Override
-    public void put(long chatId, String flowKey, Object payload) {
+    public void put(String conversationId, String flowKey, Object payload) {
         try {
-            store.put(new Key(chatId, flowKey), mapper.writeValueAsString(payload));
+            store.put(new Key(conversationId, flowKey), mapper.writeValueAsString(payload));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
     }
 
     @Override
-    public void remove(long chatId, String flowKey) {
-        store.remove(new Key(chatId, flowKey));
+    public void remove(String conversationId, String flowKey) {
+        store.remove(new Key(conversationId, flowKey));
     }
 
     @Override
@@ -65,5 +65,5 @@ public class InMemoryChatStateStore implements ChatStateStore {
         store.clear();
     }
 
-    private record Key(long chatId, String flowKey) {}
+    private record Key(String conversationId, String flowKey) {}
 }

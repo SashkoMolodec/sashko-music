@@ -3,18 +3,23 @@ package com.sashkomusic.agents.contract;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 
 public record DownloadRequest(
-        long chatId,
+        String conversationId,
         String releaseId,
         String artist,
         String album,
         DownloadEngine engine
 ) implements AgentRequest {
 
-    public static DownloadRequest byReleaseId(long chatId, String releaseId) {
-        return new DownloadRequest(chatId, releaseId, null, null, null);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
     }
 
-    public static DownloadRequest byQuery(long chatId, String artist, String album) {
-        return new DownloadRequest(chatId, null, artist, album, null);
+    public static DownloadRequest byReleaseId(String conversationId, String releaseId) {
+        return new DownloadRequest(conversationId, releaseId, null, null, null);
+    }
+
+    public static DownloadRequest byQuery(String conversationId, String artist, String album) {
+        return new DownloadRequest(conversationId, null, artist, album, null);
     }
 }

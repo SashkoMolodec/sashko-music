@@ -7,5 +7,5 @@ import dev.langchain4j.service.UserMessage;
 public interface DiscoveryAgent {
 
     @SystemMessage(DiscoveryAgentPrompts.SYSTEM)
-    String chat(@MemoryId long chatId, @UserMessage String userMessage);
+    String chat(@MemoryId String conversationId, @UserMessage String userMessage);
 }

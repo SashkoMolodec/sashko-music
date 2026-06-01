@@ -14,7 +14,7 @@ public interface MusicSourcePort {
 
     String getDownloadPath(DownloadOption option);
 
-    void handleDownloadCompletion(long chatId, String releaseId, DownloadOption option, String downloadPath);
+    void handleDownloadCompletion(String conversationId, String releaseId, DownloadOption option, String downloadPath);
 
     void cancelDownload(String releaseId);
 }

@@ -1,62 +1,177 @@
 # MainAgent — Spec
 
 ## Purpose
-Router. Takes free-form Ukrainian/English user text from Telegram and decides
-which sub-agent / FlowService should handle it. Speaks to the user; sub-agents
-do not.
+Точка входу для будь-якого вільного тексту від користувача. Отримує повідомлення,
+вирішує який інструмент (якщо взагалі) викликати, повертає коротку українську відповідь.
+Тільки цей агент говорить до користувача — sub-агенти повертають результати, але не надсилають повідомлення самостійно.
 
-## Inputs
-- `long chatId` — Telegram chat id.
-- `String userMessage` — verbatim free-form text from the user.
-  (Slash commands, the literal `стоп`, and button callbacks are filtered out
-  BEFORE this agent — they never reach `MainAgent.chat`.)
+---
 
-## Outputs
-- `String` — final short Ukrainian summary line (≤120 chars, lowercase, no markdown).
-- Side-effect: zero or more `BotResponse`s pushed into `ChatResponseAccumulator`
-  by tools. Telegram bot drains accumulator AFTER `chat()` returns; if drain
-  is empty, the summary is sent on its own.
+## Місце в потоці
 
-## Model
-- `claude-sonnet-4-6` (overridable via `agents.main.model-name`)
-- `maxTokens` = 2048
-- Memory: `MessageWindowChatMemory.withMaxMessages(30)` per `chatId`
+```
+TelegramChatBot.consume()
+  └─ UserInteractionOrchestrator.handleUserRequest()
+       ├─ "стоп" → clearAllCaches
+       ├─ OngoingFlow? → handle (multi-turn)
+       ├─ slash command (/np /process /reprocess /newtopic) → FlowService
+       └─ runMainAgent(ctx, text)
+            ├─ responseAccumulator.begin(conversationId)
+            ├─ mainAgent.chat(conversationId, text)   ← ТУТ
+            │    └─ [tool calls під час chat()]
+            │         └─ sub-agent pushAll → accumulator
+            ├─ responseAccumulator.drain(conversationId) → BotResponse[]
+            └─ aiText(summary) appended if non-blank → все надсилається в Telegram
+```
 
-## Tools (every public `@Tool` on `MainAgentTools`)
+Слеш-команди, "стоп" і callback-кнопки **до цього агента не доходять** —
+вони перехоплені вище в `UserInteractionOrchestrator`.
 
-| Tool            | When to call                                         | Returns to LLM           | Side-effect pushed by sub-agent |
-|-----------------|------------------------------------------------------|--------------------------|---------------------------------|
-| `findMusic`     | Free-form discovery request                          | "знайшов 5 релізів…"     | release cards (via `DiscoveryAgentService`) |
-| `downloadMusic` | Explicit "скачай / завантаж / download" verb         | "почав качати…"          | progress text (via `DownloadAgentService`) |
-| `manageLibrary` | Rate / tag / comment for currently-playing track     | "оцінив на 5"            | confirmation text (via `LibraryAgentService`) |
+---
 
-Streaming links are intentionally NOT a tool. The user clicks the 🎧 button on
-a release card; that fires `STREAM:` → `CallbackDispatcher` → `StreamingFlowService`
-directly, bypassing the LLM. Don't re-introduce a tool for it — it would just
-duplicate the button path and burn tokens.
+## LangChain4j interface
+
+```java
+public interface MainAgent {
+    @SystemMessage(MainAgentPrompts.SYSTEM)
+    String chat(@MemoryId String conversationId, @UserMessage String userMessage);
+}
+```
+
+| Параметр        | Значення                                                              |
+|-----------------|-----------------------------------------------------------------------|
+| `conversationId`| `"chatId"` для DM/General, `"chatId:topicId"` для групового топіку   |
+| `userMessage`   | Вербатимний текст від користувача                                      |
+| Return          | Коротка укр. відповідь (≤120 символів, lowercase, без markdown)        |
+
+---
+
+## Модель і пам'ять
+
+| Параметр         | Значення                                                                       |
+|------------------|--------------------------------------------------------------------------------|
+| Модель           | `claude-sonnet-4-6` (override: `agents.main.model-name`)                       |
+| maxTokens        | 2048 (override: `agents.main.max-tokens`)                                      |
+| Memory window    | `MessageWindowChatMemory.maxMessages(32)` — приблизно 10–16 ходів розмови     |
+| Memory store     | `PostgresChatMemoryStore` → таблиця `conversation_messages`                    |
+| Memory ID        | `conversationId` (наприклад `"-1003551198668"` або `"-1003551198668:42"`)      |
+| Prompt caching   | `cacheSystemMessages=true`, `cacheTools=true`                                  |
+
+**Про вікно:** хід без tool-call = 2 повідомлення (USER+AI). Хід з tool-call = 4
+(USER + AI(tool_use) + TOOL_RESULT + AI(text)). При переповненні LangChain4j
+автоматично витискає найстаріші повідомлення. DiscoveryAgent має **окремий** memory ID
+(`conversationId + ":d"`) щоб їх message history не перемішувалась.
+
+---
+
+## Tools (`MainAgentTools`)
+
+| Tool                  | Коли викликати                                                   | Що повертає LLM-у                       | Side-effect в accumulator                     |
+|-----------------------|------------------------------------------------------------------|-----------------------------------------|-----------------------------------------------|
+| `findMusic`           | Загальний discovery без конкретного джерела                      | formatted release list або summary      | release cards (через `DiscoveryAgentService`) |
+| `findMusicOnDiscogs`  | Юзер явно каже "discogs" / "дискогс"                             | formatted release list або summary      | release cards                                 |
+| `findMusicOnBandcamp` | Юзер явно каже "bandcamp" / "бандкемп"                           | formatted release list або summary      | release cards                                 |
+| `findMusicOnMusicBrainz`| Юзер явно каже "musicbrainz"                                   | formatted release list або summary      | release cards                                 |
+| `digDeeper`           | Юзер каже "копай" / "ще копай" / "dig deeper" / "try another"   | formatted release list або summary      | release cards                                 |
+| `downloadMusic`       | Явний "скачай / завантаж / download"                             | summary від `DownloadAgentService`      | progress text + download options              |
+| `discussRelease`      | Питання про щойно знайдений реліз (треки, жанр, рік)            | formatted release info                  | нічого                                        |
+| `manageLibrary`       | Rate/energy/function/comment для поточного треку                 | summary від `LibraryAgentService`       | confirmation text                             |
+
+### Search tools — спільна реалізація
+Всі 5 search tools делегують у `runDiscovery(DiscoverRequest)` → `DiscoveryAgentService.handle()`.
+Різниця тільки в `preferredEngine` поля `DiscoverRequest`.
+
+### `findMusic`
+1. `ProgressNotifier.notify(ctx, "🔍 шукаю...")`
+2. `DiscoverRequest.of(conversationId, query)` — `preferredEngine = null`
+3. `DiscoveryAgentService` → LLM path (MusicBrainz → Discogs → Bandcamp, зупиняється на першому хіті)
+
+### `findMusicOnDiscogs` / `findMusicOnBandcamp` / `findMusicOnMusicBrainz`
+1. `ProgressNotifier.notify(ctx, "🔍 шукаю на <engine>...")`
+2. `DiscoverRequest.of(conversationId, query, engine)` — `preferredEngine` заповнений
+3. `DiscoveryAgentService` → **direct path** (обходить LLM, кличе engine напряму)
+
+### `digDeeper`
+1. Читає з `SearchContextService`: `getRawInput(conversationId)` + `getSource(conversationId)`
+2. Якщо попереднього пошуку нема → повертає `"нема попереднього пошуку — спочатку знайди щось"`
+3. `nextEngine = SearchEngine.values()[(lastEngine.ordinal() + 1) % engines.length]`
+   (цикл: MusicBrainz → Discogs → Bandcamp → MusicBrainz → …)
+4. `ProgressNotifier.notify(ctx, "🔍 копаю на <nextEngine>...")`
+5. `DiscoverRequest.of(conversationId, lastRawQuery, nextEngine)` → direct path
+
+### `downloadMusic`
+1. `ProgressNotifier.notify(ctx, "⏳ шукаю на soulseek...")`
+2. `DownloadAgentService.handle(DownloadRequest.byQuery(conversationId, artist, album))`
+3. Fire-and-forget — результат прийде через async event (`DownloadBatchCompleteEvent`)
+
+### `discussRelease`
+- Читає `SearchContextService.getSearchResults(conversationId)` (in-memory)
+- Немає контексту → `"no release context — user should search first"`
+- Підвантажує треклист через `getMetadataWithTracks` якщо потрібно
+
+### `manageLibrary`
+- `LibraryAgentService.handle(LibraryRequest.of(conversationId, command))`
+- Потребує активного `/np` сесії (трек збережений в `DjTagContextHolder`)
+
+---
+
+## Bridge: ChatResponseAccumulator
+
+```
+runMainAgent():
+  1. accumulator.begin(conversationId)     ← очищає stale стан
+  2. mainAgent.chat(...)                   ← під час виконання:
+       tool calls → sub-agents → accumulator.pushAll(conversationId, responses)
+  3. drained = accumulator.drain(id)       ← забираємо всі BotResponse-и
+  4. if summary non-blank → append aiText(summary)
+  5. send all to Telegram via TelegramChatBot.sendResponse()
+```
+
+`ProgressNotifier` обходить accumulator — надсилає через `TelegramClient` напряму,
+щоб користувач бачив "шукаю..." ще до того як LLM завершить обробку.
+
+---
+
+## Async events (fire-and-forget)
+
+Деякі операції не повертають результат синхронно — замість цього публікується Spring event:
+
+```
+downloadMusic tool → DownloadAgentService → MusicDownloadFlowService
+  └─ publishes FilesSearchTaskEvent
+       └─ downloadagent listener → ... → DownloadBatchCompleteEvent
+            └─ mainagent DownloadBatchCompleteListener
+                 └─ chatBot.sendMessage(ConversationContext.from(dto.conversationId()), msg)
+```
+
+Всі async DTOs несуть `conversationId` (рядок), а listener реконструює
+`ConversationContext.from(conversationId)` щоб надіслати відповідь у правильний топік.
+
+---
 
 ## Hard rules
-1. Pick **exactly one** tool when the request matches one.
-2. Never call a tool with parameters the user did not mention (no hallucinated
-   artists / albums).
-3. Small talk / unclear → short Ukrainian reply, **no tool call**.
-4. Never narrate search results yourself — the tool already pushed cards.
-5. Reply ≤120 chars, lowercase, no markdown.
-6. Speaking to Telegram is **this agent's job only**. Sub-agents return
-   records / push `BotResponse`s — they never construct a `BotResponse` for direct send.
-7. Main does NOT know about UI rendering. Tools call `*AgentService.handle(*Request)`
-   and return the `summary` field. Sub-agent is responsible for pushing
-   `BotResponse`s into the accumulator. If you find yourself injecting a
-   `*FlowService` or `ChatResponseAccumulator` into `MainAgentTools`, you're
-   leaking sub-agent responsibility upward — push it down instead.
+1. Викликати **рівно один** інструмент якщо запит підходить.
+2. Не вигадувати параметри — тільки те що сказав користувач.
+3. Small talk / незрозуміло → коротка відповідь, **без tool call**.
+4. Не описувати release картки в тексті — вони вже в accumulator.
+5. Відповідь ≤120 символів, lowercase, без markdown.
+6. Тільки MainAgent говорить до користувача. Sub-агенти → records/pushAll.
+7. Не інжектувати `FlowService` або `ChatResponseAccumulator` в `MainAgentTools` —
+   тільки через sub-agent services.
+
+---
 
 ## Out of scope
-- Anything the user did via a button (handled by `CallbackDispatcher` upstream).
-- Anything triggered by a slash command (handled by `UserInteractionOrchestrator` upstream).
-- Maintaining cross-chat memory (each `chatId` has its own window).
+- Callback-кнопки (`DL:`, `RATE:`, `STREAM:`, `CARD:`) → `CallbackDispatcher`
+- Slash-команди → `UserInteractionOrchestrator`
+- Cross-conversation пам'ять (кожен `conversationId` — окреме вікно)
+- Рендеринг UI — тільки push `BotResponse` в accumulator
 
-## SDD checkpoints (change here BEFORE code)
-- New user intent → does it map to an existing tool, or do you need a new `@Tool`?
-- New tool → declare here first: name, when-to-call, return shape, accumulator effect.
-- Cost concerns → flip model to Haiku via `agents.main.model-name`; assess token
-  spend via `AgentTraceListener` logs (`[agent=main] tokensIn/tokensOut`).
+---
+
+## SDD checkpoints (змінювати spec ДО коду)
+- Новий user intent → потрібен новий `@Tool`? Або покривається існуючим?
+- Новий `@Tool` → описати: назва, умова виклику, параметри, return, side-effect.
+- Зміна contract sub-агента → оновити відповідну секцію Tools.
+- Великий cost → перемикнути на Haiku через `agents.main.model-name`;
+  моніторинг через `[agent=main]` trace logs.

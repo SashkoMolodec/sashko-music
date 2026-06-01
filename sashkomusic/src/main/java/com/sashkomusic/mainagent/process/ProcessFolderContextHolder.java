@@ -13,8 +13,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ProcessFolderContextHolder {
 
     private final Map<String, ProcessFolderContext> contexts = new ConcurrentHashMap<>();
-    private final Map<Long, List<String>> chatReleaseIds = new ConcurrentHashMap<>();
-    private final Map<Long, String> chatContextKeys = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> convReleaseIds = new ConcurrentHashMap<>();
+    private final Map<String, String> convContextKeys = new ConcurrentHashMap<>();
 
     public record ProcessFolderContext(
             String directoryPath,
@@ -29,20 +29,20 @@ public class ProcessFolderContextHolder {
         contexts.put(contextKey, new ProcessFolderContext(directoryPath, audioFiles));
     }
 
-    public void storeReleaseIds(long chatId, List<String> releaseIds) {
-        chatReleaseIds.put(chatId, releaseIds);
+    public void storeReleaseIds(String conversationId, List<String> releaseIds) {
+        convReleaseIds.put(conversationId, releaseIds);
     }
 
-    public void storeChatContext(long chatId, String contextKey) {
-        chatContextKeys.put(chatId, contextKey);
+    public void storeChatContext(String conversationId, String contextKey) {
+        convContextKeys.put(conversationId, contextKey);
     }
 
-    public String getChatContextKey(long chatId) {
-        return chatContextKeys.get(chatId);
+    public String getChatContextKey(String conversationId) {
+        return convContextKeys.get(conversationId);
     }
 
-    public String getReleaseIdByOption(long chatId, int optionNumber) {
-        List<String> releases = chatReleaseIds.get(chatId);
+    public String getReleaseIdByOption(String conversationId, int optionNumber) {
+        List<String> releases = convReleaseIds.get(conversationId);
         if (releases == null || optionNumber < 1 || optionNumber > releases.size()) {
             return null;
         }
@@ -57,19 +57,19 @@ public class ProcessFolderContextHolder {
         contexts.remove(contextKey);
     }
 
-    public void clearChatSelection(long chatId) {
-        chatReleaseIds.remove(chatId);
-        chatContextKeys.remove(chatId);
+    public void clearChatSelection(String conversationId) {
+        convReleaseIds.remove(conversationId);
+        convContextKeys.remove(conversationId);
     }
 
     public void clearAllContexts() {
         int contextsCount = contexts.size();
-        int releaseIdsCount = chatReleaseIds.size();
-        int contextKeysCount = chatContextKeys.size();
+        int releaseIdsCount = convReleaseIds.size();
+        int contextKeysCount = convContextKeys.size();
 
         contexts.clear();
-        chatReleaseIds.clear();
-        chatContextKeys.clear();
+        convReleaseIds.clear();
+        convContextKeys.clear();
 
         log.info("Cleared all process contexts: {} contexts, {} release mappings, {} chat mappings",
                 contextsCount, releaseIdsCount, contextKeysCount);

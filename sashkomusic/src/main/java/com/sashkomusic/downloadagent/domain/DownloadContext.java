@@ -19,10 +19,10 @@ public class DownloadContext {
 
     private final ConcurrentHashMap<String, DownloadBatch> batches = new ConcurrentHashMap<>();
 
-    public void registerBatch(long chatId, String releaseId, List<String> filenames, DownloadEngine source) {
+    public void registerBatch(String conversationId, String releaseId, List<String> filenames, DownloadEngine source) {
         String remoteDirectoryPath = filenames.isEmpty() ? "" : extractDirectory(filenames.getFirst());
 
-        DownloadBatch batch = new DownloadBatch(chatId, releaseId, remoteDirectoryPath, filenames, source);
+        DownloadBatch batch = new DownloadBatch(conversationId, releaseId, remoteDirectoryPath, filenames, source);
         batches.put(releaseId, batch);
 
         log.info("Registered download batch: releaseId={}, directory={}, source={}, files={}",

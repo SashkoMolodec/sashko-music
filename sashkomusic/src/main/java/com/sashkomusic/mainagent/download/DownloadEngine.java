@@ -7,7 +7,8 @@ public enum DownloadEngine {
     SOULSEEK("soulseek"),
     QOBUZ("qobuz"),
     APPLE_MUSIC("apple music"),
-    BANDCAMP("bandcamp");
+    BANDCAMP("bandcamp"),
+    YOUTUBE_MUSIC("youtube music");
 
     final String name;
 

@@ -26,7 +26,8 @@ public class TelegramCommandsConfig {
             List<BotCommand> commands = List.of(
                     new BotCommand("np", "шо наразі грає"),
                     new BotCommand("process", "обробити папку з музикою (вкажи назву папки)"),
-                    new BotCommand("reprocess", "переобробити релізи (шлях або all, опції: --skip-retag --force)")
+                    new BotCommand("reprocess", "переобробити релізи (шлях або all, опції: --skip-retag --force)"),
+                    new BotCommand("newtopic", "створити новий топік з поточного контексту (опційно: назва)")
             );
 
             SetMyCommands setMyCommands = SetMyCommands.builder()

@@ -10,6 +10,7 @@ import com.sashkomusic.agents.contract.LibraryResult;
 import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.download.DownloadAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
@@ -32,12 +33,57 @@ public class MainAgentTools {
     private final ProgressNotifier progressNotifier;
     private final SearchContextService searchContextService;
 
-    @Tool("Search for music — artist, album or track. Use for free-form discovery requests.")
+    @Tool("Search for music — artist, album or track. Use for free-form discovery requests. Tries MusicBrainz → Discogs → Bandcamp, stops at first hit.")
     public String findMusic(
-            @P("user's full query, e.g. 'Burial new album', 'Aphex Twin discogs', 'копай'") String query,
-            @ToolMemoryId long chatId) {
-        progressNotifier.notify(chatId, "🔍 шукаю...");
-        DiscoverResult result = discoveryAgent.handle(DiscoverRequest.of(chatId, query));
+            @P("user's full query, e.g. 'Burial new album', 'Aphex Twin discography'") String query,
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "🔍 шукаю...");
+        return runDiscovery(DiscoverRequest.of(conversationId, query));
+    }
+
+    @Tool("Search for music specifically on Discogs. Use when user explicitly mentions Discogs or asks to search there.")
+    public String findMusicOnDiscogs(
+            @P("user's search query") String query,
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "🔍 шукаю на Discogs...");
+        return runDiscovery(DiscoverRequest.of(conversationId, query, SearchEngine.DISCOGS));
+    }
+
+    @Tool("Search for music specifically on Bandcamp. Use when user explicitly mentions Bandcamp or asks to search there.")
+    public String findMusicOnBandcamp(
+            @P("user's search query") String query,
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "🔍 шукаю на Bandcamp...");
+        return runDiscovery(DiscoverRequest.of(conversationId, query, SearchEngine.BANDCAMP));
+    }
+
+    @Tool("Search for music specifically on MusicBrainz. Use when user explicitly mentions MusicBrainz or asks to search there.")
+    public String findMusicOnMusicBrainz(
+            @P("user's search query") String query,
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "🔍 шукаю на MusicBrainz...");
+        return runDiscovery(DiscoverRequest.of(conversationId, query, SearchEngine.MUSICBRAINZ));
+    }
+
+    @Tool("Dig deeper — search the same query on the next source. Use when user says 'копай', 'ще копай', 'try another source', 'dig deeper'.")
+    public String digDeeper(@ToolMemoryId String conversationId) {
+        String lastQuery;
+        SearchEngine lastEngine;
+        try {
+            lastQuery = searchContextService.getRawInput(conversationId);
+            lastEngine = searchContextService.getSource(conversationId);
+        } catch (Exception e) {
+            return "нема попереднього пошуку — спочатку знайди щось";
+        }
+        SearchEngine[] engines = SearchEngine.values();
+        SearchEngine nextEngine = engines[(lastEngine.ordinal() + 1) % engines.length];
+        progressNotifier.notify(ConversationContext.from(conversationId),
+                "🔍 копаю на " + nextEngine.getName() + "...");
+        return runDiscovery(DiscoverRequest.of(conversationId, lastQuery, nextEngine));
+    }
+
+    private String runDiscovery(DiscoverRequest request) {
+        DiscoverResult result = discoveryAgent.handle(request);
         if (!result.releases().isEmpty()) {
             return formatReleasesForSonnet(result.releases(), result.engineUsed());
         }
@@ -67,19 +113,19 @@ public class MainAgentTools {
     public String downloadMusic(
             @P("artist name") String artist,
             @P("album / release title") String album,
-            @ToolMemoryId long chatId) {
-        progressNotifier.notify(chatId, "⏳ шукаю на soulseek...");
-        DownloadResult result = downloadAgent.handle(DownloadRequest.byQuery(chatId, artist, album));
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "⏳ шукаю на soulseek...");
+        DownloadResult result = downloadAgent.handle(DownloadRequest.byQuery(conversationId, artist, album));
         return result.summary();
     }
 
     @Tool("Get details about the release the user just found and answer their question — tracks, genre, year, label, music history context. Use when the user asks about the album/artist they already found, NOT to start a new search.")
     public String discussRelease(
             @P("user's question, e.g. 'які треки?', 'в якому жанрі?', 'що тоді грали'") String question,
-            @ToolMemoryId long chatId) {
+            @ToolMemoryId String conversationId) {
         List<ReleaseMetadata> results;
         try {
-            results = searchContextService.getSearchResults(chatId);
+            results = searchContextService.getSearchResults(conversationId);
         } catch (Exception e) {
             return "no release context — user should search first";
         }
@@ -88,7 +134,7 @@ public class MainAgentTools {
         }
 
         ReleaseMetadata release = results.getFirst();
-        ReleaseMetadata withTracks = searchContextService.getMetadataWithTracks(release.id(), chatId);
+        ReleaseMetadata withTracks = searchContextService.getMetadataWithTracks(release.id(), conversationId);
         if (withTracks != null) release = withTracks;
 
         StringBuilder sb = new StringBuilder();
@@ -113,8 +159,8 @@ public class MainAgentTools {
     @Tool("Apply a library operation to the currently-playing track: rate, set energy, set function, or add comment.")
     public String manageLibrary(
             @P("user's natural-language command, e.g. 'rate 5', 'energy 3', 'мракнути банжер', 'коментар крутий'") String command,
-            @ToolMemoryId long chatId) {
-        LibraryResult result = libraryAgent.handle(LibraryRequest.of(chatId, command));
+            @ToolMemoryId String conversationId) {
+        LibraryResult result = libraryAgent.handle(LibraryRequest.of(conversationId, command));
         return result.summary();
     }
 }

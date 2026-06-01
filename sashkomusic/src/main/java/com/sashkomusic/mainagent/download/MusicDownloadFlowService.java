@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.download;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.search.SearchEngine;
@@ -34,7 +35,7 @@ public class MusicDownloadFlowService {
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers;
 
-    public List<BotResponse> handleDownload(long chatId, String data) {
+    public List<BotResponse> handleDownload(ConversationContext ctx, String data) {
         if (data.startsWith("DL:")) {
             String releaseId = data.substring(3);
             log.info("User selected release ID: {}", releaseId);
@@ -43,20 +44,20 @@ public class MusicDownloadFlowService {
             if (metadata == null) {
                 return List.of(BotResponse.text("❌ шось ся не получило...найди реліз ше раз"));
             }
-            return initiateDefaultDownloadSearch(chatId, metadata);
+            return initiateDefaultDownloadSearch(ctx, metadata);
         }
 
         return List.of(BotResponse.text("тєжко."));
     }
 
-    private List<BotResponse> initiateDefaultDownloadSearch(long chatId, ReleaseMetadata metadata) {
-        return initiateDownloadSearch(chatId, metadata, DownloadEngine.QOBUZ);
+    private List<BotResponse> initiateDefaultDownloadSearch(ConversationContext ctx, ReleaseMetadata metadata) {
+        return initiateDownloadSearch(ctx, metadata, DownloadEngine.QOBUZ);
     }
 
-    private List<BotResponse> initiateDownloadSearch(long chatId, ReleaseMetadata metadata, DownloadEngine source) {
+    private List<BotResponse> initiateDownloadSearch(ConversationContext ctx, ReleaseMetadata metadata, DownloadEngine source) {
         log.info("Initiating download search for: {} - {}", metadata.artist(), metadata.title());
 
-        searchFilesProducer.send(SearchFilesTaskDto.of(chatId, metadata.id(), metadata.artist(), metadata.title(), source));
+        searchFilesProducer.send(SearchFilesTaskDto.of(ctx.conversationId(), metadata.id(), metadata.artist(), metadata.title(), source));
 
         return List.of(BotResponse.text(
                 "🔎 шукаю опції завантаження (%s): _%s - %s_".formatted(
@@ -67,14 +68,14 @@ public class MusicDownloadFlowService {
     }
 
     public List<BotResponse> handleSearchResults(SearchFilesResultDto dto) {
-        log.info("Processing search results for chatId={}, releaseId={}, source={}, results count={}",
-                dto.chatId(), dto.releaseId(), dto.source(), dto.results().size());
+        log.info("Processing search results for conversationId={}, releaseId={}, source={}, results count={}",
+                dto.conversationId(), dto.releaseId(), dto.source(), dto.results().size());
 
         var flowHandler = downloadFlowHandlers.get(dto.source());
 
-        var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.chatId());
+        var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.conversationId());
         var reports = analysisResult.reports();
-        downloadContextHolder.saveDownloadOptions(dto.chatId(), dto.releaseId(), reports);
+        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), reports);
 
         reports.forEach(r -> log.info("{}", r));
 
@@ -91,20 +92,20 @@ public class MusicDownloadFlowService {
         var option = chosenReport.option();
 
         log.info("Auto-downloading from {}: {}", option.source(), option.displayName());
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(dto.chatId(), dto.releaseId(), option));
+        downloadTaskProducer.send(DownloadFilesTaskDto.of(dto.conversationId(), dto.releaseId(), option));
 
         var flowHandler = downloadFlowHandlers.get(option.source());
         return List.of(flowHandler.buildAutoDownloadResponse(option, dto.releaseId()));
     }
 
-    public List<BotResponse> handleDownloadOption(long chatId, String rawInput) {
-        var reports = downloadContextHolder.getDownloadOptions(chatId);
+    public List<BotResponse> handleDownloadOption(ConversationContext ctx, String rawInput) {
+        var reports = downloadContextHolder.getDownloadOptions(ctx.conversationId());
         if (reports.isEmpty()) {
             return List.of(BotResponse.text("😔 **варіанти пропали, нич нема, давай ше раз.**"));
         }
 
         if (rawInput.trim().equals("-")) {
-            downloadContextHolder.clearSession(chatId);
+            downloadContextHolder.clearSession(ctx.conversationId());
             return List.of(BotResponse.text("❌ скасовано"));
         }
 
@@ -115,12 +116,12 @@ public class MusicDownloadFlowService {
 
         var chosenReport = reports.get(optionNumber - 1);
         var option = chosenReport.option();
-        String releaseId = downloadContextHolder.getChosenRelease(chatId);
+        String releaseId = downloadContextHolder.getChosenRelease(ctx.conversationId());
 
         log.info("User chose option #{}: {} from {}", optionNumber, option.id(), option.displayName());
 
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(chatId, releaseId, option));
-        downloadContextHolder.clearSession(chatId);
+        downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
+        downloadContextHolder.clearSession(ctx.conversationId());
 
         var flowHandler = downloadFlowHandlers.get(option.source());
         String message = flowHandler.formatDownloadConfirmation(option);
@@ -135,8 +136,8 @@ public class MusicDownloadFlowService {
         }
     }
 
-    public List<BotResponse> getDownloadOptions(long chatId, String query) {
-        log.info("Direct download request for chatId={}, query: {}", chatId, query);
+    public List<BotResponse> getDownloadOptions(ConversationContext ctx, String query) {
+        log.info("Direct download request for conversationId={}, query: {}", ctx.conversationId(), query);
 
         var searchResult = releaseSearchFlowService.searchWithFallback(query, SearchEngine.MUSICBRAINZ, SearchEngine.DISCOGS);
 
@@ -148,28 +149,28 @@ public class MusicDownloadFlowService {
         log.info("Auto-selected release: {} - {} from {}",
                 selectedRelease.artist(), selectedRelease.title(), searchResult.engine());
 
-        contextService.saveSearchContext(chatId, searchResult.engine(), query,
+        contextService.saveSearchContext(ctx.conversationId(), searchResult.engine(), query,
                 searchResult.searchRequest(), searchResult.releases());
         contextService.saveReleaseMetadata(selectedRelease);
 
         List<BotResponse> responses = new ArrayList<>();
         responses.add(releaseSearchFlowService.buildReleaseDownloadCard(selectedRelease, searchResult.engine()));
-        responses.addAll(initiateDefaultDownloadSearch(chatId, selectedRelease));
+        responses.addAll(initiateDefaultDownloadSearch(ctx, selectedRelease));
 
         return responses;
     }
 
-    public List<BotResponse> handleDownloadCancel(long chatId, String data) {
+    public List<BotResponse> handleDownloadCancel(ConversationContext ctx, String data) {
         String releaseId = data.substring("CANCEL_DL:".length());
         log.info("User requested cancel for releaseId={}", releaseId);
 
-        downloadCancelTaskProducer.send(DownloadCancelTaskDto.of(chatId, releaseId));
+        downloadCancelTaskProducer.send(DownloadCancelTaskDto.of(ctx.conversationId(), releaseId));
 
         return List.of(BotResponse.text("⏳ **скасовую...**"));
     }
 
 
-    public List<BotResponse> handleSearchAlternative(long chatId, String data) {
+    public List<BotResponse> handleSearchAlternative(ConversationContext ctx, String data) {
         int lastColonIndex = data.lastIndexOf(':');
         if (lastColonIndex == -1 || lastColonIndex <= "SEARCH_ALT:".length()) {
             return List.of(BotResponse.text("❌ шось не то з командою"));
@@ -186,6 +187,6 @@ public class MusicDownloadFlowService {
         }
 
         var source = DownloadEngine.valueOf(sourceName);
-        return initiateDownloadSearch(chatId, metadata, source);
+        return initiateDownloadSearch(ctx, metadata, source);
     }
 }

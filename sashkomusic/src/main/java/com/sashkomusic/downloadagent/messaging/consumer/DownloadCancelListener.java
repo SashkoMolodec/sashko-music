@@ -20,7 +20,7 @@ public class DownloadCancelListener {
     @Async
     public void handleCancelTask(DownloadCancelTaskEvent event) {
         DownloadCancelTaskDto dto = event.payload();
-        log.info("Received cancel download task: chatId={}, releaseId={}", dto.chatId(), dto.releaseId());
-        downloadService.cancelDownload(dto.chatId(), dto.releaseId());
+        log.info("Received cancel download task: conversationId={}, releaseId={}", dto.conversationId(), dto.releaseId());
+        downloadService.cancelDownload(dto.conversationId(), dto.releaseId());
     }
 }

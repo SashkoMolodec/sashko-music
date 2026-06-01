@@ -23,12 +23,12 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
     private final SearchContextService contextService;
 
     @Override
-    public AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, long chatId) {
+    public AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, String conversationId) {
         if (options.isEmpty()) {
             return new AnalysisResult(List.of(), "");
         }
 
-        final var enrichedMetadata = contextService.getMetadataWithTracks(releaseId, chatId);
+        final var enrichedMetadata = contextService.getMetadataWithTracks(releaseId, conversationId);
         var reports = options.stream()
                 .map(opt -> new OptionReport(opt, resolveSuitabilityLevel(opt, enrichedMetadata)))
                 .sorted(Comparator.comparing(OptionReport::suitability))

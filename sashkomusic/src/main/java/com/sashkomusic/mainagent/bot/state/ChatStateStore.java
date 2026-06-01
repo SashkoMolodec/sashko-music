@@ -3,19 +3,17 @@ package com.sashkomusic.mainagent.bot.state;
 import java.util.Optional;
 
 /**
- * Per-chat conversation state. Each entry is keyed by (chatId, flowKey)
- * and stores a JSON-serialisable payload.
- * <p>
- * Use one stable {@code flowKey} per ContextHolder (e.g. "dj_tag", "download", "search").
- * Default Spring impl ({@link JpaChatStateStore}) persists to Postgres so state survives restart.
+ * Per-conversation state store. Keyed by (conversationId, flowKey).
+ * conversationId = chatId for DMs, "chatId:topicId" for group topics.
+ * Persisted to Postgres; survives JVM restart.
  */
 public interface ChatStateStore {
 
-    <T> Optional<T> get(long chatId, String flowKey, Class<T> type);
+    <T> Optional<T> get(String conversationId, String flowKey, Class<T> type);
 
-    void put(long chatId, String flowKey, Object payload);
+    void put(String conversationId, String flowKey, Object payload);
 
-    void remove(long chatId, String flowKey);
+    void remove(String conversationId, String flowKey);
 
     int clearAll(String flowKey);
 }

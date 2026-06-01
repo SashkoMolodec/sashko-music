@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.TagChangesNotificationEvent;
 import com.sashkomusic.libraryagent.messaging.producer.dto.TagChangesNotificationDto;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.mainagent.library.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,9 @@ public class TagChangesNotificationListener {
     @Value("${telegram.default-chat-id}")
     private Long defaultChatId;
 
+    @Value("${telegram.default-topic-id:#{null}}")
+    private Integer defaultTopicId;
+
     @EventListener
     @Async
     public void handleTagChanges(TagChangesNotificationEvent event) {
@@ -30,7 +34,10 @@ public class TagChangesNotificationListener {
                 notification.tracks().size(), notification.totalChanges());
 
         String message = buildNotificationMessage(notification);
-        chatBot.sendMessage(defaultChatId, message);
+        ConversationContext ctx = defaultTopicId != null
+                ? ConversationContext.topic(defaultChatId, defaultTopicId)
+                : ConversationContext.dm(defaultChatId);
+        chatBot.sendMessage(ctx, message);
         syncRatingToNavidrome(notification);
     }
 

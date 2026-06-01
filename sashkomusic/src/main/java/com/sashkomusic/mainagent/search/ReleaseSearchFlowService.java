@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.search;
 
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
@@ -22,51 +23,51 @@ import java.util.stream.Stream;
 @Slf4j
 @RequiredArgsConstructor
 public class ReleaseSearchFlowService {
-    private static final int PAGE_SIZE = 3;
 
     private final SearchRequestExtractor searchRequestExtractor;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
     private final SearchContextService contextService;
+    private final FileIdCacheService fileIdCacheService;
 
-    public List<BotResponse> searchDefault(long chatId, String rawInput) {
+    public List<BotResponse> searchDefault(ConversationContext ctx, String rawInput) {
         var searchRequest = searchRequestExtractor.extract(rawInput);
         for (SearchEngine engine : SearchEngine.values()) {
             log.info("Trying to search in {}", engine);
 
             var releases = searchEngines.get(engine).searchReleases(searchRequest);
             if (!releases.isEmpty()) {
-                contextService.saveSearchContext(chatId, engine, rawInput, searchRequest, releases);
-                return buildPageResponse(chatId, 0);
+                contextService.saveSearchContext(ctx.conversationId(), engine, rawInput, searchRequest, releases);
+                return buildPageResponse(ctx, 0);
             }
         }
         var buttons = buildEmptyResultsButtons(searchRequest);
         return List.of(BotResponse.withButtons("😔 нич не знайшов.", buttons));
     }
 
-    public List<BotResponse> search(long chatId, String rawInput, SearchEngine searchEngine) {
+    public List<BotResponse> search(ConversationContext ctx, String rawInput, SearchEngine searchEngine) {
         log.info("Searching with engine: {}", searchEngine);
         var searchRequest = searchRequestExtractor.extract(rawInput);
 
         var engine = searchEngines.get(searchEngine);
         var releases = engine.searchReleases(searchRequest);
 
-        contextService.saveSearchContext(chatId, searchEngine, rawInput, searchRequest, releases);
+        contextService.saveSearchContext(ctx.conversationId(), searchEngine, rawInput, searchRequest, releases);
 
         if (releases.isEmpty()) {
             var buttons = buildEmptyResultsButtons(searchRequest);
             return List.of(BotResponse.withButtons("😔 нич не знайшов в тому %s.".formatted(engine.getName()), buttons));
         }
-        return buildPageResponse(chatId, 0);
+        return buildPageResponse(ctx, 0);
     }
 
-    public List<BotResponse> switchStrategyAndSearch(long chatId) {
-        SearchEngine currentEngine = contextService.getSource(chatId);
-        String rawInput = contextService.getRawInput(chatId);
+    public List<BotResponse> switchStrategyAndSearch(ConversationContext ctx) {
+        SearchEngine currentEngine = contextService.getSource(ctx.conversationId());
+        String rawInput = contextService.getRawInput(ctx.conversationId());
 
         if (currentEngine == SearchEngine.MUSICBRAINZ) {
-            return search(chatId, rawInput, SearchEngine.DISCOGS);
+            return search(ctx, rawInput, SearchEngine.DISCOGS);
         } else if (currentEngine == SearchEngine.DISCOGS) {
-            return search(chatId, rawInput, SearchEngine.BANDCAMP);
+            return search(ctx, rawInput, SearchEngine.BANDCAMP);
         } else {
             return List.of(BotResponse.text("😔 глибше нікуди, вшьо."));
         }
@@ -94,55 +95,56 @@ public class ReleaseSearchFlowService {
                                MetadataSearchRequest searchRequest) {
     }
 
-    public List<BotResponse> handlePageCallback(long chatId, String callbackData) {
-        int page = Integer.parseInt(callbackData.substring("PAGE:".length()));
-        return buildPageResponse(chatId, page);
+    public List<BotResponse> handleCardCallback(ConversationContext ctx, String callbackData, Integer messageId) {
+        int index = Integer.parseInt(callbackData.substring("CARD:".length()));
+        var releases = contextService.getSearchResults(ctx.conversationId());
+        if (releases.isEmpty()) {
+            return List.of(BotResponse.text("результатів вже нема."));
+        }
+        int safeIndex = Math.floorMod(index, releases.size());
+        var release = releases.get(safeIndex);
+        var rows = buildCardButtonRows(release, safeIndex, releases.size());
+        String text = buildCardText(release, safeIndex, releases.size());
+        String imageRef = fileIdCacheService.get(ctx.conversationId(), release.getCoverArtUrl())
+                .map(fid -> "FILE_ID:" + fid)
+                .orElse(release.getCoverArtUrl());
+
+        if (messageId == null) {
+            return List.of(BotResponse.cardWithRows(text, release.getCoverArtUrl(), rows));
+        }
+        return List.of(BotResponse.editCard(messageId, text, imageRef, rows));
     }
 
-    public List<BotResponse> buildPageResponse(long chatId, int page) {
-        var releases = contextService.getSearchResults(chatId);
-        var searchRequest = contextService.getSearchRequest(chatId);
-        var responses = new ArrayList<BotResponse>();
-
-        int start = page * PAGE_SIZE;
-        if (start >= releases.size()) {
-            return List.of(BotResponse.text("більше результатів немає."));
+    public List<BotResponse> buildPageResponse(ConversationContext ctx, int page) {
+        var releases = contextService.getSearchResults(ctx.conversationId());
+        if (releases.isEmpty()) {
+            return List.of(BotResponse.text("результатів немає."));
         }
-
-        if (page > 0) {
-            responses.add(BotResponse.text("📄 сторінка %d".formatted(page + 1)));
-        }
-
-        int end = Math.min(start + PAGE_SIZE, releases.size());
-        for (int i = start; i < end; i++) {
-            var release = releases.get(i);
-            responses.add(buildReleaseCard(release, searchRequest));
-        }
-
-        if (end < releases.size()) {
-            responses.add(buildPageNavigation(releases, page, end));
-        }
-
-        return responses;
+        int index = Math.floorMod(page, releases.size());
+        var release = releases.get(index);
+        var rows = buildCardButtonRows(release, index, releases.size());
+        String text = buildCardText(release, index, releases.size());
+        return List.of(BotResponse.cardWithRows(text, release.getCoverArtUrl(), rows));
     }
 
-    private BotResponse buildReleaseCard(ReleaseMetadata release, MetadataSearchRequest searchRequest) {
-        String cardText = ReleaseCardFormatter.formatCardText(release);
+    private String buildCardText(ReleaseMetadata release, int index, int total) {
+        String body = ReleaseCardFormatter.formatCardText(release);
+        return "📍 %d/%d\n%s".formatted(index + 1, total, body);
+    }
 
-        Map<String, String> buttons = new LinkedHashMap<>();
-        buttons.put("🎧", "STREAM:" + release.id());
-
+    private List<List<BotResponse.ButtonDto>> buildCardButtonRows(ReleaseMetadata release, int index, int total) {
+        int prev = Math.floorMod(index - 1, total);
+        int next = Math.floorMod(index + 1, total);
+        List<BotResponse.ButtonDto> row = new ArrayList<>();
+        row.add(new BotResponse.ButtonDto("⬅️", "CARD:" + prev));
+        row.add(new BotResponse.ButtonDto("🎧", "STREAM:" + release.id()));
         String releaseUrl = buildReleaseUrlForSource(release);
         if (releaseUrl != null) {
-            buttons.put("🔗", releaseUrl);
+            row.add(new BotResponse.ButtonDto("🔗", releaseUrl));
         }
-
-        buttons.put("⬇️", "DL:" + release.id());
-
-        return BotResponse.card(
-                cardText,
-                release.getCoverArtUrl(),
-                buttons);
+        row.add(new BotResponse.ButtonDto("⬇️", "DL:" + release.id()));
+        row.add(new BotResponse.ButtonDto("➡️", "CARD:" + next));
+        return List.of(row);
     }
 
     private String buildReleaseUrlForSource(ReleaseMetadata release) {
@@ -159,17 +161,6 @@ public class ReleaseSearchFlowService {
             log.warn("Failed to build release URL for source {}: {}", release.source(), e.getMessage());
         }
         return null;
-    }
-
-    private static BotResponse buildPageNavigation(List<ReleaseMetadata> releases, int page, int end) {
-        int nextPage = page + 1;
-        int remaining = releases.size() - end;
-
-        Map<String, String> navButtons = new LinkedHashMap<>();
-        navButtons.put("➡️ показати ще %d".formatted(Math.min(remaining, PAGE_SIZE)), "PAGE:" + nextPage);
-
-        String navText = "залишилось ще %d релізів".formatted(remaining);
-        return BotResponse.withButtons(navText, navButtons);
     }
 
     private static LinkedHashMap<String, String> buildEmptyResultsButtons(MetadataSearchRequest searchRequest) {

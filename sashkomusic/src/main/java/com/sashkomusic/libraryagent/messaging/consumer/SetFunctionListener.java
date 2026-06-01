@@ -23,14 +23,14 @@ public class SetFunctionListener {
     @Async
     public void handleSetFunction(SetFunctionTaskEvent event) {
         SetFunctionTaskDto task = event.payload();
-        log.info("Received set function task: trackId={}, function={}, chatId={}", task.trackId(), task.function(), task.chatId());
+        log.info("Received set function task: trackId={}, function={}, conversationId={}", task.trackId(), task.function(), task.conversationId());
 
         try {
             RateTrackService.RateResult result = rateTrackService.setFunction(task.trackId(), task.function());
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "function", task.function(), result.success(), result.message(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "function", task.function(), result.success(), result.message(), task.conversationId()));
         } catch (Exception ex) {
             log.error("Error setting function: {}", ex.getMessage(), ex);
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "function", task.function(), false, "критична помилка: " + ex.getMessage(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "function", task.function(), false, "критична помилка: " + ex.getMessage(), task.conversationId()));
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.config.IcecastConfig;
 import com.sashkomusic.mainagent.library.DjTagContextHolder;
 import com.sashkomusic.api.dto.TrackDto;
@@ -27,7 +28,7 @@ public class NowPlayingFlowService {
     private final RateTrackTaskProducer rateTrackTaskProducer;
     private final DjTagContextHolder djTagContextHolder;
 
-    public List<BotResponse> nowPlaying(long chatId) {
+    public List<BotResponse> nowPlaying(ConversationContext ctx) {
         NavidromeClient.CurrentTrackInfo trackInfo = navidromeClient.getCurrentlyPlayingTrackInfo();
 
         if (trackInfo == null && icecastConfig.isEnabled()) {
@@ -47,7 +48,7 @@ public class NowPlayingFlowService {
             return List.of(BotResponse.text("зараз грає: %s - %s, але трек не знайдено в БД".formatted(trackInfo.artist(), trackInfo.title())));
         }
 
-        djTagContextHolder.setTrackContext(chatId, trackDto, trackInfo.navidromeId(), false);
+        djTagContextHolder.setTrackContext(ctx.conversationId(), trackDto, trackInfo.navidromeId(), false);
 
         StringBuilder message = new StringBuilder();
 
@@ -81,7 +82,7 @@ public class NowPlayingFlowService {
         return List.of(BotResponse.withButtons(message.toString().toLowerCase(), ratingButtons));
     }
 
-    public List<BotResponse> handleRate(long chatId, String data) {
+    public List<BotResponse> handleRate(ConversationContext ctx, String data) {
         String[] parts = data.split(":");
         if (parts.length != 4) {
             return List.of(BotResponse.text("невірний формат рейтингу"));
@@ -98,7 +99,7 @@ public class NowPlayingFlowService {
 
             navidromeClient.setRating(navidromeId, rating);
 
-            return rateTrack(chatId, trackId, rating);
+            return rateTrack(ctx, trackId, rating);
         } catch (NumberFormatException e) {
             log.error("Failed to parse rate callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки рейтингу"));
@@ -116,9 +117,9 @@ public class NowPlayingFlowService {
         return buttons;
     }
 
-    public List<BotResponse> rateTrack(long chatId, Long trackId, int rating) {
-        log.info("Rating track {} with {} stars from chatId={}", trackId, rating, chatId);
-        RateTrackTaskDto task = new RateTrackTaskDto(trackId, rating, chatId);
+    public List<BotResponse> rateTrack(ConversationContext ctx, Long trackId, int rating) {
+        log.info("Rating track {} with {} stars from conversationId={}", trackId, rating, ctx.conversationId());
+        RateTrackTaskDto task = new RateTrackTaskDto(trackId, rating, ctx.conversationId());
         rateTrackTaskProducer.send(task);
         return List.of();
     }

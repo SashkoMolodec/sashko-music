@@ -3,17 +3,22 @@ package com.sashkomusic.mainagent.download.messaging.dto;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 
 public record SearchFilesTaskDto(
-        long chatId,
+        String conversationId,
         String releaseId,
         String artist,
         String title,
         DownloadEngine source) {
 
-    public static SearchFilesTaskDto of(long chatId, String releaseId, String artist, String title) {
-        return new SearchFilesTaskDto(chatId, releaseId, artist, title, null);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
     }
 
-    public static SearchFilesTaskDto of(long chatId, String releaseId, String artist, String title, DownloadEngine source) {
-        return new SearchFilesTaskDto(chatId, releaseId, artist, title, source);
+    public static SearchFilesTaskDto of(String conversationId, String releaseId, String artist, String title) {
+        return new SearchFilesTaskDto(conversationId, releaseId, artist, title, null);
+    }
+
+    public static SearchFilesTaskDto of(String conversationId, String releaseId, String artist, String title, DownloadEngine source) {
+        return new SearchFilesTaskDto(conversationId, releaseId, artist, title, source);
     }
 }

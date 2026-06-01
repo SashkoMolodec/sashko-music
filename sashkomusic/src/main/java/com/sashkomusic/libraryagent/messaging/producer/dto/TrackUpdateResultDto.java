@@ -9,6 +9,10 @@ public record TrackUpdateResultDto(
         String value,         // "5", "E3", "banger", "some comment"
         boolean success,
         String message,
-        long chatId
+        String conversationId
 ) {
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
 }

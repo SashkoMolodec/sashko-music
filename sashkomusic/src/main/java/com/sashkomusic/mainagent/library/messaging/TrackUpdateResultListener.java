@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.TrackUpdateResultEvent;
 import com.sashkomusic.libraryagent.messaging.producer.dto.TrackUpdateResultDto;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,6 @@ public class TrackUpdateResultListener {
                 result.trackId(), result.fieldUpdated(), result.value(), result.success());
 
         String message = result.success() ? "✅ оновлено" : "❌ помилка: " + result.message();
-        chatBot.sendMessage(result.chatId(), message);
+        chatBot.sendMessage(ConversationContext.from(result.conversationId()), message);
     }
 }

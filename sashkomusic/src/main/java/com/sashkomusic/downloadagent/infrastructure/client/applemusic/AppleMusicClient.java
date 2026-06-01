@@ -132,8 +132,8 @@ public class AppleMusicClient implements MusicSourcePort {
     }
 
     @Override
-    public void handleDownloadCompletion(long chatId, String releaseId, DownloadOption option, String downloadPath) {
-        log.info("Handling Apple Music download completion: chatId={}, releaseId={}", chatId, releaseId);
+    public void handleDownloadCompletion(String conversationId, String releaseId, DownloadOption option, String downloadPath) {
+        log.info("Handling Apple Music download completion: conversationId={}, releaseId={}", conversationId, releaseId);
 
         String artist = option.technicalMetadata().get("artist");
         String albumName = option.technicalMetadata().get("albumName");
@@ -142,7 +142,7 @@ public class AppleMusicClient implements MusicSourcePort {
         log.info("Starting monitoring for Apple Music album: artist='{}', album='{}', expectedTracks={}",
                 artist, albumName, trackCount);
 
-        monitorService.startMonitoring(chatId, releaseId, downloadPath, trackCount, artist, albumName);
+        monitorService.startMonitoring(conversationId, releaseId, downloadPath, trackCount, artist, albumName);
     }
 
     private DownloadOption toDownloadOption(ITunesSearchClient.AppleMusicSearchResult result) {

@@ -6,9 +6,14 @@ import com.sashkomusic.mainagent.download.DownloadOption;
 import java.util.List;
 
 public record SearchFilesResultDto(
-        long chatId,
+        String conversationId,
         String releaseId,
         DownloadEngine source,
         List<DownloadOption> results,
         boolean autoDownload) {
+
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
 }

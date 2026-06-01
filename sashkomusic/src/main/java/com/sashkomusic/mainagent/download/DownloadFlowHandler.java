@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface DownloadFlowHandler {
 
-    AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, long chatId);
+    AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, String conversationId);
 
     BotResponse buildSearchResultsResponse(String formattedText, String releaseId, DownloadEngine currentSource);
 

@@ -31,7 +31,7 @@ public class DownloadService {
                     .map(DownloadOption.FileItem::filename)
                     .toList();
 
-            downloadContext.registerBatch(task.chatId(), task.releaseId(), filenames, option.source());
+            downloadContext.registerBatch(task.conversationId(), task.releaseId(), filenames, option.source());
             MusicSourcePort client = musicSources.get(option.source());
             log.info("Using {} client for download", option.source());
 
@@ -40,25 +40,25 @@ public class DownloadService {
                     downloadId, option.source(), task.releaseId(), filenames.size());
 
             String downloadPath = client.getDownloadPath(option);
-            client.handleDownloadCompletion(task.chatId(), task.releaseId(), option, downloadPath);
+            client.handleDownloadCompletion(task.conversationId(), task.releaseId(), option, downloadPath);
 
         } catch (MusicDownloadException e) {
-            log.error("Download failed for chatId={}: {}", task.chatId(), e.getMessage());
-            errorProducer.sendError(DownloadErrorDto.of(task.chatId(), e.getMessage()));
+            log.error("Download failed for conversationId={}: {}", task.conversationId(), e.getMessage());
+            errorProducer.sendError(DownloadErrorDto.of(task.conversationId(), e.getMessage()));
         } catch (Exception e) {
-            log.error("Unexpected error during download for chatId={}: {}", task.chatId(), e.getMessage(), e);
-            errorProducer.sendError(DownloadErrorDto.of(task.chatId(), "шось не то, пупупу... " + e.getMessage()));
+            log.error("Unexpected error during download for conversationId={}: {}", task.conversationId(), e.getMessage(), e);
+            errorProducer.sendError(DownloadErrorDto.of(task.conversationId(), "шось не то, пупупу... " + e.getMessage()));
         }
     }
 
-    public void cancelDownload(long chatId, String releaseId) {
-        log.info("Attempting to cancel download for chatId={}, releaseId={}", chatId, releaseId);
+    public void cancelDownload(String conversationId, String releaseId) {
+        log.info("Attempting to cancel download for conversationId={}, releaseId={}", conversationId, releaseId);
 
         DownloadBatch batch = downloadContext.findBatchByReleaseId(releaseId);
 
         if (batch == null) {
             log.warn("Cancel failed: no active download found for releaseId={}", releaseId);
-            errorProducer.sendError(DownloadErrorDto.of(chatId,
+            errorProducer.sendError(DownloadErrorDto.of(conversationId,
                     "завантаження вже завершилось або не знайдено 🤷"));
             return;
         }
@@ -73,6 +73,6 @@ public class DownloadService {
         downloadContext.removeBatchByReleaseId(releaseId);
 
         log.info("Successfully cancelled download for releaseId={}", releaseId);
-        errorProducer.sendError(DownloadErrorDto.of(chatId, "❌ **скасовано завантаження**"));
+        errorProducer.sendError(DownloadErrorDto.of(conversationId, "❌ **скасовано завантаження**"));
     }
 }

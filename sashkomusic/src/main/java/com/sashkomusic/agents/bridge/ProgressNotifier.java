@@ -1,5 +1,6 @@
 package com.sashkomusic.agents.bridge;
 
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,14 +15,17 @@ public class ProgressNotifier {
 
     private final TelegramClient telegramClient;
 
-    public void notify(long chatId, String text) {
+    public void notify(ConversationContext ctx, String text) {
         try {
-            telegramClient.execute(SendMessage.builder()
-                    .chatId(chatId)
-                    .text(text)
-                    .build());
+            SendMessage.SendMessageBuilder<?, ?> builder = SendMessage.builder()
+                    .chatId(ctx.chatId())
+                    .text(text);
+            if (ctx.isGroupTopic()) {
+                builder.messageThreadId(ctx.topicId());
+            }
+            telegramClient.execute(builder.build());
         } catch (TelegramApiException e) {
-            log.warn("Failed to send progress notification to [{}]: {}", chatId, e.getMessage());
+            log.warn("Failed to send progress notification to [{}]: {}", ctx.conversationId(), e.getMessage());
         }
     }
 }

@@ -121,8 +121,8 @@ public class BandcampDownloadClient implements MusicSourcePort {
     }
 
     @Override
-    public void handleDownloadCompletion(long chatId, String releaseId, DownloadOption option, String downloadPath) {
-        log.info("Handling Bandcamp download completion: chatId={}, releaseId={}", chatId, releaseId);
+    public void handleDownloadCompletion(String conversationId, String releaseId, DownloadOption option, String downloadPath) {
+        log.info("Handling Bandcamp download completion: conversationId={}, releaseId={}", conversationId, releaseId);
 
         String artist = option.technicalMetadata().get("artist");
         String title = option.technicalMetadata().get("title");
@@ -132,7 +132,7 @@ public class BandcampDownloadClient implements MusicSourcePort {
         log.info("Starting monitoring for Bandcamp release: artist='{}', title='{}', expectedFiles={}",
                 artist, title, expectedFiles);
 
-        monitorService.startMonitoring(chatId, releaseId, downloadPath, expectedFiles, artist, title);
+        monitorService.startMonitoring(conversationId, releaseId, downloadPath, expectedFiles, artist, title);
     }
 
     private DownloadOption toDownloadOption(BandcampSearchResult result) {

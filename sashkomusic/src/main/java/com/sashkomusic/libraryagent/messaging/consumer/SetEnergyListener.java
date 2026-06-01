@@ -23,14 +23,14 @@ public class SetEnergyListener {
     @Async
     public void handleSetEnergy(SetEnergyTaskEvent event) {
         SetEnergyTaskDto task = event.payload();
-        log.info("Received set energy task: trackId={}, energy={}, chatId={}", task.trackId(), task.energy(), task.chatId());
+        log.info("Received set energy task: trackId={}, energy={}, conversationId={}", task.trackId(), task.energy(), task.conversationId());
 
         try {
             RateTrackService.RateResult result = rateTrackService.setEnergy(task.trackId(), task.energy());
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "energy", task.energy(), result.success(), result.message(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "energy", task.energy(), result.success(), result.message(), task.conversationId()));
         } catch (Exception ex) {
             log.error("Error setting energy: {}", ex.getMessage(), ex);
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "energy", task.energy(), false, "критична помилка: " + ex.getMessage(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "energy", task.energy(), false, "критична помилка: " + ex.getMessage(), task.conversationId()));
         }
     }
 }

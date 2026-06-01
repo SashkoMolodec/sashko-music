@@ -7,12 +7,17 @@ import java.util.List;
 
 @JsonTypeName("process_library")
 public record ProcessLibraryTaskDto(
-        long chatId,
+        String conversationId,
         String directoryPath,
         List<String> downloadedFiles,
         ReleaseMetadata metadata
 ) {
-    public static ProcessLibraryTaskDto of(long chatId, String directoryPath, List<String> files, ReleaseMetadata metadata) {
-        return new ProcessLibraryTaskDto(chatId, directoryPath, files, metadata);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
+
+    public static ProcessLibraryTaskDto of(String conversationId, String directoryPath, List<String> files, ReleaseMetadata metadata) {
+        return new ProcessLibraryTaskDto(conversationId, directoryPath, files, metadata);
     }
 }

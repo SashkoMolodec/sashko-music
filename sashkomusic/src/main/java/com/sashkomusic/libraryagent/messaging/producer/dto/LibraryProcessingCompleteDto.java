@@ -7,7 +7,7 @@ import java.util.List;
 
 @JsonTypeName("library_complete")
 public record LibraryProcessingCompleteDto(
-        long chatId,
+        String conversationId,
         String masterId,
         String directoryPath,
         List<ProcessedFile> processedFiles,
@@ -15,4 +15,8 @@ public record LibraryProcessingCompleteDto(
         String message,
         List<String> errors
 ) {
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
 }

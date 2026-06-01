@@ -6,6 +6,7 @@ import com.sashkomusic.downloadagent.infrastructure.client.applemusic.AppleMusic
 import com.sashkomusic.downloadagent.infrastructure.client.bandcamp.BandcampDownloadClient;
 import com.sashkomusic.downloadagent.infrastructure.client.qobuz.QobuzClient;
 import com.sashkomusic.downloadagent.infrastructure.client.slskd.SlskdClient;
+import com.sashkomusic.downloadagent.infrastructure.client.youtubemusic.YouTubeMusicClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,13 +20,15 @@ public class MusicSourceConfig {
             QobuzClient qobuzClient,
             SlskdClient slskdClient,
             AppleMusicClient appleMusicClient,
-            BandcampDownloadClient bandcampClient
+            BandcampDownloadClient bandcampClient,
+            YouTubeMusicClient youtubeMusicClient
     ) {
         return Map.of(
                 DownloadEngine.QOBUZ, qobuzClient,
                 DownloadEngine.SOULSEEK, slskdClient,
                 DownloadEngine.APPLE_MUSIC, appleMusicClient,
-                DownloadEngine.BANDCAMP, bandcampClient
+                DownloadEngine.BANDCAMP, bandcampClient,
+                DownloadEngine.YOUTUBE_MUSIC, youtubeMusicClient
         );
     }
 }

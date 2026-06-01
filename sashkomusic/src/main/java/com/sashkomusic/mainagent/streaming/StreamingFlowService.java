@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.streaming;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.shared.util.SearchUrlUtils;
@@ -19,9 +20,9 @@ public class StreamingFlowService {
 
     private final SearchContextService searchContextService;
 
-    public List<BotResponse> handleStreamingPlatforms(long chatId, String callbackData) {
+    public List<BotResponse> handleStreamingPlatforms(ConversationContext ctx, String callbackData) {
         try {
-            var platforms = handleStreamingCallback(chatId, callbackData);
+            var platforms = handleStreamingCallback(ctx, callbackData);
             return List.of(BotResponse.withButtons("🤝 послухай туво", platforms));
         } catch (Exception e) {
             log.error("Error getting streaming platforms: {}", e.getMessage(), e);
@@ -29,17 +30,17 @@ public class StreamingFlowService {
         }
     }
 
-    public Map<String, String> handleStreamingCallback(long chatId, String callbackData) {
+    public Map<String, String> handleStreamingCallback(ConversationContext ctx, String callbackData) {
         log.info("Handling streaming platforms request, callback={}", callbackData);
 
         String releaseId = callbackData.substring("STREAM:".length());
         return releaseId.isEmpty()
-                ? getPlatformLinksForSearch(chatId)
+                ? getPlatformLinksForSearch(ctx)
                 : getPlatformLinks(releaseId);
     }
 
-    public Map<String, String> getPlatformLinksForSearch(long chatId) {
-        var searchRequest = searchContextService.getSearchRequest(chatId);
+    public Map<String, String> getPlatformLinksForSearch(ConversationContext ctx) {
+        var searchRequest = searchContextService.getSearchRequest(ctx.conversationId());
         return buildPlatformSearchLinks(searchRequest.artist(), searchRequest.getTitle());
     }
 

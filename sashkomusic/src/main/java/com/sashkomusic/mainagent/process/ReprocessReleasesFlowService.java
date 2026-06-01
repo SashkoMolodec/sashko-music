@@ -3,6 +3,7 @@ package com.sashkomusic.mainagent.process;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
 import com.sashkomusic.libraryagent.domain.service.processFolder.ReleaseMetadataReader;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
@@ -48,9 +49,9 @@ public class ReprocessReleasesFlowService {
         this.pathMappingService = pathMappingService;
     }
 
-    public ReprocessResult handle(long chatId, String rawInput) {
+    public ReprocessResult handle(ConversationContext ctx, String rawInput) {
         String argument = rawInput.substring("/reprocess".length()).trim();
-        log.info("Processing reprocess command: chatId={}, argument={}", chatId, argument);
+        log.info("Processing reprocess command: conversationId={}, argument={}", ctx.conversationId(), argument);
 
         if (argument.isBlank()) {
             return ReprocessResult.error("Usage: /reprocess [--skip-retag] [--force] <path|all>");
@@ -66,13 +67,13 @@ public class ReprocessReleasesFlowService {
         log.info("Options: skipRetag={}, force={}, path={}", options.skipRetag(), options.force(), path);
 
         if (PROCESS_ALL.equalsIgnoreCase(path)) {
-            return reprocessAll(chatId, options);
+            return reprocessAll(ctx, options);
         } else {
-            return reprocessSingle(chatId, path, options);
+            return reprocessSingle(ctx, path, options);
         }
     }
 
-    private ReprocessResult reprocessSingle(long chatId, String pathStr, ReprocessOptions options) {
+    private ReprocessResult reprocessSingle(ConversationContext ctx, String pathStr, ReprocessOptions options) {
         try {
             String mappedPath = pathMappingService.mapReprocessPath(pathStr);
 
@@ -93,7 +94,7 @@ public class ReprocessReleasesFlowService {
                 return ReprocessResult.error("Path is not a directory: " + mappedPath);
             }
 
-            QueueResult result = queueReprocessTask(chatId, absolutePath, options);
+            QueueResult result = queueReprocessTask(ctx, absolutePath, options);
 
             return switch (result) {
                 case QUEUED -> {
@@ -129,7 +130,7 @@ public class ReprocessReleasesFlowService {
         FAILED
     }
 
-    private QueueResult queueReprocessTask(long chatId, Path releaseDir, ReprocessOptions options) {
+    private QueueResult queueReprocessTask(ConversationContext ctx, Path releaseDir, ReprocessOptions options) {
         try {
             var metadataOpt = metadataReader.readMetadata(releaseDir);
             if (metadataOpt.isEmpty()) {
@@ -157,7 +158,7 @@ public class ReprocessReleasesFlowService {
             ReleaseMetadata metadata = getMetadata(options, metadataFile);
 
             ReprocessReleaseTaskDto task = new ReprocessReleaseTaskDto(
-                    chatId,
+                    ctx.conversationId(),
                     releaseDir.toString(),
                     metadata,
                     processingVersion,
@@ -174,7 +175,7 @@ public class ReprocessReleasesFlowService {
         }
     }
 
-    private ReprocessResult reprocessAll(long chatId, ReprocessOptions options) {
+    private ReprocessResult reprocessAll(ConversationContext ctx, ReprocessOptions options) {
         try {
             Path rootPath = Paths.get(libraryConfig.getRootPath());
 
@@ -199,7 +200,7 @@ public class ReprocessReleasesFlowService {
             int errorCount = 0;
 
             for (Path releaseDir : releaseDirs) {
-                QueueResult result = queueReprocessTask(chatId, releaseDir, options);
+                QueueResult result = queueReprocessTask(ctx, releaseDir, options);
                 switch (result) {
                     case QUEUED -> queuedCount++;
                     case SKIPPED -> skippedCount++;

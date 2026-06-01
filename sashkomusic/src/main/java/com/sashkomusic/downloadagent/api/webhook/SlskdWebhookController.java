@@ -49,13 +49,13 @@ public class SlskdWebhookController {
                 return ResponseEntity.ok().build();
             }
 
-            var fileDto = DownloadCompleteDto.of(batch.getChatId(), webhook.remoteFilename(), webhook.transfer().size());
+            var fileDto = DownloadCompleteDto.of(batch.getConversationId(), webhook.remoteFilename(), webhook.transfer().size());
             downloadCompleteProducer.sendComplete(fileDto);
 
             if (batch.isComplete()) {
                 log.info("All files downloaded for release: {}", batch.getReleaseId());
                 var batchDto = DownloadBatchCompleteDto.of(
-                        batch.getChatId(),
+                        batch.getConversationId(),
                         batch.getReleaseId(),
                         batch.getLocalDirectoryPath(),
                         batch.getLocalFilenames()

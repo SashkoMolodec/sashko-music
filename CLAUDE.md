@@ -65,6 +65,12 @@ agent:
 2. Then change code so it matches the updated spec.
 3. Then update tests (or write new ones) to enforce the new spec.
 
+**Non-negotiable:** every code change inside `com.sashkomusic.agents` MUST include
+a corresponding `spec.md` update in the same edit session — no exceptions.
+This applies to: adding/removing/renaming tools, changing tool parameters or behavior,
+changing which path (LLM vs direct) a service takes, changing contracts (`*Request`/`*Result`).
+If you changed agent code without updating the spec, fix the spec before doing anything else.
+
 `spec.md` is the source of truth for agent contracts — code reviews and tests
 must match it. If you find a code-vs-spec divergence, fix the spec OR the code
 in the same change.

@@ -3,6 +3,7 @@ package com.sashkomusic.mainagent.download;
 import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.CallbackDispatcher;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.download.messaging.DownloadCancelTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +42,7 @@ import static org.mockito.Mockito.when;
 class DownloadFlowIntegrationTest {
 
     private static final long CHAT_ID = 7L;
+    private static final ConversationContext CTX = ConversationContext.dm(CHAT_ID);
     private static final String RELEASE_ID = "burial-untrue-id";
 
     @Autowired CallbackDispatcher dispatcher;
@@ -60,7 +63,7 @@ class DownloadFlowIntegrationTest {
 
     @Test
     void DL_callback_publishes_FilesSearchTaskEvent_with_qobuz_default() {
-        List<BotResponse> resp = dispatcher.dispatch(CHAT_ID, "DL:" + RELEASE_ID);
+        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:" + RELEASE_ID);
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("шукаю опції завантаження");
@@ -77,7 +80,7 @@ class DownloadFlowIntegrationTest {
 
     @Test
     void DL_callback_with_unknown_releaseId_publishes_no_event() {
-        List<BotResponse> resp = dispatcher.dispatch(CHAT_ID, "DL:does-not-exist");
+        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:does-not-exist");
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("не получило");
@@ -95,13 +98,8 @@ class DownloadFlowIntegrationTest {
         @Bean NowPlayingFlowService nowPlayingFlowService() { return mock(NowPlayingFlowService.class); }
         @Bean DjTagFlowService djTagFlowService() {
             DjTagFlowService m = mock(DjTagFlowService.class);
-            when(m.isWaitingForComment(anyLongMatcher())).thenReturn(false);
+            when(m.isWaitingForComment(any())).thenReturn(false);
             return m;
-        }
-
-        // tiny helper so the static import doesn't pull more mockito glue
-        private static long anyLongMatcher() {
-            return org.mockito.ArgumentMatchers.anyLong();
         }
     }
 }

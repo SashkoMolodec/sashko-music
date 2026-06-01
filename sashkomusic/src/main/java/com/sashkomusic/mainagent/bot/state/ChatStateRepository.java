@@ -9,10 +9,10 @@ import java.util.Optional;
 
 public interface ChatStateRepository extends JpaRepository<ChatStateEntity, ChatStateId> {
 
-    Optional<ChatStateEntity> findByChatIdAndFlowKey(long chatId, String flowKey);
+    Optional<ChatStateEntity> findByConversationIdAndFlowKey(String conversationId, String flowKey);
 
     @Modifying
-    void deleteByChatIdAndFlowKey(long chatId, String flowKey);
+    void deleteByConversationIdAndFlowKey(String conversationId, String flowKey);
 
     @Modifying
     @Query("delete from ChatStateEntity c where c.flowKey = :flowKey")

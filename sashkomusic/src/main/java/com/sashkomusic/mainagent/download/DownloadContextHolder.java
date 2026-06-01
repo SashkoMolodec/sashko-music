@@ -11,32 +11,32 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class DownloadContextHolder {
 
-    private final Map<Long, DownloadContext> downloadSessions = new ConcurrentHashMap<>();
+    private final Map<String, DownloadContext> downloadSessions = new ConcurrentHashMap<>();
 
-    public void saveDownloadOptions(long chatId, String releaseId, List<DownloadFlowHandler.OptionReport> optionReports) {
-        log.debug("Saving download options for chatId: {}, releaseId: {}", chatId, releaseId);
-        downloadSessions.put(chatId, new DownloadContext(releaseId, optionReports));
+    public void saveDownloadOptions(String conversationId, String releaseId, List<DownloadFlowHandler.OptionReport> optionReports) {
+        log.debug("Saving download options for conversation: {}, releaseId: {}", conversationId, releaseId);
+        downloadSessions.put(conversationId, new DownloadContext(releaseId, optionReports));
     }
 
-    public List<DownloadFlowHandler.OptionReport> getDownloadOptions(long chatId) {
-        DownloadContext context = downloadSessions.get(chatId);
+    public List<DownloadFlowHandler.OptionReport> getDownloadOptions(String conversationId) {
+        DownloadContext context = downloadSessions.get(conversationId);
         if (context != null) {
             return context.optionReports();
         }
         return List.of();
     }
 
-    public String getChosenRelease(long chatId) {
-        DownloadContext context = downloadSessions.get(chatId);
+    public String getChosenRelease(String conversationId) {
+        DownloadContext context = downloadSessions.get(conversationId);
         if (context != null) {
             return context.chosenReleaseId();
         }
         return null;
     }
 
-    public void clearSession(long chatId) {
-        log.debug("Clearing download session for chatId: {}", chatId);
-        downloadSessions.remove(chatId);
+    public void clearSession(String conversationId) {
+        log.debug("Clearing download session for conversation: {}", conversationId);
+        downloadSessions.remove(conversationId);
     }
 
     public void clearAllSessions() {

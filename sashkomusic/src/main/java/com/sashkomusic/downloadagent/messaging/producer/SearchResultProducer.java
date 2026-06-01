@@ -18,9 +18,9 @@ public class SearchResultProducer {
 
     private final ApplicationEventPublisher eventPublisher;
 
-    public void sendResults(long chatId, String releaseId, DownloadEngine source, List<DownloadOption> results, boolean autoDownload) {
-        log.info("Sending {} results from {} back to chat {} (autoDownload={})", results.size(), source, chatId, autoDownload);
-        SearchFilesResultDto dto = new SearchFilesResultDto(chatId, releaseId, source, results, autoDownload);
+    public void sendResults(String conversationId, String releaseId, DownloadEngine source, List<DownloadOption> results, boolean autoDownload) {
+        log.info("Sending {} results from {} back to conversationId={} (autoDownload={})", results.size(), source, conversationId, autoDownload);
+        SearchFilesResultDto dto = new SearchFilesResultDto(conversationId, releaseId, source, results, autoDownload);
         eventPublisher.publishEvent(new FileSearchResultEvent(dto));
     }
 }

@@ -26,8 +26,8 @@ import java.time.Instant;
 public class ChatStateEntity {
 
     @Id
-    @Column(name = "chat_id")
-    private long chatId;
+    @Column(name = "conversation_id")
+    private String conversationId;
 
     @Id
     @Column(name = "flow_key")

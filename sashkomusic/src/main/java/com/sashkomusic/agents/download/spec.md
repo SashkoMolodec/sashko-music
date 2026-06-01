@@ -1,68 +1,116 @@
 # DownloadAgentService — Spec
 
 ## Purpose
-Initiate a download. **Not an LLM.** Thin contract over
-`mainagent.download.MusicDownloadFlowService` — exists so that:
-1. The MainAgent has a deterministic, predictable tool with a typed contract.
-2. The transport (in-process today, A2A HTTP later) can swap without changing
-   callers.
+Ініціювати завантаження музики. **Не LLM** — детермінована обгортка над
+`MusicDownloadFlowService`. Існує щоб MainAgent мав typed contract,
+і щоб транспорт (in-process зараз, A2A HTTP потім) можна було змінити
+без торкання MainAgentTools.
 
-## Inputs (contract — `DownloadAgentService.handle`)
-- `DownloadRequest`
-  - `chatId`
-  - `releaseId` — when the user is downloading something from a prior search
-    result. Resolved against `SearchContextService.getReleaseMetadata`.
-  - `artist + album` — when the user typed "скачай Burial Untrue" without a
-    prior search.
-  - `engine` (optional `DownloadEngine`) — usually `null`; engine selection
-    is the FlowService's job (currently Qobuz-first).
+---
 
-Exactly one of `releaseId` or `(artist, album)` MUST be non-empty.
+## Місце в потоці
 
-## Outputs (contract)
-- `DownloadResult(success, summary)`
-  - `summary` is a short human-friendly message (joined from FlowService
-    responses), used as the LLM-facing tool return.
-- Side-effect: actual `BotResponse`s from the FlowService are pushed into
-  `ChatResponseAccumulator` so MainAgent can render them.
+```
+MainAgentTools.downloadMusic()
+  └─ DownloadAgentService.handle(DownloadRequest)
+       ├─ якщо releaseId → musicDownloadFlowService.handleDownload(ctx, "DL:" + releaseId)
+       ├─ якщо artist+album → musicDownloadFlowService.getDownloadOptions(ctx, query)
+       └─ responses → accumulator.pushAll(conversationId, responses)
+            └─ return DownloadResult.started(summary)
 
-## Behavior
+пізніше (async):
+SlskdWebhookController / BandcampMonitor / ...
+  └─ publishes DownloadBatchCompleteEvent(conversationId, ...)
+       └─ DownloadBatchCompleteListener
+            └─ chatBot.sendMessage(ConversationContext.from(dto.conversationId()), msg)
+                 └─ автоматично → правильний топік
+```
 
-| Input case               | Path                                                              | Event published          |
-|--------------------------|-------------------------------------------------------------------|--------------------------|
-| `releaseId` present      | `musicDownloadFlowService.handleDownload(chatId, "DL:" + id)`     | `FilesSearchTaskEvent`   |
-| `artist + album` present | `musicDownloadFlowService.getDownloadOptions(chatId, "$a $b")`    | `FilesSearchTaskEvent`   |
-| neither present          | `DownloadResult.failed("нема що качати")`, no event               | —                        |
+---
 
-The default download engine for the first round-trip is `Qobuz` (see
-`MusicDownloadFlowService.initiateDefaultDownloadSearch`). Fallback /
-alternative sources are chosen later via the `SEARCH_ALT:` callback and the
-`Map<DownloadEngine, DownloadFlowHandler>` strategy map.
+## Contract
 
-## Async semantics
-- This call is **fire-and-forget**: it publishes a Spring event and returns
-  immediately. Download completion comes back as a separate
-  `DownloadCompleteEvent` / `DownloadBatchCompleteEvent` flowing back to
-  mainagent listeners — NOT through this agent's return value.
+### Input: `DownloadRequest`
+```java
+record DownloadRequest(String conversationId, String releaseId, String artist, String album, DownloadEngine engine)
+```
+
+| Поле            | Коли заповнений                                                        |
+|-----------------|------------------------------------------------------------------------|
+| `conversationId`| Завжди. `"chatId"` або `"chatId:topicId"`                              |
+| `releaseId`     | Якщо завантажуємо щойно знайдений реліз (є в `SearchContextService`)   |
+| `artist+album`  | Якщо користувач написав "скачай X Y" без попереднього пошуку           |
+| `engine`        | Зазвичай `null` — вибір движка на стороні FlowService                  |
+
+Рівно одне з: `releaseId` або `(artist, album)` непорожнє.
+
+### Output: `DownloadResult`
+```java
+record DownloadResult(boolean success, String summary)
+```
+
+`summary` → коротке повідомлення для LLM (`"почав качати"`, `"нема що качати"`).
+BotResponse-и вже в accumulator — LLM їх не бачить.
+
+---
+
+## Джерела завантаження (стратегії)
+
+```
+Map<DownloadEngine, DownloadFlowHandler>  ← injected by Spring
+  ├─ QOBUZ    → QobuzDownloadFlowHandler   (лосслес, API)
+  ├─ BANDCAMP → BandcampDownloadFlowHandler
+  ├─ SOULSEEK → SoulseekDownloadFlowHandler (P2P)
+  └─ APPLE    → AppleMusicDownloadFlowHandler
+```
+
+Вибір движка за замовчуванням — в `MusicDownloadFlowService.initiateDefaultDownloadSearch()`.
+Альтернативні джерела обираються через `SEARCH_ALT:` callback → `CallbackDispatcher`
+(не через цей агент).
+
+---
+
+## Async event flow
+
+Це **fire-and-forget**: `handle()` повертається одразу після публікації event.
+Реальний результат приходить через ланцюг:
+
+```
+FilesSearchTaskEvent → downloadagent → пошук файлів
+  └─ FileSearchResultEvent → mainagent SearchFilesResultListener
+       └─ MusicDownloadFlowService.handleSearchResults()
+            └─ якщо autoDownload → FilesDownloadTaskEvent → downloadagent
+                 └─ (Slskd / Bandcamp / ...) завантажує
+                      └─ DownloadBatchCompleteEvent(conversationId, releaseId, directoryPath, allFiles)
+                           └─ DownloadBatchCompleteListener
+                                └─ ProcessLibraryTaskEvent → libraryagent
+                                     └─ LibraryProcessingCompleteEvent
+                                          └─ LibraryProcessingCompleteListener → повідомлення користувачу
+```
+
+Всі DTO несуть `String conversationId` — так повідомлення завжди потраплять
+у правильний топік групи навіть після async виконання.
+
+---
 
 ## Hard rules
-1. No LLM. Reasoning about engine choice, fallback, or quality belongs in
-   `MusicDownloadFlowService` and its `DownloadFlowHandler` strategies, not here.
-2. Never construct Telegram-facing `BotResponse`s in this layer that are not
-   already pushed into the accumulator by the FlowService.
-3. Stable contract: if a remote A2A endpoint replaces this in-process service,
-   the wire format is `DownloadRequest` → `DownloadResult`. Both are pure JSON
-   records — no Spring or Java-only types leak.
+1. **No LLM.** Логіка вибору движка, fallback, перевірка якості — в `MusicDownloadFlowService` і handlers.
+2. Ніколи не конструювати `BotResponse` тут — тільки `pushAll` що повернув FlowService.
+3. Stable contract: `DownloadRequest` і `DownloadResult` — чисті JSON records, без Spring типів.
+4. `handle()` завжди повертається швидко — не блокується на результат завантаження.
+
+---
 
 ## Out of scope
-- File system writes (handled by `downloadagent`).
-- Progress UI updates (handled by event listeners + accumulator).
-- Tag writing post-download (handled by `libraryagent`).
+- Запис файлів на диск → `downloadagent`
+- Progress UI → event listeners + accumulator  
+- Тегування після завантаження → `libraryagent`
+- Вибір альтернативного источника → `SEARCH_ALT:` callback
 
-## SDD checkpoints (change here BEFORE code)
-- New download source → add a `DownloadEngine` enum value AND a
-  `DownloadFlowHandler` impl. This spec stays the same; only the strategy map
-  grows. No NL parsing here.
-- Want to give the user choice between engines from NL? Add a tool-level
-  override in `MainAgentTools.downloadMusic` (engine arg) — but keep the
-  default deterministic.
+---
+
+## SDD checkpoints (змінювати spec ДО коду)
+- Нове джерело → `DownloadEngine` enum + `DownloadFlowHandler` impl.
+  Цей spec не змінюється — тільки strategy map росте.
+- Хочеш дати LLM вибір между движками → додати `engine` параметр в `MainAgentTools.downloadMusic`.
+- Зміна event chain → оновити діаграму "Async event flow" тут.

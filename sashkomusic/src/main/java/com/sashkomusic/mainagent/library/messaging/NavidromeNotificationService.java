@@ -30,8 +30,8 @@ public class NavidromeNotificationService {
     @Async
     public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
         LibraryProcessingCompleteDto dto = event.payload();
-        log.debug("Received library-processing-complete event: chatId={}, masterId={}, success={}, directoryPath={}",
-                dto.chatId(), dto.masterId(), dto.success(), dto.directoryPath());
+        log.debug("Received library-processing-complete event: conversationId={}, masterId={}, success={}, directoryPath={}",
+                dto.conversationId(), dto.masterId(), dto.success(), dto.directoryPath());
 
         if (!dto.success()) {
             log.debug("Skipping Navidrome scan - library processing was not successful");

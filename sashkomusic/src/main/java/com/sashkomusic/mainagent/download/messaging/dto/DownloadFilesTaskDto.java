@@ -5,11 +5,16 @@ import com.sashkomusic.mainagent.download.DownloadOption;
 
 @JsonTypeName("download_request")
 public record DownloadFilesTaskDto(
-        long chatId,
+        String conversationId,
         String releaseId,
         DownloadOption downloadOption) {
 
-    public static DownloadFilesTaskDto of(long chatId, String releaseId, DownloadOption downloadOption) {
-        return new DownloadFilesTaskDto(chatId, releaseId, downloadOption);
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
+
+    public static DownloadFilesTaskDto of(String conversationId, String releaseId, DownloadOption downloadOption) {
+        return new DownloadFilesTaskDto(conversationId, releaseId, downloadOption);
     }
 }

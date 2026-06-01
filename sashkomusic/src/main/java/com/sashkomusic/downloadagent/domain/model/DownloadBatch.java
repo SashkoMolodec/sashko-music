@@ -12,7 +12,7 @@ import java.util.Set;
 @Slf4j
 @Getter
 public class DownloadBatch {
-    private final long chatId;
+    private final String conversationId;
     private final String releaseId;
     private final String remoteDirectoryPath;
     private final List<String> allFiles;
@@ -22,8 +22,8 @@ public class DownloadBatch {
 
     private final Set<String> remainingFiles;
 
-    public DownloadBatch(long chatId, String releaseId, String remoteDirectoryPath, List<String> files, DownloadEngine source) {
-        this.chatId = chatId;
+    public DownloadBatch(String conversationId, String releaseId, String remoteDirectoryPath, List<String> files, DownloadEngine source) {
+        this.conversationId = conversationId;
         this.releaseId = releaseId;
         this.remoteDirectoryPath = remoteDirectoryPath;
         this.allFiles = List.copyOf(files);

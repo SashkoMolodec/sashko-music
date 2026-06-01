@@ -4,6 +4,7 @@ import com.sashkomusic.api.dto.TrackDto;
 import com.sashkomusic.api.service.TrackService;
 import com.sashkomusic.events.RateTrackTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import com.sashkomusic.mainagent.library.client.IcecastClient;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.when;
 class LibraryFlowIntegrationTest {
 
     private static final long CHAT_ID = 99L;
+    private static final ConversationContext CTX = ConversationContext.dm(CHAT_ID);
 
     @Autowired NowPlayingFlowService nowPlaying;
     @Autowired NavidromeClient navidromeClient;
@@ -56,20 +58,20 @@ class LibraryFlowIntegrationTest {
                 .thenReturn(Optional.of(TrackDto.of(42L, "/lib/u.flac", "Untrue", "Burial",
                         null, null, null, null)));
 
-        List<BotResponse> resp = nowPlaying.nowPlaying(CHAT_ID);
+        List<BotResponse> resp = nowPlaying.nowPlaying(CTX);
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("burial").contains("untrue");
         assertThat(resp.get(0).buttons()).containsKeys("⭐ 1", "⭐ 5", "➕");
-        assertThat(djTagContextHolder.getContext(CHAT_ID)).isNotNull();
-        assertThat(djTagContextHolder.getContext(CHAT_ID).trackId()).isEqualTo(42L);
+        assertThat(djTagContextHolder.getContext(CTX.conversationId())).isNotNull();
+        assertThat(djTagContextHolder.getContext(CTX.conversationId()).trackId()).isEqualTo(42L);
     }
 
     @Test
     void nowPlaying_handles_missing_track() {
         when(navidromeClient.getCurrentlyPlayingTrackInfo()).thenReturn(null);
 
-        List<BotResponse> resp = nowPlaying.nowPlaying(CHAT_ID);
+        List<BotResponse> resp = nowPlaying.nowPlaying(CTX);
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("нич не грає");
@@ -82,9 +84,9 @@ class LibraryFlowIntegrationTest {
         when(trackService.findByArtistAndTitleOptional("Burial", "Untrue"))
                 .thenReturn(Optional.of(TrackDto.of(42L, "/lib/u.flac", "Untrue", "Burial",
                         null, null, null, null)));
-        nowPlaying.nowPlaying(CHAT_ID);
+        nowPlaying.nowPlaying(CTX);
 
-        nowPlaying.handleRate(CHAT_ID, "RATE:42:5:nav-1");
+        nowPlaying.handleRate(CTX, "RATE:42:5:nav-1");
 
         verify(navidromeClient).setRating(eq("nav-1"), eq(5));
         var published = events.stream(RateTrackTaskEvent.class).toList();

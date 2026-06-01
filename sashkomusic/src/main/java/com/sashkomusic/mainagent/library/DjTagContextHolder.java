@@ -15,35 +15,35 @@ public class DjTagContextHolder {
 
     private final ChatStateStore store;
 
-    public void setTrackContext(long chatId, TrackDto track, String navidromeId, boolean waitingForComment) {
-        store.put(chatId, FLOW_KEY, new DjTagContext(track, navidromeId, waitingForComment));
-        log.debug("Set track context for chat {}, track {}, waitingForComment={}",
-                chatId, track.id(), waitingForComment);
+    public void setTrackContext(String conversationId, TrackDto track, String navidromeId, boolean waitingForComment) {
+        store.put(conversationId, FLOW_KEY, new DjTagContext(track, navidromeId, waitingForComment));
+        log.debug("Set track context for conversation {}, track {}, waitingForComment={}",
+                conversationId, track.id(), waitingForComment);
     }
 
-    public void activateCommentMode(long chatId) {
-        DjTagContext existing = getContext(chatId);
+    public void activateCommentMode(String conversationId) {
+        DjTagContext existing = getContext(conversationId);
         if (existing != null) {
-            store.put(chatId, FLOW_KEY,
+            store.put(conversationId, FLOW_KEY,
                     new DjTagContext(existing.track, existing.navidromeId, true));
-            log.debug("Activated comment mode for chat {}, track {}", chatId, existing.track.id());
+            log.debug("Activated comment mode for conversation {}, track {}", conversationId, existing.track.id());
         } else {
-            log.warn("Cannot activate comment mode for chat {} - no track context", chatId);
+            log.warn("Cannot activate comment mode for conversation {} - no track context", conversationId);
         }
     }
 
-    public boolean isWaitingForComment(long chatId) {
-        DjTagContext ctx = getContext(chatId);
+    public boolean isWaitingForComment(String conversationId) {
+        DjTagContext ctx = getContext(conversationId);
         return ctx != null && ctx.waitingForComment;
     }
 
-    public DjTagContext getContext(long chatId) {
-        return store.get(chatId, FLOW_KEY, DjTagContext.class).orElse(null);
+    public DjTagContext getContext(String conversationId) {
+        return store.get(conversationId, FLOW_KEY, DjTagContext.class).orElse(null);
     }
 
-    public void clearContext(long chatId) {
-        store.remove(chatId, FLOW_KEY);
-        log.debug("Cleared context for chat {}", chatId);
+    public void clearContext(String conversationId) {
+        store.remove(conversationId, FLOW_KEY);
+        log.debug("Cleared context for conversation {}", conversationId);
     }
 
     public void clearAllContexts() {

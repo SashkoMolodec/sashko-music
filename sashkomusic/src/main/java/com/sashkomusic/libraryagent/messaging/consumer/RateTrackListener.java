@@ -23,14 +23,14 @@ public class RateTrackListener {
     @Async
     public void handleRateTrack(RateTrackTaskEvent event) {
         RateTrackTaskDto task = event.payload();
-        log.info("Received rate track task: trackId={}, rating={}, chatId={}", task.trackId(), task.rating(), task.chatId());
+        log.info("Received rate track task: trackId={}, rating={}, conversationId={}", task.trackId(), task.rating(), task.conversationId());
 
         try {
             RateTrackService.RateResult result = rateTrackService.rateTrack(task.trackId(), task.rating());
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "rating", String.valueOf(task.rating()), result.success(), result.message(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "rating", String.valueOf(task.rating()), result.success(), result.message(), task.conversationId()));
         } catch (Exception ex) {
             log.error("Error rating track: {}", ex.getMessage(), ex);
-            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "rating", String.valueOf(task.rating()), false, "критична помилка: " + ex.getMessage(), task.chatId()));
+            resultProducer.send(new TrackUpdateResultDto(task.trackId(), "rating", String.valueOf(task.rating()), false, "критична помилка: " + ex.getMessage(), task.conversationId()));
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.process.messaging;
 
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import com.sashkomusic.libraryagent.domain.model.ProcessedFile;
 import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
@@ -21,11 +22,11 @@ public class LibraryProcessingCompleteListener {
     @Async
     public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
         LibraryProcessingCompleteDto result = event.payload();
-        log.info("Received library processing result: chatId={}, success={}, processedFiles={}",
-                result.chatId(), result.success(), result.processedFiles().size());
+        log.info("Received library processing result: conversationId={}, success={}, processedFiles={}",
+                result.conversationId(), result.success(), result.processedFiles().size());
 
         String message = buildResultMessage(result);
-        chatBot.sendMessage(result.chatId(), message);
+        chatBot.sendMessage(ConversationContext.from(result.conversationId()), message);
     }
 
     private String buildResultMessage(LibraryProcessingCompleteDto result) {

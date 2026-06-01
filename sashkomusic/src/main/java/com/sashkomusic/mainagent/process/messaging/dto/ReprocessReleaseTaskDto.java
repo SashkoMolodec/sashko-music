@@ -6,10 +6,14 @@ import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService.ReprocessO
 
 @JsonTypeName("reprocess_release")
 public record ReprocessReleaseTaskDto(
-        long chatId,
+        String conversationId,
         String directoryPath,
         ReleaseMetadata metadata,
         int newMetadataVersion,
         ReprocessOptions options
 ) {
+    public long chatId() {
+        int colon = conversationId.indexOf(':');
+        return Long.parseLong(colon < 0 ? conversationId : conversationId.substring(0, colon));
+    }
 }
