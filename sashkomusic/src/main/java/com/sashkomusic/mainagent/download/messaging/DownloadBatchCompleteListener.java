@@ -45,7 +45,7 @@ public class DownloadBatchCompleteListener {
         allFiles.stream()
                 .map(f -> Path.of(f).getFileName().toString())
                 .sorted()
-                .forEach(name -> sb.append(name).append("\n"));
+                .forEach(name -> sb.append("   📄 `").append(name).append("`\n"));
 
         return sb.toString().stripTrailing();
     }
