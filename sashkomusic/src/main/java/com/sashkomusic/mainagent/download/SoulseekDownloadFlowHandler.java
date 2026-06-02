@@ -66,11 +66,6 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                 );
     }
 
-    @Override
-    public BotResponse buildAutoDownloadResponse(DownloadOption option, String releaseId) {
-        return BotResponse.text("not supported");
-    }
-
     @NotNull
     private static StringBuilder buildOptionsText(List<DownloadOption> options) {
         StringBuilder optionsText = new StringBuilder();

@@ -6,8 +6,6 @@ import java.util.List;
 
 public interface MusicSourcePort {
 
-    boolean autoDownloadEnabled();
-
     List<DownloadOption> search(String artist, String release);
 
     String initiateDownload(DownloadOption option, String releaseId);

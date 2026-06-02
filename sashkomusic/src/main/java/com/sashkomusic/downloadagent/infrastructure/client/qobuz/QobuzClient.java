@@ -62,10 +62,6 @@ public class QobuzClient implements MusicSourcePort {
         this.downloadRegistry = downloadRegistry;
     }
 
-    @Override
-    public boolean autoDownloadEnabled() {
-        return true;
-    }
 
     @Override
     public List<DownloadOption> search(String artist, String release) {

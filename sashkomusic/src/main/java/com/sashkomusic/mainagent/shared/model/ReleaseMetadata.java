@@ -1,9 +1,11 @@
 package com.sashkomusic.mainagent.shared.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.sashkomusic.mainagent.search.SearchEngine;
 
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ReleaseMetadata(
         String id,
         String masterId,

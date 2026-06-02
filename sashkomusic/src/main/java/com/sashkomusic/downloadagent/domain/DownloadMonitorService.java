@@ -1,7 +1,9 @@
 package com.sashkomusic.downloadagent.domain;
 
 import com.sashkomusic.downloadagent.messaging.producer.DownloadBatchCompleteProducer;
+import com.sashkomusic.downloadagent.messaging.producer.DownloadErrorProducer;
 import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadBatchCompleteDto;
+import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadErrorDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -10,6 +12,8 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +34,10 @@ public class DownloadMonitorService {
             "part", "tmp", "temp", "download", "crdownload", "partial"
     );
 
+    private static final Duration NO_FILES_TIMEOUT = Duration.ofMinutes(2);
+
     private final DownloadBatchCompleteProducer batchCompleteProducer;
+    private final DownloadErrorProducer errorProducer;
     private final Map<String, DownloadMonitorTask> activeTasks = new ConcurrentHashMap<>();
 
     public void startMonitoring(String conversationId, String releaseId, String downloadPath,
@@ -94,6 +101,16 @@ public class DownloadMonitorService {
                 int currentCount = audioFiles.size();
 
                 log.info("taskId={}, checking: {} audio files", taskId, currentCount);
+
+                if (currentCount == 0 && task.isTimedOut()) {
+                    log.warn("Download timed out with 0 audio files: taskId={}, artist={}, title={}",
+                            taskId, artist, title);
+                    errorProducer.sendError(DownloadErrorDto.of(
+                            task.conversationId(),
+                            "не вдалося завантажити «" + artist + " — " + title + "»: жоден трек не доступний"
+                    ));
+                    return true;
+                }
 
                 // Check for temp files - download still in progress
                 if (hasTempFiles(downloadDir)) {
@@ -215,6 +232,30 @@ public class DownloadMonitorService {
 
             if (albumFolder.isPresent()) {
                 log.info("Found album folder (title-only match): {}", albumFolder.get());
+                return albumFolder;
+            }
+        }
+
+        // Step 3: Fallback - folder name is a prefix of the search title
+        // yt-dlp may use a shorter album name than our search result
+        // e.g. search title "Lluvia (Baile Total)" but yt-dlp creates folder "Lluvia"
+        log.debug("No folder matching title='{}', trying folder-name-in-title match", title);
+
+        try (Stream<Path> subdirs = Files.walk(basePath, 2)) {
+            Optional<Path> albumFolder = subdirs
+                    .filter(Files::isDirectory)
+                    .filter(p -> !p.equals(basePath))
+                    .filter(p -> {
+                        String normalizedFolderName = normalizeForMatching(p.getFileName().toString());
+                        String fullPath = normalizeForMatching(p.toString());
+                        return normalizedFolderName.length() >= 4
+                                && normalizedTitle.contains(normalizedFolderName)
+                                && fullPath.contains(normalizedArtist);
+                    })
+                    .findFirst();
+
+            if (albumFolder.isPresent()) {
+                log.info("Found album folder (folder-name-in-title match): {}", albumFolder.get());
             }
             return albumFolder;
         }
@@ -227,6 +268,7 @@ public class DownloadMonitorService {
         private final int expectedFileCount;
         private final String artist;
         private final String title;
+        private final Instant startedAt = Instant.now();
         private int lastFileCount = -1;
         private int stableChecks = 0;
 
@@ -249,6 +291,10 @@ public class DownloadMonitorService {
 
         public void resetStableChecks() {
             stableChecks = 0;
+        }
+
+        public boolean isTimedOut() {
+            return Duration.between(startedAt, Instant.now()).compareTo(NO_FILES_TIMEOUT) > 0;
         }
 
         public boolean isStable(int currentCount) {

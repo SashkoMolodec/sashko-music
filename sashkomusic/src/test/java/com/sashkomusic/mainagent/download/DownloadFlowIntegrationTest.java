@@ -9,6 +9,8 @@ import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
+import com.sashkomusic.mainagent.bot.state.ChatStateStore;
+import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
@@ -63,7 +65,7 @@ class DownloadFlowIntegrationTest {
 
     @Test
     void DL_callback_publishes_FilesSearchTaskEvent_with_qobuz_default() {
-        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:" + RELEASE_ID);
+        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:" + RELEASE_ID, null);
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("шукаю опції завантаження");
@@ -80,7 +82,7 @@ class DownloadFlowIntegrationTest {
 
     @Test
     void DL_callback_with_unknown_releaseId_publishes_no_event() {
-        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:does-not-exist");
+        List<BotResponse> resp = dispatcher.dispatch(CTX, "DL:does-not-exist", null);
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("не получило");
@@ -89,6 +91,7 @@ class DownloadFlowIntegrationTest {
 
     @Configuration
     static class TestConfig {
+        @Bean ChatStateStore chatStateStore() { return new InMemoryChatStateStore(); }
         @Bean Map<SearchEngine, SearchEngineService> searchEngines() { return Map.of(); }
         @Bean Map<DownloadEngine, DownloadFlowHandler> downloadHandlers() { return Map.of(); }
         @Bean ReleaseSearchFlowService releaseSearchFlowService() {

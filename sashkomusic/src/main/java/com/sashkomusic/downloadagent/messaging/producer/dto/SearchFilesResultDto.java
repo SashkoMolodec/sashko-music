@@ -9,8 +9,7 @@ public record SearchFilesResultDto(
         String conversationId,
         String releaseId,
         DownloadEngine source,
-        List<DownloadOption> results,
-        boolean autoDownload) {
+        List<DownloadOption> results) {
 
     public long chatId() {
         int colon = conversationId.indexOf(':');

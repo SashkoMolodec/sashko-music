@@ -3,6 +3,9 @@ package com.sashkomusic.mainagent.search;
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
+import com.sashkomusic.mainagent.bot.state.ChatStateStore;
+import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
+import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.shared.model.DateRange;
 import com.sashkomusic.mainagent.shared.model.Language;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
@@ -61,7 +64,7 @@ class SearchFlowIntegrationTest {
         List<BotResponse> resp = searchFlow.searchDefault(CTX, "Burial");
 
         assertThat(resp).isNotEmpty();
-        assertThat(resp.get(0).text()).contains("знайдено релізів: 2");
+        assertThat(resp.get(0).text()).contains("1/2");
         assertThat(contextService.getSearchResults(CTX.conversationId())).hasSize(2);
         assertThat(contextService.getSource(CTX.conversationId())).isEqualTo(SearchEngine.MUSICBRAINZ);
     }
@@ -108,6 +111,9 @@ class SearchFlowIntegrationTest {
 
     @Configuration
     static class TestConfig {
+        @Bean ChatStateStore chatStateStore() { return new InMemoryChatStateStore(); }
+        @Bean FileIdCacheService fileIdCacheService() { return mock(FileIdCacheService.class); }
+
         @Bean SearchRequestExtractor searchRequestExtractor() { return mock(SearchRequestExtractor.class); }
 
         @Bean SearchEngineService musicBrainzMock() {

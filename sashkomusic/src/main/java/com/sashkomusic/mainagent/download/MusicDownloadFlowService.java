@@ -79,23 +79,8 @@ public class MusicDownloadFlowService {
 
         reports.forEach(r -> log.info("{}", r));
 
-        if (dto.autoDownload()) {
-            return autoDownload(dto, reports);
-        }
-
         String text = DownloadOptionsCardFormatter.format(reports, analysisResult.aiSummary());
         return List.of(flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source()));
-    }
-
-    private List<BotResponse> autoDownload(SearchFilesResultDto dto, List<DownloadFlowHandler.OptionReport> reports) {
-        var chosenReport = reports.getFirst();
-        var option = chosenReport.option();
-
-        log.info("Auto-downloading from {}: {}", option.source(), option.displayName());
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(dto.conversationId(), dto.releaseId(), option));
-
-        var flowHandler = downloadFlowHandlers.get(option.source());
-        return List.of(flowHandler.buildAutoDownloadResponse(option, dto.releaseId()));
     }
 
     public List<BotResponse> handleDownloadOption(ConversationContext ctx, String rawInput) {

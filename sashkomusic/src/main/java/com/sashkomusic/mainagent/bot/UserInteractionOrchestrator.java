@@ -117,7 +117,6 @@ public class UserInteractionOrchestrator {
 
     private List<BotResponse> clearAllCaches(ConversationContext ctx) {
         log.info("Clearing all caches for conversation {}", ctx.conversationId());
-        searchContextService.clearAllCaches();
         fileIdCacheService.clearForConversation(ctx.conversationId());
         downloadContextHolder.clearAllSessions();
         processFolderContextHolder.clearAllContexts();

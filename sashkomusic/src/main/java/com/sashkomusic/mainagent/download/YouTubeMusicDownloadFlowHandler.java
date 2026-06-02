@@ -1,22 +1,13 @@
 package com.sashkomusic.mainagent.download;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.download.DownloadOption;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
 
 @Component
-public class QobuzDownloadFlowHandler implements DownloadFlowHandler {
-
-    // Quality priority mapping (higher = better)
-    private static final Map<String, Integer> QUALITY_PRIORITY = Map.of(
-            "27", 4,  // 24-Bit/192 kHz
-            "7", 3,   // 24-Bit/96 kHz
-            "6", 2,   // 16-Bit/44.1 kHz
-            "5", 1    // MP3 320
-    );
+public class YouTubeMusicDownloadFlowHandler implements DownloadFlowHandler {
 
     @Override
     public AnalysisResult analyzeAll(List<DownloadOption> options, String releaseId, String conversationId) {
@@ -25,8 +16,7 @@ public class QobuzDownloadFlowHandler implements DownloadFlowHandler {
         }
 
         var reports = options.stream()
-                .map(opt -> new OptionReport(opt, Suitability.PERFECT))
-                .sorted(Comparator.comparingInt(this::getQualityPriority).reversed())
+                .map(opt -> new OptionReport(opt, Suitability.GOOD))
                 .toList();
 
         return new AnalysisResult(reports, "");
@@ -35,7 +25,7 @@ public class QobuzDownloadFlowHandler implements DownloadFlowHandler {
     @Override
     public BotResponse buildSearchResultsResponse(String formattedText, String releaseId, DownloadEngine currentSource) {
         var buttons = new LinkedHashMap<String, String>();
-        buttons.put("▶️", "SEARCH_ALT:" + releaseId + ":YOUTUBE_MUSIC");
+        buttons.put("🎵", "SEARCH_ALT:" + releaseId + ":QOBUZ");
         buttons.put("🍏", "SEARCH_ALT:" + releaseId + ":APPLE_MUSIC");
         buttons.put("📼", "SEARCH_ALT:" + releaseId + ":BANDCAMP");
         buttons.put("⛏️", "SEARCH_ALT:" + releaseId + ":SOULSEEK");
@@ -44,11 +34,7 @@ public class QobuzDownloadFlowHandler implements DownloadFlowHandler {
 
     @Override
     public String formatDownloadConfirmation(DownloadOption option) {
-        return "✅ *ок, качаю:*\n%s".formatted(option.displayName());
+        return "✅ *ок, качаю з youtube music:*\n%s".formatted(option.displayName());
     }
 
-    private int getQualityPriority(OptionReport report) {
-        String quality = report.option().technicalMetadata().get("quality");
-        return QUALITY_PRIORITY.getOrDefault(quality, 0);
-    }
 }

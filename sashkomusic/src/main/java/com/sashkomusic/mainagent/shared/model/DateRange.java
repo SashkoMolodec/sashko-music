@@ -1,5 +1,8 @@
 package com.sashkomusic.mainagent.shared.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record DateRange(Integer from, Integer to) {
 
     public static DateRange single(Integer year) {

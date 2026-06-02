@@ -14,8 +14,6 @@ public interface DownloadFlowHandler {
 
     String formatDownloadConfirmation(DownloadOption option);
 
-    BotResponse buildAutoDownloadResponse(DownloadOption option, String releaseId);
-
     record OptionReport(
             DownloadOption option,
             Suitability suitability

@@ -35,13 +35,4 @@ public class AppleMusicDownloadFlowHandler implements DownloadFlowHandler {
         return "✅ *ок, качаю з apple music:*\n%s".formatted(option.displayName());
     }
 
-    @Override
-    public BotResponse buildAutoDownloadResponse(DownloadOption option, String releaseId) {
-        String message = "✅ **знайшов то шо треба, для душі, качаю:**\n`%s`".formatted(option.displayName());
-
-        var buttons = new LinkedHashMap<String, String>();
-        buttons.put("❌", "CANCEL_DL:" + releaseId);
-
-        return BotResponse.withButtons(message, buttons);
-    }
 }

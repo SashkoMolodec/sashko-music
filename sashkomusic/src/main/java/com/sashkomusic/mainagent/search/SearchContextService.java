@@ -1,73 +1,91 @@
 package com.sashkomusic.mainagent.search;
 
-import com.sashkomusic.mainagent.search.SearchSessionExpiredException;
+import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.shared.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 public class SearchContextService {
-    private final Map<String, ReleaseMetadata> releaseMetadata = new ConcurrentHashMap<>();
-    private final Map<String, SearchContext> userSearches = new ConcurrentHashMap<>();
+
+    private static final String FLOW_KEY = "search";
+
+    // In-memory cache for O(1) release lookups by ID.
+    // Rebuilt lazily from ChatStateStore after JVM restart.
+    private final Map<String, ReleaseMetadata> releaseMetadataCache = new ConcurrentHashMap<>();
+
+    private final ChatStateStore stateStore;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
 
-    public SearchContextService(Map<SearchEngine, SearchEngineService> searchEngines) {
+    public SearchContextService(ChatStateStore stateStore,
+                                Map<SearchEngine, SearchEngineService> searchEngines) {
+        this.stateStore = stateStore;
         this.searchEngines = searchEngines;
     }
 
     public ReleaseMetadata getReleaseMetadata(String releaseId) {
-        return releaseMetadata.get(releaseId);
+        return releaseMetadataCache.get(releaseId);
     }
 
     public void saveReleaseMetadata(ReleaseMetadata metadata) {
-        releaseMetadata.put(metadata.id(), metadata);
+        releaseMetadataCache.put(metadata.id(), metadata);
     }
 
-    public void saveSearchContext(String conversationId, SearchEngine source, String rawInput, MetadataSearchRequest request, List<ReleaseMetadata> results) {
-        results.forEach(r -> releaseMetadata.put(r.id(), r));
+    public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
+                                  MetadataSearchRequest request, List<ReleaseMetadata> results) {
+        // Merge new releases with existing ones — deduplicate by ID, new results take precedence
+        LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
+        stateStore.get(conversationId, FLOW_KEY, SearchState.class)
+                .ifPresent(s -> s.releases().forEach(r -> merged.put(r.id(), r)));
+        results.forEach(r -> merged.put(r.id(), r));
 
-        List<String> releaseIds = results.stream()
-                .map(ReleaseMetadata::id)
-                .toList();
-
-        userSearches.put(conversationId, new SearchContext(source, request, rawInput, releaseIds));
+        merged.values().forEach(r -> releaseMetadataCache.put(r.id(), r));
+        List<ReleaseMetadata> mergedReleases = new ArrayList<>(merged.values());
+        List<String> releaseIds = mergedReleases.stream().map(ReleaseMetadata::id).toList();
+        SearchContext context = new SearchContext(source, request, rawInput, releaseIds);
+        stateStore.put(conversationId, FLOW_KEY, new SearchState(context, mergedReleases));
     }
 
     public void validateSession(String conversationId) {
-        SearchContext context = userSearches.get(conversationId);
-        if (context == null) {
+        if (loadContext(conversationId).isEmpty()) {
             throw new SearchSessionExpiredException("Search session not found for conversation: " + conversationId);
         }
     }
 
     public List<ReleaseMetadata> getSearchResults(String conversationId) {
-        validateSession(conversationId);
-        SearchContext context = userSearches.get(conversationId);
+        SearchContext context = loadContext(conversationId)
+                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId));
         return context.releaseIds().stream()
-                .map(releaseMetadata::get)
+                .map(releaseMetadataCache::get)
                 .filter(Objects::nonNull)
                 .toList();
     }
 
     public MetadataSearchRequest getSearchRequest(String conversationId) {
-        validateSession(conversationId);
-        return userSearches.get(conversationId).request();
+        return loadContext(conversationId)
+                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId))
+                .request();
     }
 
     public SearchEngine getSource(String conversationId) {
-        validateSession(conversationId);
-        return userSearches.get(conversationId).source();
+        return loadContext(conversationId)
+                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId))
+                .source();
     }
 
     public String getRawInput(String conversationId) {
-        validateSession(conversationId);
-        return userSearches.get(conversationId).rawInput();
+        return loadContext(conversationId)
+                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId))
+                .rawInput();
     }
 
     public ReleaseMetadata getMetadataWithTracks(String releaseId, String conversationId) {
@@ -85,8 +103,7 @@ public class SearchContextService {
         log.info("Fetching tracks for releaseId={}, source={}", releaseId, metadata.source());
 
         try {
-            SearchEngine source = getSource(conversationId);
-            SearchEngineService engine = searchEngines.get(source);
+            SearchEngineService engine = searchEngines.get(metadata.source());
 
             List<TrackMetadata> tracks = engine.getTracks(releaseId);
 
@@ -96,7 +113,7 @@ public class SearchContextService {
                 log.info("Successfully fetched {} tracks for releaseId={}", tracks.size(), releaseId);
                 return enriched;
             } else {
-                log.warn("No tracks returned from {} for releaseId={}", source, releaseId);
+                log.warn("No tracks returned from {} for releaseId={}", metadata.source(), releaseId);
                 return metadata;
             }
         } catch (Exception e) {
@@ -106,21 +123,29 @@ public class SearchContextService {
     }
 
     public void copySearchContext(String fromId, String toId) {
-        SearchContext ctx = userSearches.get(fromId);
-        if (ctx != null) {
-            userSearches.put(toId, ctx);
-        }
+        stateStore.get(fromId, FLOW_KEY, SearchState.class).ifPresent(state ->
+                saveSearchContext(toId, state.context().source(), state.context().rawInput(),
+                        state.context().request(), state.releases())
+        );
     }
 
     public void clearSearch(String conversationId) {
-        userSearches.remove(conversationId);
+        stateStore.remove(conversationId, FLOW_KEY);
     }
 
     public void clearAllCaches() {
-        int releasesCount = releaseMetadata.size();
-        int searchesCount = userSearches.size();
-        releaseMetadata.clear();
-        userSearches.clear();
-        log.info("Cleared all search caches: {} releases, {} searches", releasesCount, searchesCount);
+        int releasesCount = releaseMetadataCache.size();
+        releaseMetadataCache.clear();
+        int cleared = stateStore.clearAll(FLOW_KEY);
+        log.info("Cleared search state: {} releases cached, {} conversations in store", releasesCount, cleared);
+    }
+
+    // Loads SearchContext from store, rebuilds release cache as a side-effect.
+    private Optional<SearchContext> loadContext(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, SearchState.class)
+                .map(state -> {
+                    state.releases().forEach(r -> releaseMetadataCache.putIfAbsent(r.id(), r));
+                    return state.context();
+                });
     }
 }

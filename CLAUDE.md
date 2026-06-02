@@ -39,7 +39,7 @@ The project is a single Gradle module `sashkomusic` — one Spring Boot applicat
 | `com.sashkomusic.events` | Spring Application Event records (one per former Kafka topic + `TrackAnalysisCompleteEvent`) | Logic — events are pure data |
 | `com.sashkomusic.agents` | LLM agents (`main`, `discovery`) + deterministic agent services (`download`, `library`). Shared `contract` records + `bridge` accumulator. | Telegram I/O outside `bridge`; direct DB access |
 | `com.sashkomusic.mainagent` | Telegram bot entry, slash commands, FlowServices (search / download / library / streaming / process — orchestration only), session state, AI extractors that fit mainagent's concerns (`SearchRequestExtractor`, `DownloadBatchAnalyzer`). The `process` sub-package keeps **only** the Telegram-facing orchestration for `/process` and `/reprocess` (Flow / ContextHolder / OngoingFlow / messaging). All filesystem inspection + `.release-metadata.json` IO + folder-name LLM extraction belongs in libraryagent. | Direct DB access, file system ops |
-| `com.sashkomusic.downloadagent` | Soulseek/Bandcamp/Qobuz/Apple Music download coordination, MusicSourcePort implementations | Telegram logic, user session state |
+| `com.sashkomusic.downloadagent` | Soulseek/Bandcamp/Qobuz/Apple Music/YouTube Music download coordination, MusicSourcePort implementations | Telegram logic, user session state |
 | `com.sashkomusic.libraryagent` | File system watching, audio metadata extraction, DB persistence (Track/Release/Artist/Tag), tag-change detection, audio-analyzer REST bridge, `.release-metadata.json` read/write (Reader+Writer live together), folder-name LLM extraction (`FolderNameParser`), filesystem-based release identification (`ReleaseIdentifierService`) | Download coordination, Telegram |
 | `com.sashkomusic.api` | Read-only REST API over the music DB — `TrackController`, `TrackService`, DTOs, exceptions. Reads from libraryagent repositories. | Write operations, agent logic, Telegram I/O |
 | `sm-audio-analyzer` | Python / Essentia: audio feature extraction (BPM, MFCC, danceability, loudness). HTTP in, HTTP callback out | Any Java/Spring concerns |
@@ -123,7 +123,8 @@ Production impl: `JpaChatStateStore` (Postgres + Jackson). Test impl: `InMemoryC
 
 **ContextHolder pattern** — every per-chat state holder routes through `ChatStateStore` with one stable `flow_key`:
 - `dj_tag` → `DjTagContextHolder` (track + waitingForComment flag)
-- *(in-memory still; planned)* `download` → `DownloadContextHolder`, `search` → `SearchContextService`
+- `search` → `SearchContextService` (SearchContext + List\<ReleaseMetadata\> per conversation)
+- *(in-memory still; planned)* `download` → `DownloadContextHolder`
 
 When introducing a new holder, follow the pattern: declare a private `FLOW_KEY` constant, inject `ChatStateStore`, no in-process `Map<Long, T>`.
 
@@ -267,6 +268,44 @@ class MyTest {
 **ChatStateStore in tests** — provide `new InMemoryChatStateStore()` as a `@Bean` instead of mocking. Round-trip serialisation matches the real impl, so test data behaves like prod data.
 
 When adding a new flow test, mirror one of the above — do NOT introduce `@SpringBootTest` unless you specifically need the full container.
+
+## Change Recipes
+
+Типові зміни що зачіпають кілька модулів — виконуй у цьому порядку, оновлюй spec до коду.
+
+### Нове джерело завантаження (новий `DownloadEngine`)
+1. `mainagent/download/DownloadEngine.java` — додати enum value
+2. `downloadagent/infrastructure/client/<source>/` — новий клас що імплементує `MusicSourcePort`
+3. `downloadagent/config/MusicSourceConfig.java` — зареєструвати в map
+4. `mainagent/download/<Source>DownloadFlowHandler.java` — новий `DownloadFlowHandler`
+5. `mainagent/download/config/DownloadSourceConfig.java` — зареєструвати в map
+6. Інші handlers (`QobuzDownloadFlowHandler`, `YouTubeMusicDownloadFlowHandler`) — додати кнопку в `buildSearchResultsResponse`
+7. `agents/download/spec.md` — оновити таблицю джерел
+8. `mainagent/download/spec.md` — оновити таблицю handlers і кнопки
+
+### Нова slash-команда або OngoingFlow
+1. `mainagent/bot/UserInteractionOrchestrator` — додати routing (тільки для slash-команд; OngoingFlow — без змін тут)
+2. Новий `*FlowService` або `*OngoingFlow` — реалізація
+3. Якщо є стан — новий `*ContextHolder` через `ChatStateStore` (flow_key константа, без `Map<Long, T>`)
+4. Якщо публікує event — додати рядок у Spring Event Map в цьому файлі
+
+### Новий callback-тип (`XYZ:`)
+1. Новий `@Component` що імплементує `CallbackHandler`
+2. `mainagent/bot/CallbackDispatcher` — зареєструвати prefix у `LinkedHashMap`
+3. Якщо потрібен `DownloadFlowHandler` — додати метод в інтерфейс і всі 5 impl
+
+### Новий tool у MainAgent
+1. `agents/main/spec.md` — описати tool (умова, параметри, return, side-effect) **ДО коду**
+2. `MainAgentTools` — додати `@Tool` метод
+3. Якщо новий sub-agent — новий `*AgentService` + `agents/*/spec.md`
+
+### Нова Spring подія між пакетами
+1. `events/` — новий record-клас події
+2. Spring Event Map вище — додати рядок
+3. `@EventListener @Async` listener у пакеті-отримувачі
+4. Publisher у пакеті-відправнику через `ApplicationEventPublisher`
+
+---
 
 ## Skills Registry
 

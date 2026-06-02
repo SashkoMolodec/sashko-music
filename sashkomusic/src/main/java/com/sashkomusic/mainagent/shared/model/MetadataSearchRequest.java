@@ -1,7 +1,9 @@
 package com.sashkomusic.mainagent.shared.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.UUID;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record MetadataSearchRequest(
         String id,
         String artist,

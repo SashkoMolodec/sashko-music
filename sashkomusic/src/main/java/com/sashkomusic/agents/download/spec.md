@@ -58,10 +58,11 @@ BotResponse-и вже в accumulator — LLM їх не бачить.
 
 ```
 Map<DownloadEngine, DownloadFlowHandler>  ← injected by Spring
-  ├─ QOBUZ    → QobuzDownloadFlowHandler   (лосслес, API)
-  ├─ BANDCAMP → BandcampDownloadFlowHandler
-  ├─ SOULSEEK → SoulseekDownloadFlowHandler (P2P)
-  └─ APPLE    → AppleMusicDownloadFlowHandler
+  ├─ QOBUZ         → QobuzDownloadFlowHandler        (лосслес, API)
+  ├─ BANDCAMP      → BandcampDownloadFlowHandler
+  ├─ SOULSEEK      → SoulseekDownloadFlowHandler      (P2P)
+  ├─ APPLE_MUSIC   → AppleMusicDownloadFlowHandler
+  └─ YOUTUBE_MUSIC → YouTubeMusicDownloadFlowHandler  (yt-dlp, AAC)
 ```
 
 Вибір движка за замовчуванням — в `MusicDownloadFlowService.initiateDefaultDownloadSearch()`.
@@ -110,7 +111,7 @@ FilesSearchTaskEvent → downloadagent → пошук файлів
 ---
 
 ## SDD checkpoints (змінювати spec ДО коду)
-- Нове джерело → `DownloadEngine` enum + `DownloadFlowHandler` impl.
-  Цей spec не змінюється — тільки strategy map росте.
-- Хочеш дати LLM вибір между движками → додати `engine` параметр в `MainAgentTools.downloadMusic`.
+- Нове джерело → `DownloadEngine` enum + `DownloadFlowHandler` impl + оновити таблицю вище.
+  Також оновити `mainagent/download/spec.md` (кнопки alternate source).
+- Хочеш дати LLM вибір між движками → додати `engine` параметр в `MainAgentTools.downloadMusic`.
 - Зміна event chain → оновити діаграму "Async event flow" тут.

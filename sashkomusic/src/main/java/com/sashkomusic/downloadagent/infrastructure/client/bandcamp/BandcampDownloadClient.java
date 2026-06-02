@@ -42,10 +42,6 @@ public class BandcampDownloadClient implements MusicSourcePort {
         this.commandExecutor = commandExecutor;
     }
 
-    @Override
-    public boolean autoDownloadEnabled() {
-        return true;
-    }
 
     @Override
     public List<DownloadOption> search(String artist, String release) {
