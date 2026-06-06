@@ -28,6 +28,12 @@ public class SlskdWebhookController {
     private final DownloadContext downloadContext;
 
     @PostMapping("/download-complete")
+    public ResponseEntity<Void> handleDownloadCompleteRaw(@RequestBody String raw) {
+        log.info("Raw slskd webhook body: {}", raw);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/download-complete-real")
     public ResponseEntity<Void> handleDownloadComplete(@RequestBody SlskdDownloadCompleteWebhook webhook) {
         log.info("Received download complete webhook: type={}, remoteFilename={}",
                 webhook.type(), webhook.remoteFilename());
