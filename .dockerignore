@@ -79,6 +79,7 @@ README*.md
 
 # Scripts
 *.sh
+!entrypoint.sh
 
 # Cookies and secrets
 cookies.txt
