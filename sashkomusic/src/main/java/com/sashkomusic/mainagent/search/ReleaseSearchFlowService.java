@@ -129,7 +129,12 @@ public class ReleaseSearchFlowService {
 
     private String buildCardText(ReleaseMetadata release, int index, int total) {
         String body = ReleaseCardFormatter.formatCardText(release);
-        return "📍 %d/%d\n%s".formatted(index + 1, total, body);
+        String source = switch (release.source()) {
+            case MUSICBRAINZ -> "MB";
+            case DISCOGS -> "Discogs";
+            case BANDCAMP -> "Bandcamp";
+        };
+        return "📍 %d/%d (%s)\n%s".formatted(index + 1, total, source, body);
     }
 
     private List<List<BotResponse.ButtonDto>> buildCardButtonRows(ReleaseMetadata release, int index, int total) {

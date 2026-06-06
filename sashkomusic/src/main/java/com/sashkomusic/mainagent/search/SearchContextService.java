@@ -5,12 +5,7 @@ import com.sashkomusic.mainagent.shared.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -49,10 +44,7 @@ public class SearchContextService {
 
     public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
                                   MetadataSearchRequest request, List<ReleaseMetadata> results) {
-        // Merge new releases with existing ones — deduplicate by ID, new results take precedence
         LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
-        stateStore.get(conversationId, FLOW_KEY, SearchState.class)
-                .ifPresent(s -> s.releases().forEach(r -> merged.put(r.id(), r)));
         results.forEach(r -> merged.put(r.id(), r));
 
         merged.values().forEach(r -> releaseMetadataCache.put(r.id(), r));
