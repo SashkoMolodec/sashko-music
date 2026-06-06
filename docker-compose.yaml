@@ -40,7 +40,7 @@ services:
       dockerfile: Dockerfile
       args:
         SERVICE_NAME: sashkomusic
-    container_name: sm_app
+    container_name: smapp
     image: localhost/sashkomusic:latest
     ports:
       - "8085:8080"
@@ -123,7 +123,7 @@ services:
     environment:
       - ANALYSIS_RESULTS_PATH=${ANALYSIS_RESULTS_PATH}
       - ANALYSIS_VERSION=1.0
-      - CALLBACK_URL=http://sm_app:8080
+      - CALLBACK_URL=http://smapp:8080
     volumes:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}:ro
       - ${ANALYSIS_RESULTS_PATH}:${ANALYSIS_RESULTS_PATH}:rw
