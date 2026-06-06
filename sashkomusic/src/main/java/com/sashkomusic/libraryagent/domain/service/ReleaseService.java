@@ -35,6 +35,7 @@ public class ReleaseService {
     private final LabelRepository labelRepository;
     private final AudioTagExtractor tagExtractor;
     private final AnalyzeTrackProducer analyzeTrackProducer;
+    private final LibrarySearchService librarySearchService;
 
     @Transactional
     public void clearReleaseData(String sourceId) {
@@ -127,6 +128,7 @@ public class ReleaseService {
         Release savedRelease = releaseRepository.save(release);
         log.info("Successfully saved release with ID: {}", savedRelease.getId());
 
+        librarySearchService.indexRelease(savedRelease.getId());
         triggerAudioAnalysis(savedRelease);
     }
 

@@ -48,9 +48,9 @@ DiscoveryAgent має **окремий** memory ID (`conversationId + ":d"`) —
 | `findMusicOnBandcamp(query)` | юзер явно каже "bandcamp" | `DiscoveryAgentService` (direct path) |
 | `findMusicOnMusicBrainz(query)` | юзер явно каже "musicbrainz" | `DiscoveryAgentService` (direct path) |
 | `digDeeper()` | "копай ще", "try another source" | `ReleaseSearchFlowService.switchStrategyAndSearch()` |
+| `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "є у тебе" | `LibrarySearchService.search()` (PostgreSQL FTS) |
 | `downloadMusic(artist, album)` | "скачай", "завантаж" (явний намір) | `DownloadAgentService` |
 | `discussRelease(question)` | питання про щойно знайдений реліз | `SearchContextService.getMetadataWithTracks()` |
-| `manageLibrary(command)` | rate/energy/function/comment | `LibraryAgentService` |
 
 Side-effect всіх search tools: release cards → `ChatResponseAccumulator`.
 `downloadMusic` — fire-and-forget, результат через async events.

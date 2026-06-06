@@ -5,11 +5,10 @@ import com.sashkomusic.agents.contract.DiscoverRequest;
 import com.sashkomusic.agents.contract.DiscoverResult;
 import com.sashkomusic.agents.contract.DownloadRequest;
 import com.sashkomusic.agents.contract.DownloadResult;
-import com.sashkomusic.agents.contract.LibraryRequest;
-import com.sashkomusic.agents.contract.LibraryResult;
 import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.download.DownloadAgentService;
-import com.sashkomusic.agents.library.LibraryAgentService;
+import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
+import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
@@ -29,9 +28,9 @@ public class MainAgentTools {
 
     private final DiscoveryAgentService discoveryAgent;
     private final DownloadAgentService downloadAgent;
-    private final LibraryAgentService libraryAgent;
     private final ProgressNotifier progressNotifier;
     private final SearchContextService searchContextService;
+    private final LibrarySearchService librarySearchService;
 
     @Tool("Search for music — artist, album or track. Use for free-form discovery requests. Tries MusicBrainz → Discogs → Bandcamp, stops at first hit.")
     public String findMusic(
@@ -156,11 +155,25 @@ public class MainAgentTools {
         return sb.toString().trim();
     }
 
-    @Tool("Apply a library operation to the currently-playing track: rate, set energy, set function, or add comment.")
-    public String manageLibrary(
-            @P("user's natural-language command, e.g. 'rate 5', 'energy 3', 'мракнути банжер', 'коментар крутий'") String command,
+    @Tool("Search the user's own music library (already downloaded and processed releases). Use when the user asks 'чи є в мене', 'є у мене', 'шукай у моїй колекції', 'в бібліотеці', 'do I have', 'in my library', or asks about a specific artist/album they may already own.")
+    public String searchOwnLibrary(
+            @P("search query — artist name, album title, genre tag, or any combination") String query,
             @ToolMemoryId String conversationId) {
-        LibraryResult result = libraryAgent.handle(LibraryRequest.of(conversationId, command));
-        return result.summary();
+        List<LibrarySearchResult> results = librarySearchService.search(query, 5);
+        if (results.isEmpty()) {
+            return "нічого не знайдено у твоїй бібліотеці за запитом: " + query;
+        }
+        var sb = new StringBuilder();
+        sb.append("Знайдено у твоїй бібліотеці (").append(results.size()).append("):\n");
+        for (LibrarySearchResult r : results) {
+            sb.append("- ");
+            if (r.artists() != null && !r.artists().isBlank()) sb.append(r.artists()).append(" — ");
+            sb.append(r.title());
+            if (r.year() != null) sb.append(" (").append(r.year()).append(")");
+            if (r.tags() != null && !r.tags().isBlank()) sb.append(" [").append(r.tags()).append("]");
+            sb.append(", ").append(r.trackCount()).append(" треків\n");
+        }
+        return sb.toString().strip();
     }
+
 }

@@ -54,7 +54,7 @@ navidrome/data/
 *.log
 
 # Database backups
-*.sql
+/*.sql
 *.dump
 
 # macOS

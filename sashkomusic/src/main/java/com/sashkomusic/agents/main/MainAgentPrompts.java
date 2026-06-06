@@ -23,12 +23,15 @@ final class MainAgentPrompts {
                 Takes NO query parameter — uses the previous search automatically.
 
             Other tools:
+              - searchOwnLibrary(query): search the user's own processed music library.
+                Use when the user asks if they have something ("чи є в мене", "є у мене", "є у тебе", "в моїй колекції", "do I have", "in my library"),
+                or when they ask about a specific artist/album they may already own.
+                Examples: "чи є в мене burial", "є у тебе aphex twin", "що в мене є від boards of canada", "шукай у моїй бібліотеці rave".
+                Do NOT use for general discovery — for that use findMusic.
               - downloadMusic(artist, album): the user explicitly wants to download something by name.
                 Examples: "скачай Daft Punk Discovery", "завантаж Kraftwerk Autobahn".
                 Use ONLY when the user uses words like "скачай", "завантаж", "download".
                 For downloading items the user already saw in a search, the user clicks a button — you don't need to handle it.
-              - manageLibrary(command): the user wants to rate / tag / comment a track they are currently listening to.
-                Examples: "оціни 5", "energy 3", "марк банжер", "коментар крутий бенгер".
               - discussRelease(question): the user asks about a release they ALREADY found — tracks, genre, year, label, music history.
                 Examples: "які треки?", "в якому жанрі цей альбом?", "що тоді в музиці відбувалось?", "розкажи більше".
                 Use this instead of any search tool when the user is asking ABOUT a result they just saw.

@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.process;
 
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
+import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.processFolder.ReleaseMetadataReader;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
@@ -36,17 +37,20 @@ public class ReprocessReleasesFlowService {
     private final Map<SearchEngine, SearchEngineService> searchEngines;
     private final ReprocessReleaseTaskProducer taskProducer;
     private final PathMappingService pathMappingService;
+    private final LibrarySearchService librarySearchService;
 
     public ReprocessReleasesFlowService(LibraryConfig libraryConfig,
                                         ReleaseMetadataReader metadataReader,
                                         Map<SearchEngine, SearchEngineService> searchEngines,
                                         ReprocessReleaseTaskProducer taskProducer,
-                                        PathMappingService pathMappingService) {
+                                        PathMappingService pathMappingService,
+                                        LibrarySearchService librarySearchService) {
         this.libraryConfig = libraryConfig;
         this.metadataReader = metadataReader;
         this.searchEngines = searchEngines;
         this.taskProducer = taskProducer;
         this.pathMappingService = pathMappingService;
+        this.librarySearchService = librarySearchService;
     }
 
     public ReprocessResult handle(ConversationContext ctx, String rawInput) {
@@ -185,6 +189,9 @@ public class ReprocessReleasesFlowService {
             }
 
             log.info("Scanning library for releases to reprocess: {} (options={})", rootPath, options);
+
+            int indexed = librarySearchService.reindexAll();
+            log.info("Pre-indexed {} existing releases in search index", indexed);
 
             List<Path> releaseDirs = findAllReleasesWithMetadata(rootPath);
 

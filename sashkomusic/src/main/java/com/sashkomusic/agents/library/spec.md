@@ -60,6 +60,58 @@ Parser — case-insensitive, trim whitespace. `null`/empty → `Unknown`.
 
 ---
 
+## Library Full-Text Search (`LibrarySearchService`)
+
+Окремий сервіс в `libraryagent.domain.service`. Не LLM — чистий PostgreSQL FTS.
+
+### Індекс
+
+Колонка `releases.search_vector tsvector` з GIN-індексом. Оновлюється явно — через `indexRelease(id)` або `reindexAll()`.
+
+Документ будується з чотирьох полів з різними вагами:
+
+| Вага | Поле | Пріоритет при ранжуванні |
+|------|------|--------------------------|
+| `A`  | `releases.title` + `artists.name` | найвищий |
+| `B`  | `tags.name` (жанрові теги) | середній |
+| `C`  | `tracks.title` | нижній |
+
+Токенізатор: `simple_unaccent` — кастомна конфігурація (PG text search config), яка опускає акценти (`unaccent`) та переводить у нижній регістр. Без стемінгу — підходить для кирилиці та англійських власних назв.
+
+### Пошуковий запит
+
+```sql
+r.search_vector @@ websearch_to_tsquery('simple_unaccent', :query)
+```
+
+`websearch_to_tsquery` парсить вхід як Google-запит:
+- `burial rival` → `'burial' & 'rival'` (AND)
+- `burial OR godspeed` → `'burial' | 'godspeed'`
+- `"rival dealer"` → точна фраза
+- `-techno` → виключення
+
+Ранжування: `ts_rank(search_vector, tsquery)` — 0..1, враховує частоту і вагу токена.
+
+### API
+
+```java
+List<LibrarySearchResult> search(String query, int limit)  // FTS пошук
+void indexRelease(Long releaseId)                          // оновити вектор одного релізу
+int  reindexAll()                                          // batch UPDATE всіх релізів
+```
+
+`indexRelease` автоматично викликається в `ReleaseService.saveRelease()` після збереження.
+`reindexAll` викликається на початку `/reprocess all`.
+
+### Тригери індексації
+
+| Момент | Метод |
+|--------|-------|
+| `/process` або `/reprocess` одного релізу | `indexRelease(id)` в `ReleaseService.saveRelease()` |
+| `/reprocess all` | `reindexAll()` на початку + `indexRelease` для кожного обробленого |
+
+---
+
 ## SDD checkpoints
 - Нова операція:
   1. `LibraryCommand.X` variant
