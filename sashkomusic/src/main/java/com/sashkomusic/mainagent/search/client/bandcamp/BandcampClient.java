@@ -236,7 +236,7 @@ public class BandcampClient implements SearchEngineService {
                 .map(this::aggregateGroup)
                 .sorted(Comparator.comparing((ReleaseMetadata m) ->
                                 m.years().stream().max(String::compareTo).orElse("0000"))
-                        .thenComparingInt(ReleaseMetadata::score).reversed())
+                        .thenComparing(Comparator.comparingInt(ReleaseMetadata::score).reversed()))
                 .toList();
     }
 

@@ -290,7 +290,7 @@ public class MusicBrainzClient implements SearchEngineService {
         return grouped.values().stream()
                 .map(this::aggregateGroup)
                 .sorted(
-                        Comparator.comparing((ReleaseMetadata m) -> m.years().isEmpty() ? "0000" : m.years().getFirst()).reversed()
+                        Comparator.comparing((ReleaseMetadata m) -> m.years().isEmpty() ? "0000" : m.years().getFirst())
                                 .thenComparing(Comparator.comparingInt(ReleaseMetadata::score).reversed())
                                 .thenComparingInt(r -> r.title().length())
                 )
