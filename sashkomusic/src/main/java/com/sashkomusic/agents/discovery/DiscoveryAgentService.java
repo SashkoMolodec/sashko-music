@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -91,17 +92,59 @@ public class DiscoveryAgentService {
 
     private static String formatForMainAgent(List<ReleaseMetadata> releases, SearchEngine engine) {
         String engineName = engine != null ? engine.getName() : "unknown";
-        String lines = releases.stream().map(r -> {
-            String line = "- ";
-            if (r.artist() != null && !r.artist().isBlank()) line += r.artist() + " — ";
-            line += r.title() != null ? r.title() : "?";
-            if (r.years() != null && !r.years().isEmpty()) line += " (" + r.getYearsDisplay() + ")";
-            if (r.label() != null && !r.label().isBlank()) line += ", " + r.label();
-            if (r.types() != null && !r.types().isEmpty()) line += " [" + r.getTypesDisplay() + "]";
-            if (r.tags() != null && !r.tags().isEmpty())
-                line += " #" + String.join(" #", r.tags().stream().limit(3).toList());
-            return line;
-        }).collect(Collectors.joining("\n"));
-        return "Found %d releases on %s:\n%s".formatted(releases.size(), engineName, lines);
+
+        // year range
+        var allYears = releases.stream()
+                .filter(r -> r.years() != null)
+                .flatMap(r -> r.years().stream())
+                .filter(y -> y != null && y.matches("\\d{4}"))
+                .map(Integer::parseInt)
+                .sorted()
+                .toList();
+        String yearsStr = allYears.isEmpty() ? "" :
+                allYears.size() == 1 ? allYears.getFirst().toString() :
+                        allYears.getFirst() + "–" + allYears.getLast();
+
+        // type breakdown
+        var typeCounts = releases.stream()
+                .filter(r -> r.types() != null)
+                .flatMap(r -> r.types().stream())
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(t -> t.toLowerCase().trim(), Collectors.counting()));
+        String typesStr = typeCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .map(e -> e.getValue() + " " + e.getKey())
+                .collect(Collectors.joining(", "));
+
+        // top labels
+        String labelsStr = releases.stream()
+                .map(ReleaseMetadata::label)
+                .filter(l -> l != null && !l.isBlank())
+                .collect(Collectors.groupingBy(l -> l, Collectors.counting()))
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(3)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.joining(", "));
+
+        // top tags
+        String tagsStr = releases.stream()
+                .filter(r -> r.tags() != null)
+                .flatMap(r -> r.tags().stream())
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(t -> t.toLowerCase().trim(), Collectors.counting()))
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(5)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.joining(", "));
+
+        var sb = new StringBuilder();
+        sb.append("Found ").append(releases.size()).append(" releases on ").append(engineName).append(".");
+        if (!yearsStr.isEmpty()) sb.append(" Years: ").append(yearsStr).append(".");
+        if (!typesStr.isEmpty()) sb.append(" Types: ").append(typesStr).append(".");
+        if (!labelsStr.isEmpty()) sb.append(" Labels: ").append(labelsStr).append(".");
+        if (!tagsStr.isEmpty()) sb.append(" Tags: ").append(tagsStr).append(".");
+        return sb.toString();
     }
 }

@@ -73,7 +73,7 @@ Memory **не очищається** між викликами `handle()` — т
    - Якщо `rawInput` не змінився (наприклад, викликано тільки `getTrackList`) → повернути summary DiscoveryAgent без форматування
 4. Якщо нічого не знайшов → `DiscoverResult.empty(summary)`
 
-`formatForMainAgent()` — форматує список releases для читання MainAgent: `"Found N releases on engine:\n- artist — title (year), label [type] #tags"`. MainAgent **не парсить** `DiscoverResult` структурно, тільки читає `.summary()`.
+`formatForMainAgent()` — формує агрегований summary для MainAgent: кількість, діапазон років, розбивка по типах (album/EP/single/other), топ-3 лейбли, топ-5 тегів. **Не перелічує кожен реліз** — MainAgent не парсить `DiscoverResult` структурно, тільки читає `.summary()`. Tracklist-відповідь (`getTrackList`) передається без агрегації — повний пронумерований список дослівно.
 
 **`DiscoveryAgentPrompts.SYSTEM` ключові правила:**
 - Для SEARCH-запитів: передати query прямо в `search` tool.
