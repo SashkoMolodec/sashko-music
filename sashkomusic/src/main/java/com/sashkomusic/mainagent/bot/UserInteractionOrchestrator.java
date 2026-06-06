@@ -148,7 +148,8 @@ public class UserInteractionOrchestrator {
         var result = libraryAgentService.handle(new LibraryRequest(ctx.conversationId(), query));
         List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
         List<BotResponse> all = new ArrayList<>(drained);
-        if (!result.summary().isBlank()) all.add(BotResponse.text(result.summary()));
+        boolean hasCard = drained.stream().anyMatch(r -> r.buttons() != null || r.buttonRows() != null);
+        if (!hasCard && !result.summary().isBlank()) all.add(BotResponse.text(result.summary()));
         String logText = all.stream().map(BotResponse::text).filter(Objects::nonNull)
                 .collect(Collectors.joining("\n"));
         if (!logText.isBlank()) chatLogService.log(ctx.conversationId(), "assistant", logText, "library");

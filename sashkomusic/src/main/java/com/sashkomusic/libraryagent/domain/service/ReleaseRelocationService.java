@@ -69,6 +69,10 @@ public class ReleaseRelocationService {
                 }
                 try {
                     Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                    log.warn("Atomic move not supported (cross-device?), falling back to copy+delete");
+                    copyDirectory(source, target);
+                    deleteDirectory(source);
                 } catch (IOException ex) {
                     log.warn("Atomic move failed ({}), falling back to non-atomic", ex.getMessage());
                     Files.move(source, target);
@@ -123,5 +127,30 @@ public class ReleaseRelocationService {
 
     private boolean knownSublibrary(String name) {
         return libraryConfig.getSublibraries().contains(name);
+    }
+
+    private void copyDirectory(Path src, Path dst) throws java.io.IOException {
+        Files.createDirectories(dst);
+        try (var stream = Files.walk(src)) {
+            for (Path entry : stream.toList()) {
+                Path target = dst.resolve(src.relativize(entry));
+                if (Files.isDirectory(entry)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(entry, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void deleteDirectory(Path dir) throws java.io.IOException {
+        try (var stream = Files.walk(dir)) {
+            stream.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try { Files.delete(p); } catch (java.io.IOException e) {
+                            log.warn("Could not delete {}: {}", p, e.getMessage());
+                        }
+                    });
+        }
     }
 }

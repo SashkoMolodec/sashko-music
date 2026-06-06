@@ -84,12 +84,43 @@ public class ReleaseRemovalService {
                 target = trashRoot.resolve(stamp + "__" + folderName + "_" + suffix++);
             }
 
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                // Cross-device move — copy recursively then delete source
+                copyDirectory(source, target);
+                deleteDirectory(source);
+            }
             log.info("Moved release dir to trash: {} -> {}", source, target);
             return new MoveResult(target.toString(), null);
         } catch (IOException ex) {
             log.error("Failed to move {} to trash: {}", source, ex.getMessage(), ex);
             return new MoveResult(null, ex.getMessage());
+        }
+    }
+
+    private void copyDirectory(Path src, Path dst) throws IOException {
+        Files.createDirectories(dst);
+        try (var stream = Files.walk(src)) {
+            for (Path entry : stream.toList()) {
+                Path target = dst.resolve(src.relativize(entry));
+                if (Files.isDirectory(entry)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(entry, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void deleteDirectory(Path dir) throws IOException {
+        try (var stream = Files.walk(dir)) {
+            stream.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try { Files.delete(p); } catch (IOException e) {
+                            log.warn("Could not delete {}: {}", p, e.getMessage());
+                        }
+                    });
         }
     }
 }
