@@ -16,7 +16,10 @@ RUN apt-get update && \
         python3 \
         python3-pip \
         python3-venv \
-        ffmpeg && \
+        ffmpeg \
+        libjpeg-dev \
+        zlib1g-dev \
+        libffi-dev && \
     pip3 install --break-system-packages streamrip gamdl bandcamp-downloader yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
