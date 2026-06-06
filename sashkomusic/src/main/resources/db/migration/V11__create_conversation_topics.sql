@@ -1,4 +1,4 @@
-CREATE TABLE conversation_topics (
+CREATE TABLE IF NOT EXISTS conversation_topics (
     chat_id     BIGINT      NOT NULL,
     topic_id    INTEGER     NOT NULL,
     name        TEXT        NOT NULL,
