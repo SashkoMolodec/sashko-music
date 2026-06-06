@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class YouTubeMusicClient implements MusicSourcePort {
 
     private static final String PLAYLIST_BASE = "https://music.youtube.com/playlist?list=";
+    private static final String VIDEO_BASE = "https://music.youtube.com/watch?v=";
 
     private final RestClient scraperClient;
     private final YouTubeMusicCommandExecutor commandExecutor;
@@ -79,18 +80,22 @@ public class YouTubeMusicClient implements MusicSourcePort {
     }
 
     private DownloadOption toDownloadOption(YouTubeMusicSearchResult r) {
+        boolean isSingle = r.playlistId() == null || r.playlistId().isBlank();
         String qualityLabel = cookiesPath.isBlank() ? "AAC 128kbps" : "AAC 256kbps";
+        String typeTag = isSingle ? "single" : "album";
         String displayName = r.artist() + " - " + r.title()
-                + (r.year().isBlank() ? "" : " (" + r.year() + ")")
-                + " [" + qualityLabel + "]";
+                + (r.year() == null || r.year().isBlank() ? "" : " (" + r.year() + ")")
+                + " [" + typeTag + ", " + qualityLabel + "]";
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("playlistId", r.playlistId());
+        metadata.put("playlistId", r.playlistId() != null ? r.playlistId() : "");
+        metadata.put("videoId", r.videoId() != null ? r.videoId() : "");
         metadata.put("artist", r.artist());
         metadata.put("title", r.title());
-        metadata.put("year", r.year());
+        metadata.put("year", r.year() != null ? r.year() : "");
         metadata.put("qualityLabel", qualityLabel);
+        String optionId = isSingle ? "ytm-v-" + r.videoId() : "ytm-" + r.playlistId();
         return new DownloadOption(
-                "ytm-" + r.playlistId(),
+                optionId,
                 DownloadEngine.YOUTUBE_MUSIC,
                 displayName,
                 0,
@@ -102,10 +107,12 @@ public class YouTubeMusicClient implements MusicSourcePort {
     @Override
     public String initiateDownload(DownloadOption option, String releaseId) {
         String playlistId = option.technicalMetadata().get("playlistId");
-        if (playlistId == null) {
-            throw new MusicDownloadException("Missing YouTube Music playlistId");
+        String videoId = option.technicalMetadata().get("videoId");
+        boolean isSingle = playlistId == null || playlistId.isBlank();
+        if (isSingle && (videoId == null || videoId.isBlank())) {
+            throw new MusicDownloadException("Missing YouTube Music playlistId and videoId");
         }
-        String url = PLAYLIST_BASE + playlistId;
+        String url = isSingle ? VIDEO_BASE + videoId : PLAYLIST_BASE + playlistId;
         log.info("Initiating YouTube Music download: url={}, releaseId={}", url, releaseId);
         try {
             downloadRegistry.registerCancelHandle(releaseId, () -> {
@@ -118,11 +125,11 @@ public class YouTubeMusicClient implements MusicSourcePort {
                 monitorService.stopMonitoring(releaseId);
             });
 
-            List<String> cmd = buildCommand(url);
+            List<String> cmd = buildCommand(url, isSingle);
             Process process = commandExecutor.execute(cmd.toArray(new String[0]));
             activeProcesses.put(releaseId, process);
             log.info("YouTube Music download completed for releaseId={}", releaseId);
-            return playlistId;
+            return isSingle ? videoId : playlistId;
         } catch (Exception e) {
             log.error("Error starting YouTube Music download: {}", e.getMessage(), e);
             throw new MusicDownloadException("не вийшло завантажити з YouTube Music: " + e.getMessage(), e);
@@ -130,6 +137,10 @@ public class YouTubeMusicClient implements MusicSourcePort {
     }
 
     private List<String> buildCommand(String url) {
+        return buildCommand(url, false);
+    }
+
+    private List<String> buildCommand(String url, boolean isSingle) {
         List<String> cmd = new ArrayList<>(List.of(
                 cliPath,
                 "-f", "ba*",
@@ -142,7 +153,10 @@ public class YouTubeMusicClient implements MusicSourcePort {
             cmd.add(cookiesPath);
         }
         cmd.add("-o");
-        cmd.add(downloadPath + "/%(uploader)s/%(album)s/%(playlist_index)02d - %(title)s.%(ext)s");
+        String outputTemplate = isSingle
+                ? downloadPath + "/%(uploader)s/%(album,title)s/%(title)s.%(ext)s"
+                : downloadPath + "/%(uploader)s/%(album)s/%(playlist_index)02d - %(title)s.%(ext)s";
+        cmd.add(outputTemplate);
         cmd.add(url);
         return cmd;
     }
