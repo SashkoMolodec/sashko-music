@@ -88,6 +88,8 @@ services:
       - ${LIBRARY_ROOT_PATH}:${LIBRARY_ROOT_PATH}
       - ${DOWNLOADS_BASE_PATH}:${DOWNLOADS_BASE_PATH}
       - ${ANALYSIS_RESULTS_PATH}:${ANALYSIS_RESULTS_PATH}:ro
+      - ${APPLE_GAMDL_COOKIES}:${APPLE_GAMDL_COOKIES}:ro
+      - ${YTDLP_COOKIES_PATH}:${YTDLP_COOKIES_PATH}:ro
     depends_on:
       postgres:
         condition: service_healthy
