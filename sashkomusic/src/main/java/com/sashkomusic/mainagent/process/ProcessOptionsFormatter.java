@@ -57,7 +57,7 @@ public class ProcessOptionsFormatter {
             }
         }
         if (!row.isEmpty()) rows.add(List.copyOf(row));
-        rows.add(List.of(new BotResponse.ButtonDto("❌ скасувати", "PROC_SEL:cancel")));
+        rows.add(List.of(new BotResponse.ButtonDto("❌", "PROC_SEL:cancel")));
         return rows;
     }
 

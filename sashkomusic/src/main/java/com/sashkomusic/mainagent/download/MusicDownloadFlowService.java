@@ -141,7 +141,7 @@ public class MusicDownloadFlowService {
             }
         }
         if (!row.isEmpty()) allRows.add(List.copyOf(row));
-        allRows.add(List.of(new BotResponse.ButtonDto("❌ скасувати", "DLOPT:cancel")));
+        allRows.add(List.of(new BotResponse.ButtonDto("❌", "DLOPT:cancel")));
 
         return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false);
     }

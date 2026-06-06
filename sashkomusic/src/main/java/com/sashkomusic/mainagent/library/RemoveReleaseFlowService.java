@@ -123,8 +123,8 @@ public class RemoveReleaseFlowService {
         sb.append("\n♻️ папку буде перенесено у trash, метадані з бази видаляться");
 
         Map<String, String> buttons = new LinkedHashMap<>();
-        buttons.put("✅ так, видалити", CB_CONFIRM + release.getId());
-        buttons.put("❌ ні, скасувати", CB_CANCEL + release.getId());
+        buttons.put("✅", CB_CONFIRM + release.getId());
+        buttons.put("❌", CB_CANCEL + release.getId());
 
         return List.of(BotResponse.htmlWithButtons(sb.toString(), buttons));
     }
