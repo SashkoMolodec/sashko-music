@@ -73,5 +73,5 @@ venv_essentia/
 # Music library (managed separately)
 lib/
 
-# Slskd application data
-slskd/
+# Slskd application data (root-level only, not Java source packages)
+/slskd/
