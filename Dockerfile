@@ -18,6 +18,7 @@ RUN apt-get update && \
         python3-venv \
         ffmpeg \
         build-essential \
+        python3-dev \
         libjpeg-dev \
         zlib1g-dev \
         libffi-dev && \
