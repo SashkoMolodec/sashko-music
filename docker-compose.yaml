@@ -43,7 +43,7 @@ services:
     container_name: sm_app
     image: localhost/sashkomusic:latest
     ports:
-      - "8080:8080"
+      - "8085:8080"
     environment:
       - TGBOT_NAME=${TGBOT_NAME}
       - TGBOT_TOKEN=${TGBOT_TOKEN}
