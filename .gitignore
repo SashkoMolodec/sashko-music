@@ -64,6 +64,9 @@ navidrome/data/
 *.tmp
 *.swp
 
+# Research notes (local only)
+research/
+
 # Python virtual environment
 venv_essentia/
 
