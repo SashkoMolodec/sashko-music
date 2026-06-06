@@ -58,8 +58,7 @@ public class DownloadService {
 
         if (batch == null) {
             log.warn("Cancel failed: no active download found for releaseId={}", releaseId);
-            errorProducer.sendError(DownloadErrorDto.of(conversationId,
-                    "завантаження вже завершилось або не знайдено 🤷"));
+            // batch not found = download already completed or never started; nothing to cancel
             return;
         }
 
@@ -71,8 +70,6 @@ public class DownloadService {
         }
 
         downloadContext.removeBatchByReleaseId(releaseId);
-
         log.info("Successfully cancelled download for releaseId={}", releaseId);
-        errorProducer.sendError(DownloadErrorDto.of(conversationId, "❌ **скасовано завантаження**"));
     }
 }

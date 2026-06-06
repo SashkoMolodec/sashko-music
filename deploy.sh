@@ -77,27 +77,8 @@ echo ""
 
 echo "📥 Pulling latest code from GitHub..."
 git pull origin main || {
-    echo "⚠️  Warning: git pull failed for main repo"
+    echo "⚠️  Warning: git pull failed"
 }
-
-echo "📥 Updating submodules (sm-main-agent, sm-library-agent, sm-download-agent, sm-api)..."
-git submodule update --remote --merge || {
-    echo "⚠️  Warning: submodule update failed, continuing with current code"
-}
-echo ""
-
-echo "📥 Updating sm-audio-analyzer..."
-if [ -d "sm-audio-analyzer/.git" ]; then
-    echo "  Pulling latest changes..."
-    (cd sm-audio-analyzer && git pull origin main) || {
-        echo "⚠️  Warning: Failed to pull sm-audio-analyzer, continuing with current code"
-    }
-else
-    echo "  Cloning sm-audio-analyzer repository..."
-    git clone git@github.com:SashkoMolodec/sm-audio-analyzer.git sm-audio-analyzer || {
-        echo "⚠️  Warning: Failed to clone sm-audio-analyzer, continuing without it"
-    }
-fi
 echo ""
 
 echo "🔨 Building Docker images..."
@@ -152,14 +133,13 @@ echo "  DEPLOYMENT COMPLETE"
 echo "========================================="
 echo ""
 echo "Services are running:"
-echo "  • Main Agent (Telegram Bot):  http://localhost:8080"
-echo "  • Library Agent:              http://localhost:8082"
-echo "  • Download Agent:             http://localhost:8081"
-echo "  • API:                        http://localhost:8083"
-echo "  • Navidrome (Music Server):   http://localhost:4533"
-echo "  • Slskd (Soulseek):           http://localhost:5030"
-echo "  • Redpanda Console (Kafka):   http://localhost:9094"
-echo "  • PostgreSQL:                 localhost:5432"
+echo "  • Sashko Music (Telegram Bot + API): http://localhost:8080"
+echo "  • Navidrome (Music Server):          http://localhost:4533"
+echo "  • Slskd (Soulseek):                  http://localhost:5030"
+echo "  • Audio Analyzer:                    http://localhost:8090"
+echo "  • Scraper:                           http://localhost:8091"
+echo "  • Icecast (Streaming):               http://localhost:8000"
+echo "  • PostgreSQL:                        localhost:5432"
 echo ""
 echo "Useful commands:"
 echo "  • View logs:           $COMPOSE_CMD logs -f [service_name]"

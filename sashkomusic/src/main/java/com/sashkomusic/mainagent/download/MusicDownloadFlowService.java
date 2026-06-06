@@ -40,7 +40,7 @@ public class MusicDownloadFlowService {
             String releaseId = data.substring(3);
             log.info("User selected release ID: {}", releaseId);
 
-            ReleaseMetadata metadata = contextService.getReleaseMetadata(releaseId);
+            ReleaseMetadata metadata = contextService.getReleaseMetadata(releaseId, ctx.conversationId());
             if (metadata == null) {
                 return List.of(BotResponse.text("❌ шось ся не получило...найди реліз ше раз"));
             }
@@ -151,7 +151,7 @@ public class MusicDownloadFlowService {
 
         downloadCancelTaskProducer.send(DownloadCancelTaskDto.of(ctx.conversationId(), releaseId));
 
-        return List.of(BotResponse.text("⏳ **скасовую...**"));
+        return List.of(BotResponse.text("❌ скасовано"));
     }
 
 
@@ -166,7 +166,7 @@ public class MusicDownloadFlowService {
 
         log.info("Alternative search requested: releaseId={}, source={}", releaseId, sourceName);
 
-        ReleaseMetadata metadata = contextService.getReleaseMetadata(releaseId);
+        ReleaseMetadata metadata = contextService.getReleaseMetadata(releaseId, ctx.conversationId());
         if (metadata == null) {
             return List.of(BotResponse.text("❌ шось ся не получило...найди реліз ше раз"));
         }

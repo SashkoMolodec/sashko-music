@@ -36,6 +36,13 @@ public class SearchContextService {
         return releaseMetadataCache.get(releaseId);
     }
 
+    public ReleaseMetadata getReleaseMetadata(String releaseId, String conversationId) {
+        ReleaseMetadata cached = releaseMetadataCache.get(releaseId);
+        if (cached != null) return cached;
+        loadContext(conversationId);
+        return releaseMetadataCache.get(releaseId);
+    }
+
     public void saveReleaseMetadata(ReleaseMetadata metadata) {
         releaseMetadataCache.put(metadata.id(), metadata);
     }

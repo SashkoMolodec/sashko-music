@@ -1,52 +1,37 @@
 # mainagent/search — Spec
 
+> Feature flow: [/.specs/search.md](../../../../../../.specs/search.md)
+> State persistence: [/.specs/conversation-state.md](../../../../../../.specs/conversation-state.md)
+
 ## Purpose
-Пошук релізів і зберігання результатів пошуку між запитами. Обслуговує discovery flow і download flow.
-Не є LLM-агентом — тільки оркестрація HTTP-клієнтів і персистентний стан сесії.
+Пошук релізів і зберігання результатів між запитами. Обслуговує discovery flow і download flow. Не LLM — тільки оркестрація HTTP-клієнтів і персистентний стан сесії.
 
 ---
 
-## Ключові компоненти
+## `SearchContextService` — contract
 
-### `SearchContextService`
-Центральний state manager для пошукових сесій.
-
-**Стан зберігається в `ChatStateStore`** з `flow_key = "search"`:
+Persists to `ChatStateStore` (flow_key: `"search"`):
 ```java
 record SearchState(SearchContext context, List<ReleaseMetadata> releases)
+record SearchContext(SearchEngine source, MetadataSearchRequest request, String rawInput, List<String> releaseIds)
 ```
 
-| Поле `SearchContext` | Зміст |
-|---|---|
-| `source` | `SearchEngine` яким знайшли |
-| `request` | Структурований `MetadataSearchRequest` |
-| `rawInput` | Сирий текст запиту від юзера |
-| `releaseIds` | ID знайдених релізів |
+| Метод | Що робить |
+|-------|-----------|
+| `saveSearchContext(conversationId, source, rawInput, request, results)` | Merge + persist + update cache |
+| `getReleaseMetadata(releaseId)` | In-memory cache тільки |
+| `getReleaseMetadata(releaseId, conversationId)` | Cache + lazy loadContext при промаху (пережива рестарт JVM) |
+| `getSearchResults(conversationId)` | З store, відновлює cache як side-effect |
+| `getMetadataWithTracks(releaseId, conversationId)` | Lazy-load треків через `SearchEngineService` |
+| `copySearchContext(fromId, toId)` | Копіює `:d` → основний conversationId після Discovery |
+| `clearSearch(conversationId)` | Видаляє з store |
+| `clearAllCaches()` | Store + in-memory (по "стоп") |
 
-`releases` — повні об'єкти `ReleaseMetadata`, зберігаються разом із `context` щоб пережити рестарт JVM.
+**Merge strategy:** нові результати перезаписують старі по releaseId (дедупліцирує). Дозволяє `DIG_DEEPER` акумулювати результати з різних джерел.
 
-**In-memory cache** `Map<releaseId, ReleaseMetadata>` — відновлюється lazily при першому `loadContext()` після рестарту. Потрібен для O(1) lookups по `releaseId` без знання `conversationId`.
+---
 
-**Ключові методи:**
-- `saveSearchContext(conversationId, source, rawInput, request, results)` — зберігає стан + оновлює cache
-- `getSearchResults(conversationId)` → `List<ReleaseMetadata>` — читає з store, відновлює cache
-- `getReleaseMetadata(releaseId)` → з in-memory cache (не потребує conversationId)
-- `getMetadataWithTracks(releaseId, conversationId)` — lazy-load треків через `SearchEngineService`
-- `copySearchContext(fromId, toId)` — копіює стан discovery (`:d` суфікс) → основний conversationId
-- `clearSearch(conversationId)` — видаляє з store
-- `clearAllCaches()` — очищує store + cache (викликається по "стоп")
-
-### `ReleaseSearchFlowService`
-Оркеструє пошук і пагінацію карток. Делегує в `SearchContextService` для стану, в `SearchEngineService` для HTTP.
-
-- `searchDefault(ctx, query)` → перебирає `SearchEngine.values()` поки не знайде
-- `searchWithEngine(ctx, query, engine)` → конкретний движок напряму
-- `switchStrategyAndSearch(ctx)` → наступний движок по колу від останнього
-- `buildPageResponse(ctx, page)` → картки релізів з пагінацією (`PAGE:` callback)
-- `buildReleaseDownloadCard(release, engine)` → окрема картка для download flow
-
-### `SearchEngineService` (інтерфейс)
-Кожен impl (`MusicBrainzClient`, `DiscogsClient`, `BandcampClient`) відповідає за один зовнішній API.
+## `SearchEngineService` — interface
 
 ```java
 SearchEngine getSource();
@@ -54,29 +39,30 @@ List<ReleaseMetadata> searchReleases(MetadataSearchRequest request);
 List<TrackMetadata> getTracks(String releaseId);
 ```
 
+Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
+
 ---
 
-## Стан після рестарту JVM
+## `ReleaseSearchFlowService` — ключові методи
 
-```
-До рестарту:   saveSearchContext() → ChatStateStore (Postgres)
-Після рестарту: getSearchResults() → loadContext() → store.get() → відновлює cache → повертає releases
-```
-
-Пагінація карток (`PAGE:`) і download (`DL:`) працюють після рестарту без повторного пошуку.
+| Метод | Призначення |
+|-------|-------------|
+| `searchWithFallback(query, engines...)` | Послідовний fallback по движках |
+| `switchStrategyAndSearch(ctx)` | DIG_DEEPER: наступний engine по колу |
+| `buildPageResponse(ctx, page)` | Release картки з пагінацією |
+| `buildReleaseDownloadCard(release, engine)` | Картка для download flow |
 
 ---
 
 ## Hard rules
 1. `SearchContextService` — єдиний writer в `ChatStateStore` для `flow_key = "search"`.
-2. `getReleaseMetadata(releaseId)` читає тільки з in-memory cache — не ходить в store. Якщо cache порожній після рестарту — `loadContext(conversationId)` відновить його як side-effect.
+2. `getReleaseMetadata(releaseId)` без `conversationId` → тільки in-memory cache, не ходить в store.
 3. Discovery flow зберігає під `conversationId + ":d"`, потім `copySearchContext` дублює під основний ID.
-4. Не персистувати `DownloadContextHolder` тут — він окремий (`flow_key = "download"`, поки in-memory).
+4. `DownloadContextHolder` — окремий holder, не тут.
 
 ---
 
 ## SDD checkpoints
-- Новий `SearchEngine` → новий `SearchEngineService` impl + реєстрація в `SearchEngineConfig`.
-  `searchDefault` автоматично підхопить через `SearchEngine.values()`.
-- Змінити порядок пошуку → змінити порядок в `SearchEngine` enum.
-- `DownloadContextHolder` мігрує на `ChatStateStore` → окремий `flow_key = "download"`, оновити `CLAUDE.md` ContextHolder map.
+- Новий `SearchEngine` → `SearchEngineService` impl + реєстрація в `SearchEngineConfig`. `searchWithFallback` підхопить автоматично.
+- Змінити порядок пошуку → порядок у `SearchEngine` enum.
+- `DownloadContextHolder` мігрує на `ChatStateStore` → `flow_key = "download"`, оновити `CLAUDE.md`.

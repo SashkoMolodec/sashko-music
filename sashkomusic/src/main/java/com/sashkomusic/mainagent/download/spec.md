@@ -1,5 +1,8 @@
 # MusicDownloadFlowService — Spec
 
+> Feature flow: [/.specs/download.md](../../../../../../.specs/download.md)
+> Events: [/.specs/events.md](../../../../../../.specs/events.md)
+
 ## Purpose
 Оркестрація download-воркфлоу на стороні mainagent: обробка callback-кнопок (`DL:`, `SEARCH_ALT:`, `CANCEL_DL:`),
 відображення результатів пошуку, вибір опції завантаження. Не містить бізнес-логіки завантаження —
@@ -22,8 +25,8 @@ FileSearchResultEvent (async, від downloadagent)
   └─ SearchFilesResultListener
        └─ MusicDownloadFlowService.handleSearchResults()
 
-DownloadOptionSelectionOngoingFlow (text-based multi-turn)
-  └─ MusicDownloadFlowService.handleDownloadOption()  ← тільки Soulseek (вибір варіанту числом)
+DownloadOptionSelectionOngoingFlow (text-based multi-turn, всі движки)
+  └─ MusicDownloadFlowService.handleDownloadOption()
 ```
 
 ---
@@ -32,15 +35,18 @@ DownloadOptionSelectionOngoingFlow (text-based multi-turn)
 
 ### `handleDownload(ctx, "DL:<releaseId>")`
 Запускає пошук з дефолтним движком (Qobuz).
-1. Читає `ReleaseMetadata` з `SearchContextService` по `releaseId`.
+1. `contextService.getReleaseMetadata(releaseId, ctx.conversationId())` — спочатку in-memory кеш,
+   при промаху підтягує `SearchState` з `ChatStateStore` і перебудовує кеш.
+   Завдяки цьому кнопки DL на старих картках працюють після перезапуску JVM.
 2. `SearchFilesTaskProducer.send(SearchFilesTaskDto)` → `FilesSearchTaskEvent` → downloadagent.
 3. Повертає `"🔎 шукаю опції завантаження (qobuz): ..."`.
 
 ### `handleSearchAlternative(ctx, "SEARCH_ALT:<releaseId>:<ENGINE>")`
 Перезапускає пошук на іншому движку.
 1. Парсить `releaseId` і `sourceName` (останнє поле після `:`)
-2. `DownloadEngine.valueOf(sourceName)` → `initiateDownloadSearch(ctx, metadata, source)`.
-3. Повертає той самий прогрес-текст що і `handleDownload`, але з назвою обраного движка.
+2. `getReleaseMetadata(releaseId, ctx.conversationId())` — з тим самим lazy-reload.
+3. `DownloadEngine.valueOf(sourceName)` → `initiateDownloadSearch(ctx, metadata, source)`.
+4. Повертає той самий прогрес-текст що і `handleDownload`, але з назвою обраного движка.
 
 ### `handleDownloadCancel(ctx, "CANCEL_DL:<releaseId>")`
 1. `DownloadCancelTaskProducer.send(...)` → `DownloadCancelTaskEvent` → downloadagent.
@@ -60,30 +66,32 @@ dto → flowHandler.analyzeAll(options, releaseId, conversationId)
   → DownloadOptionsCardFormatter.format(reports, aiSummary) + flowHandler.buildSearchResultsResponse()
 ```
 
+Результати завжди показуються юзеру — автоматичного скачування без підтвердження **немає**.
+`DownloadOptionSelectionOngoingFlow` стає активним для conversationId після збереження опцій.
+
 ---
 
-## Multi-turn: вибір варіанту (тільки Soulseek)
+## Multi-turn: вибір варіанту (всі движки)
 
 `DownloadOptionSelectionOngoingFlow` активний поки `DownloadContextHolder` має опції для `conversationId`.
+Використовується для **всіх** движків — навіть якщо є тільки 1 варіант (API-джерела).
 
 ### `handleDownloadOption(ctx, rawInput)`
 - `-` → `clearSession`, `"❌ скасовано"`.
 - Число `N` → `reports.get(N-1)`, `DownloadTaskProducer.send(...)`, `clearSession`.
 - Інше → `"🤔 незрозумілий зроз."`.
 
-Qobuz і Apple Music **не використовують** цей flow — вони показують автоматичний результат або одразу качають.
-
 ---
 
 ## DownloadFlowHandler стратегії
 
-| Engine          | Handler                           | Якість             | Кнопки в результаті                              |
-|-----------------|-----------------------------------|--------------------|--------------------------------------------------|
-| `QOBUZ`         | `QobuzDownloadFlowHandler`        | PERFECT (лосслес)  | ▶️ YTM, 🍏 Apple, 📼 Bandcamp, ⛏️ Soulseek      |
-| `APPLE_MUSIC`   | `AppleMusicDownloadFlowHandler`   | GOOD (AAC 256)     | —                                                |
-| `BANDCAMP`      | `BandcampDownloadFlowHandler`     | GOOD               | —                                                |
-| `YOUTUBE_MUSIC` | `YouTubeMusicDownloadFlowHandler` | GOOD (AAC 128/256) | 🎵 Qobuz, 🍏 Apple, 📼 Bandcamp, ⛏️ Soulseek    |
-| `SOULSEEK`      | `SoulseekDownloadFlowHandler`     | PERFECT/GOOD/WARNING/BAD | — (text-based вибір числом)              |
+| Engine          | Handler                           | Suitability           | Кнопки ALT в результаті                          | Кількість варіантів   |
+|-----------------|-----------------------------------|-----------------------|--------------------------------------------------|-----------------------|
+| `QOBUZ`         | `QobuzDownloadFlowHandler`        | `PERFECT`             | ▶️ YTM, 🍏 Apple, 📼 Bandcamp, ⛏️ Soulseek      | 1 (API)               |
+| `APPLE_MUSIC`   | `AppleMusicDownloadFlowHandler`   | `GOOD`                | —                                                | 1 (API)               |
+| `BANDCAMP`      | `BandcampDownloadFlowHandler`     | `GOOD`                | —                                                | 1 (API)               |
+| `YOUTUBE_MUSIC` | `YouTubeMusicDownloadFlowHandler` | `GOOD`                | 🎵 Qobuz, 🍏 Apple, 📼 Bandcamp, ⛏️ Soulseek    | 1–N (album або single)|
+| `SOULSEEK`      | `SoulseekDownloadFlowHandler`     | `PERFECT/GOOD/WARNING/BAD` | —                                           | 0–N (P2P)             |
 
 ### `DownloadFlowHandler` interface
 
@@ -94,7 +102,7 @@ String formatDownloadConfirmation(DownloadOption option);
 ```
 
 - `analyzeAll` — присвоює `Suitability` кожному варіанту, сортує, може викликати LLM (тільки Soulseek через `DownloadBatchAnalyzer`).
-- `buildSearchResultsResponse` — обгортає `formattedText` в `BotResponse` з кнопками альтернативних движків.
+- `buildSearchResultsResponse` — обгортає `formattedText` в `BotResponse` з кнопками альтернативних движків (тільки Qobuz і YTM мають ALT-кнопки).
 
 ---
 
@@ -118,12 +126,12 @@ In-memory `ConcurrentHashMap<conversationId, DownloadContext>`.
 
 ```java
 record DownloadOption(
-    String id,               // "ytm-<playlistId>", "qobuz-<albumId>", slskd username
+    String id,               // "ytm-<playlistId>", "ytm-v-<videoId>", "qobuz-<albumId>", slskd username
     DownloadEngine source,
-    String displayName,      // "Artist - Title (Year) [Format]"
+    String displayName,      // "Artist - Title (Year) [type, Format]"
     int totalSize,           // MB (0 для API-джерел без файлового listing)
     List<FileItem> files,    // порожній для API-джерел (Qobuz, Apple, YTM, Bandcamp)
-    Map<String, String> technicalMetadata  // source-specific: quality, playlistId, url тощо
+    Map<String, String> technicalMetadata  // source-specific: quality, playlistId, videoId, url тощо
 )
 ```
 
@@ -137,7 +145,8 @@ record DownloadOption(
 
 - Якщо `files` порожні → `"1️⃣ **displayName** (suitability) [🔗](url)"`.
 - Якщо `files` є (Soulseek) → формат + кількість файлів + список перших 7.
-- `buildSourceLink` будує URL для: Qobuz (`albumUrl`), Bandcamp/Apple (`url`), YouTube Music (`playlistId`).
+- `buildSourceLink` будує URL для: Qobuz (`albumUrl`), Bandcamp/Apple (`url`),
+  YouTube Music — `playlistId` якщо album, або `videoId` якщо single (prefix `watch?v=`).
 - `aiSummary` від `DownloadBatchAnalyzer` відображається як `"💡 _summary_"` в кінці (тільки Soulseek).
 
 ---
@@ -146,8 +155,9 @@ record DownloadOption(
 1. `MusicDownloadFlowService` — orchestration only. Жодного DB access, жодних AI-викликів.
 2. `DownloadContextHolder` — не `ChatStateStore`. Якщо потрібна персистентність після рестарту — мігрувати на `ChatStateStore` (flow_key: `"download"`).
 3. Новий движок → новий `DownloadFlowHandler` + реєстрація в `DownloadSourceConfig` + оновити таблицю вище.
-4. Кнопки альтернативних джерел — в `buildSearchResultsResponse` відповідного handler. Не в `MusicDownloadFlowService`.
+4. Кнопки ALT-джерел — в `buildSearchResultsResponse` відповідного handler. Не в `MusicDownloadFlowService`.
 5. `SEARCH_ALT:` парсить `ENGINE` через `DownloadEngine.valueOf()` — значення enum має точно збігатись з `name()`.
+6. Автоматичного скачування без підтвердження юзером **немає** — `handleSearchResults` завжди тільки показує картку.
 
 ---
 
@@ -161,5 +171,6 @@ record DownloadOption(
 
 ## SDD checkpoints (змінювати spec ДО коду)
 - Новий `DownloadEngine` → додати рядок у таблицю handlers + описати кнопки.
-- Змінити кнопки у якомусь handler → оновити колонку "Кнопки в результаті".
+- Змінити кнопки у якомусь handler → оновити колонку "Кнопки ALT в результаті".
 - Зробити `DownloadContextHolder` персистентним → описати нову схему `ChatStateStore` тут.
+- Зміна lazy-reload логіки `getReleaseMetadata` → оновити опис `handleDownload`.
