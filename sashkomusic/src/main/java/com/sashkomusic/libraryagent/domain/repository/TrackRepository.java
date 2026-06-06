@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -21,5 +22,5 @@ public interface TrackRepository extends JpaRepository<Track, Long>, TrackReposi
         WHERE REPLACE(REPLACE(LOWER(t.title), ' ', ''), '+', '') = REPLACE(REPLACE(LOWER(:title), ' ', ''), '+', '')
         AND REPLACE(REPLACE(LOWER(a.name), ' ', ''), '+', '') = REPLACE(REPLACE(LOWER(:artist), ' ', ''), '+', '')
         """)
-    Optional<Track> findByArtistAndTitle(@Param("artist") String artist, @Param("title") String title);
+    List<Track> findByArtistAndTitle(@Param("artist") String artist, @Param("title") String title);
 }

@@ -45,7 +45,7 @@ public class TrackService {
     }
 
     public Optional<TrackDto> findByArtistAndTitleOptional(String artist, String title) {
-        return trackRepository.findByArtistAndTitle(artist, title).map(this::toDto);
+        return trackRepository.findByArtistAndTitle(artist, title).stream().findFirst().map(this::toDto);
     }
 
     private TrackDto toDto(Track track) {
