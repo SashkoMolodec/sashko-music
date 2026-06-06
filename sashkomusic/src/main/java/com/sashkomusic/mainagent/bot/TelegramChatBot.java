@@ -4,6 +4,8 @@ import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchSessionExpiredException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
@@ -43,9 +45,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
     private final TelegramClient client;
     private final String botToken;
     private final Long allowedGroupId;
+    private final Long defaultChatId;
 
     public TelegramChatBot(@Value("${telegram.bot.token}") String token,
                            @Value("${telegram.allowed-group-id:}") String allowedGroupIdStr,
+                           @Value("${telegram.default-chat-id:0}") Long defaultChatId,
                            UserInteractionOrchestrator orchestrator,
                            FileIdCacheService fileIdCacheService,
                            TelegramClient telegramClient) {
@@ -54,6 +58,13 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         this.orchestrator = orchestrator;
         this.fileIdCacheService = fileIdCacheService;
         this.allowedGroupId = allowedGroupIdStr.isBlank() ? null : Long.parseLong(allowedGroupIdStr);
+        this.defaultChatId = defaultChatId;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        if (defaultChatId == null || defaultChatId == 0) return;
+        sendMessage(defaultChatId, "я знову тутка 👀");
     }
 
     @Override
