@@ -62,7 +62,10 @@ class LibraryFlowIntegrationTest {
 
         assertThat(resp).hasSize(1);
         assertThat(resp.get(0).text()).contains("burial").contains("untrue");
-        assertThat(resp.get(0).buttons()).containsKeys("⭐ 1", "⭐ 5", "➕");
+        var rows = resp.get(0).buttonRows();
+        assertThat(rows).isNotNull().isNotEmpty();
+        var allLabels = rows.stream().flatMap(List::stream).map(BotResponse.ButtonDto::label).toList();
+        assertThat(allLabels).contains("⭐ 1", "⭐ 5");
         assertThat(djTagContextHolder.getContext(CTX.conversationId())).isNotNull();
         assertThat(djTagContextHolder.getContext(CTX.conversationId()).trackId()).isEqualTo(42L);
     }

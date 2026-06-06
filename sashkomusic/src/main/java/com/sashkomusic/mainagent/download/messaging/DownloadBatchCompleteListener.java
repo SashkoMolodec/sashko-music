@@ -31,16 +31,20 @@ public class DownloadBatchCompleteListener {
 
         ConversationContext ctx = ConversationContext.from(dto.conversationId());
 
-        telegramBot.sendMessage(ctx, buildFileListMessage(dto.allFiles()));
+        telegramBot.sendMessage(ctx, buildFileListMessage(dto.allFiles(), dto.directoryPath()));
 
         processFolderFlowService.process(ctx, dto.directoryPath())
                 .forEach(msg -> telegramBot.sendResponse(ctx, msg));
     }
 
-    private static String buildFileListMessage(List<String> allFiles) {
+    private static String buildFileListMessage(List<String> allFiles, String directoryPath) {
         var sb = new StringBuilder();
         sb.append("✅ завантажено ").append(allFiles.size()).append(" файл")
-          .append(fileSuffix(allFiles.size())).append(":\n\n");
+          .append(fileSuffix(allFiles.size()));
+        if (directoryPath != null && !directoryPath.isBlank()) {
+            sb.append("\n📁 `").append(directoryPath).append("`");
+        }
+        sb.append(":\n\n");
 
         allFiles.stream()
                 .map(f -> Path.of(f).getFileName().toString())

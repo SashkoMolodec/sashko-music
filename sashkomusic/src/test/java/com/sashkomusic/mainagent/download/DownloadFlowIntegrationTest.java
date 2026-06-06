@@ -104,5 +104,17 @@ class DownloadFlowIntegrationTest {
             when(m.isWaitingForComment(any())).thenReturn(false);
             return m;
         }
+        @Bean com.sashkomusic.mainagent.library.RemoveReleaseFlowService removeReleaseFlowService() {
+            return mock(com.sashkomusic.mainagent.library.RemoveReleaseFlowService.class);
+        }
+        @Bean com.sashkomusic.mainagent.library.SublibraryAssignmentHandler sublibraryAssignmentHandler() {
+            return mock(com.sashkomusic.mainagent.library.SublibraryAssignmentHandler.class);
+        }
+        @Bean com.sashkomusic.mainagent.process.PendingProcessCallbackHandler pendingProcessCallbackHandler() {
+            return mock(com.sashkomusic.mainagent.process.PendingProcessCallbackHandler.class);
+        }
+        @Bean com.sashkomusic.mainagent.process.ProcessFolderFlowService processFolderFlowService() {
+            return mock(com.sashkomusic.mainagent.process.ProcessFolderFlowService.class);
+        }
     }
 }

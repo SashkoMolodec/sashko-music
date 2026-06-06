@@ -138,7 +138,8 @@ public class LibraryProcessingService {
 
         try {
             FileOrganizer.OrganizationResult organized = fileOrganizer.organize(
-                    metadata, task.directoryPath(), processedFiles, libraryConfig.getRootPath());
+                    metadata, task.directoryPath(), processedFiles,
+                    libraryConfig.getRootPath(), libraryConfig.getDefaultSublibrary());
 
             directoryPath = organized.newDirectoryPath();
             coverPath = organized.newCoverPath();
@@ -194,7 +195,8 @@ public class LibraryProcessingService {
     private void saveToDatabase(ReleaseMetadata metadata, String directoryPath, String coverPath,
                                 List<FileOrganizer.OrganizedFile> organizedFiles, List<String> errors) {
         try {
-            releaseService.saveRelease(metadata, directoryPath, coverPath, organizedFiles, processingVersion);
+            releaseService.saveRelease(metadata, directoryPath, coverPath, organizedFiles, processingVersion,
+                    libraryConfig.getDefaultSublibrary());
             log.info("Release saved to database successfully");
             metadataWriter.writeMetadata(directoryPath, metadata, processingVersion);
 

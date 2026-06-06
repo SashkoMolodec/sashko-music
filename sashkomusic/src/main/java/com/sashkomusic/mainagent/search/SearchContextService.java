@@ -50,7 +50,7 @@ public class SearchContextService {
         merged.values().forEach(r -> releaseMetadataCache.put(r.id(), r));
         List<ReleaseMetadata> mergedReleases = new ArrayList<>(merged.values());
         List<String> releaseIds = mergedReleases.stream().map(ReleaseMetadata::id).toList();
-        SearchContext context = new SearchContext(source, request, rawInput, releaseIds);
+        SearchContext context = new SearchContext(source, request, rawInput, releaseIds, 0);
         stateStore.put(conversationId, FLOW_KEY, new SearchState(context, mergedReleases));
     }
 
@@ -119,6 +119,19 @@ public class SearchContextService {
             log.error("Failed to fetch tracks for releaseId={}: {}", releaseId, e.getMessage(), e);
             return metadata;
         }
+    }
+
+    public void updateCurrentPage(String conversationId, int page) {
+        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+            SearchContext updated = new SearchContext(
+                    state.context().source(), state.context().request(),
+                    state.context().rawInput(), state.context().releaseIds(), page);
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(updated, state.releases()));
+        });
+    }
+
+    public int getCurrentPage(String conversationId) {
+        return loadContext(conversationId).map(SearchContext::currentPage).orElse(0);
     }
 
     public void copySearchContext(String fromId, String toId) {

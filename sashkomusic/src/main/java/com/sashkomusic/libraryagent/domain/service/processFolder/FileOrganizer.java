@@ -26,7 +26,8 @@ public class FileOrganizer {
             ReleaseMetadata metadata,
             String currentDirectory,
             List<ProcessedFile> processedFiles,
-            String libraryRootPath
+            String libraryRootPath,
+            String sublibrary
     ) {
         try {
             // Determine folder structure
@@ -35,9 +36,10 @@ public class FileOrganizer {
             Integer year = extractYear(metadata);
             String albumFolder = buildAlbumFolderName(metadata.title(), year, format);
 
-            // Create target directory path
+            // Create target directory path: <root>/<sublibrary>/<artist>/<album>
             Path libraryRoot = Paths.get(libraryRootPath);
             Path targetDir = libraryRoot
+                    .resolve(sublibrary)
                     .resolve(artistFolder)
                     .resolve(albumFolder);
 

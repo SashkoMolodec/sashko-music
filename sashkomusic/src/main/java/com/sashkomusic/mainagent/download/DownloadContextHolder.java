@@ -1,53 +1,50 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.mainagent.bot.state.ChatStateStore;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class DownloadContextHolder {
 
-    private final Map<String, DownloadContext> downloadSessions = new ConcurrentHashMap<>();
+    private static final String FLOW_KEY = "dl_ctx";
+
+    private final ChatStateStore stateStore;
 
     public void saveDownloadOptions(String conversationId, String releaseId, List<DownloadFlowHandler.OptionReport> optionReports) {
         log.debug("Saving download options for conversation: {}, releaseId: {}", conversationId, releaseId);
-        downloadSessions.put(conversationId, new DownloadContext(releaseId, optionReports));
+        stateStore.put(conversationId, FLOW_KEY, new DownloadContext(releaseId, optionReports));
     }
 
     public List<DownloadFlowHandler.OptionReport> getDownloadOptions(String conversationId) {
-        DownloadContext context = downloadSessions.get(conversationId);
-        if (context != null) {
-            return context.optionReports();
-        }
-        return List.of();
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(DownloadContext::optionReports)
+                .orElse(List.of());
     }
 
     public String getChosenRelease(String conversationId) {
-        DownloadContext context = downloadSessions.get(conversationId);
-        if (context != null) {
-            return context.chosenReleaseId();
-        }
-        return null;
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(DownloadContext::chosenReleaseId)
+                .orElse(null);
     }
 
     public void clearSession(String conversationId) {
         log.debug("Clearing download session for conversation: {}", conversationId);
-        downloadSessions.remove(conversationId);
+        stateStore.remove(conversationId, FLOW_KEY);
     }
 
     public void clearAllSessions() {
-        int count = downloadSessions.size();
-        downloadSessions.clear();
+        int count = stateStore.clearAll(FLOW_KEY);
         log.info("Cleared all download sessions: {} sessions", count);
     }
 
-    private record DownloadContext(
+    public record DownloadContext(
             String chosenReleaseId,
             List<DownloadFlowHandler.OptionReport> optionReports
-    ) {
-    }
+    ) {}
 }

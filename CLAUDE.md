@@ -54,7 +54,7 @@ com.sashkomusic.agents
 ├── main               ← MainAgent @AiService (Sonnet) + MainAgentTools (delegates to sub-agents)             — see spec.md
 ├── discovery          ← DiscoveryAgent @AiService (Haiku) + DiscoveryAgentTools (search engines + history)  — see spec.md
 ├── download           ← DownloadAgentService — deterministic, wraps MusicDownloadFlowService                 — see spec.md
-└── library            ← LibraryAgentService — deterministic, parses NL via LibraryCommandParser              — see spec.md
+└── library            ← LibraryAgent @AiService (Haiku) + LibraryAgentTools (search/move/trash/DJ tagging)  — see spec.md
 ```
 
 ### Spec-Driven Development
@@ -146,6 +146,10 @@ mainagent            →  ProcessLibraryTaskEvent            →  libraryagent
 libraryagent         →  LibraryProcessingCompleteEvent     →  mainagent
 mainagent            →  ReprocessReleaseTaskEvent          →  libraryagent
 libraryagent         →  ReprocessReleaseCompleteEvent      →  mainagent
+mainagent            →  RemoveReleaseTaskEvent             →  libraryagent
+libraryagent         →  RemoveReleaseCompleteEvent         →  mainagent
+mainagent            →  MoveReleaseTaskEvent               →  libraryagent
+libraryagent         →  MoveReleaseCompleteEvent           →  mainagent
 mainagent            →  RateTrackTaskEvent                 →  libraryagent
 mainagent            →  AddCommentTaskEvent                →  libraryagent
 mainagent            →  SetEnergyTaskEvent                 →  libraryagent

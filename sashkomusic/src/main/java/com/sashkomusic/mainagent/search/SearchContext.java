@@ -8,6 +8,7 @@ public record SearchContext(
         SearchEngine source,
         MetadataSearchRequest request,
         String rawInput,
-        List<String> releaseIds
+        List<String> releaseIds,
+        int currentPage
 ) {
 }

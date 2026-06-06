@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent;
 
 import com.sashkomusic.libraryagent.domain.service.utils.AudioTagExtractor;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -26,6 +27,7 @@ class AudioTagExtractorRatingTest {
     }
 
     @Test
+    @Disabled("requires local FLAC file at hardcoded path")
     void testWriteAndReadRatingWmpForFlac() {
         System.out.println("=== Testing RATING WMP write to FLAC ===");
         System.out.println("File: " + testFile.getFileName());
@@ -67,6 +69,7 @@ class AudioTagExtractorRatingTest {
     }
 
     @Test
+    @Disabled("requires local FLAC file at hardcoded path")
     void testWriteDifferentRatings() {
         System.out.println("=== Testing different rating values ===");
         System.out.println();

@@ -3,6 +3,10 @@ package com.sashkomusic.mainagent.bot;
 import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
+import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
+import com.sashkomusic.mainagent.library.SublibraryAssignmentHandler;
+import com.sashkomusic.mainagent.process.PendingProcessCallbackHandler;
+import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.streaming.StreamingFlowService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,12 +24,17 @@ public class CallbackDispatcher {
 
     public CallbackDispatcher(ReleaseSearchFlowService search,
                               MusicDownloadFlowService download,
+                              ProcessFolderFlowService processFolder,
                               StreamingFlowService streaming,
                               NowPlayingFlowService nowPlaying,
-                              DjTagFlowService djTag) {
+                              DjTagFlowService djTag,
+                              RemoveReleaseFlowService removeRelease,
+                              SublibraryAssignmentHandler sublibAssignment,
+                              PendingProcessCallbackHandler pendingProcess) {
         handlers.put("CARD:", search::handleCardCallback);
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
+        handlers.put("DLOPT:", (ctx, data, msgId) -> download.handleDownloadOptionCallback(ctx, data));
         handlers.put("CANCEL_DL:", (ctx, data, msgId) -> download.handleDownloadCancel(ctx, data));
         handlers.put("SEARCH_ALT:", (ctx, data, msgId) -> download.handleSearchAlternative(ctx, data));
         handlers.put("DL:", (ctx, data, msgId) -> download.handleDownload(ctx, data));
@@ -35,6 +44,12 @@ public class CallbackDispatcher {
         handlers.put("ENERGY_RATE:", (ctx, data, msgId) -> djTag.handleEnergyRate(ctx, data));
         handlers.put("FUNCTION_RATE:", (ctx, data, msgId) -> djTag.handleFunctionRate(ctx, data));
         handlers.put("ADD_COMMENT:", (ctx, data, msgId) -> djTag.handleCommentAdd(ctx, data));
+        handlers.put("RM_OK:", (ctx, data, msgId) -> removeRelease.handleConfirm(ctx, data));
+        handlers.put("RM_NO:", (ctx, data, msgId) -> removeRelease.handleCancel(ctx, data));
+        handlers.put("LIB_ASSIGN:", (ctx, data, msgId) -> sublibAssignment.handle(ctx, data));
+        handlers.put("PROC_SEL:", (ctx, data, msgId) -> processFolder.handleMetadataSelectionByIndex(ctx, data));
+        handlers.put("PROC_OK:", (ctx, data, msgId) -> pendingProcess.handleConfirm(ctx, data));
+        handlers.put("PROC_NO:", (ctx, data, msgId) -> pendingProcess.handleCancel(ctx, data));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {

@@ -6,9 +6,15 @@ import com.sashkomusic.agents.contract.DiscoverResult;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -33,8 +39,7 @@ public class DiscoveryAgentService {
 
     private DiscoverResult handleViaLlm(DiscoverRequest request) {
         String discoveryMemoryId = request.conversationId() + ":d";
-        searchContextService.clearSearch(discoveryMemoryId);
-
+        String rawInputBefore = safeGetRawInput(discoveryMemoryId);
         String summary;
         try {
             summary = discoveryAgent.chat(discoveryMemoryId, request.query());
@@ -42,34 +47,61 @@ public class DiscoveryAgentService {
             log.error("Discovery agent failure: {}", ex.getMessage(), ex);
             return DiscoverResult.empty("вибач, шось накрилось");
         }
-
-        return buildResult(request.conversationId(), discoveryMemoryId, summary);
+        return buildResult(request.conversationId(), discoveryMemoryId, summary, rawInputBefore);
     }
 
     private DiscoverResult handleDirect(DiscoverRequest request) {
         String discoveryMemoryId = request.conversationId() + ":d";
-        searchContextService.clearSearch(discoveryMemoryId);
-
         String toolResult = discoveryAgentTools.runSearch(request.preferredEngine(), request.query(), discoveryMemoryId);
         log.info("Direct search on {}: {}", request.preferredEngine(), toolResult);
-
-        return buildResult(request.conversationId(), discoveryMemoryId, toolResult);
+        return buildResult(request.conversationId(), discoveryMemoryId, toolResult, null);
     }
 
-    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary) {
+    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary, String rawInputBefore) {
         try {
             var releases = searchContextService.getSearchResults(discoveryMemoryId);
             var engine = searchContextService.getSource(discoveryMemoryId);
             if (releases.isEmpty()) {
                 return DiscoverResult.empty(summary);
             }
-            searchContextService.copySearchContext(discoveryMemoryId, conversationId);
-            accumulator.replaceAll(conversationId,
-                    releaseSearchFlowService.buildPageResponse(ConversationContext.from(conversationId), 0));
-            return DiscoverResult.found(summary, releases, engine);
+            String rawInputAfter = safeGetRawInput(discoveryMemoryId);
+            boolean newSearch = !Objects.equals(rawInputBefore, rawInputAfter);
+            if (newSearch || rawInputBefore == null) {
+                searchContextService.copySearchContext(discoveryMemoryId, conversationId);
+                accumulator.replaceAll(conversationId,
+                        releaseSearchFlowService.buildPageResponse(ConversationContext.from(conversationId), 0));
+                return DiscoverResult.found(formatForMainAgent(releases, engine), releases, engine);
+            } else {
+                // No new search (e.g. getTrackList call) — use DiscoveryAgent's summary directly
+                return DiscoverResult.found(summary != null ? summary : formatForMainAgent(releases, engine), releases, engine);
+            }
         } catch (Exception ex) {
             log.debug("No search context: {}", ex.getMessage());
             return DiscoverResult.empty(summary != null ? summary : "нич не знайшов");
         }
+    }
+
+    private String safeGetRawInput(String discoveryMemoryId) {
+        try {
+            return searchContextService.getRawInput(discoveryMemoryId);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String formatForMainAgent(List<ReleaseMetadata> releases, SearchEngine engine) {
+        String engineName = engine != null ? engine.getName() : "unknown";
+        String lines = releases.stream().map(r -> {
+            String line = "- ";
+            if (r.artist() != null && !r.artist().isBlank()) line += r.artist() + " — ";
+            line += r.title() != null ? r.title() : "?";
+            if (r.years() != null && !r.years().isEmpty()) line += " (" + r.getYearsDisplay() + ")";
+            if (r.label() != null && !r.label().isBlank()) line += ", " + r.label();
+            if (r.types() != null && !r.types().isEmpty()) line += " [" + r.getTypesDisplay() + "]";
+            if (r.tags() != null && !r.tags().isEmpty())
+                line += " #" + String.join(" #", r.tags().stream().limit(3).toList());
+            return line;
+        }).collect(Collectors.joining("\n"));
+        return "Found %d releases on %s:\n%s".formatted(releases.size(), engineName, lines);
     }
 }

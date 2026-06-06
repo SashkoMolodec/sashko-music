@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -40,6 +42,45 @@ public class FolderAudioScanner {
     public String stripProcessPrefix(String rawCommand) {
         return stripQuotes(rawCommand.substring("/process ".length()).trim());
     }
+
+    /**
+     * Searches immediate (and one level nested) sub-folders of downloads root for the closest match to the user's query.
+     * Token-based scoring: each lowercased alnum token in the query that appears in the folder name adds 1.
+     */
+    public Optional<Path> findClosestFolder(String query) {
+        String q = stripQuotes(query).trim().toLowerCase();
+        if (q.isEmpty()) return Optional.empty();
+        List<String> tokens = List.of(q.split("[^\\p{L}\\p{N}]+"));
+        if (tokens.isEmpty()) return Optional.empty();
+
+        Path root = Paths.get(downloadsBasePath);
+        if (!Files.isDirectory(root)) return Optional.empty();
+
+        try (Stream<Path> stream = Files.walk(root, 2)) {
+            return stream
+                    .filter(Files::isDirectory)
+                    .filter(p -> !p.equals(root))
+                    .map(p -> new Scored(p, score(p.getFileName().toString().toLowerCase(), tokens)))
+                    .filter(s -> s.score > 0)
+                    .max(Comparator.<Scored>comparingInt(s -> s.score)
+                            .thenComparing(s -> -s.path.getFileName().toString().length()))
+                    .map(s -> s.path);
+        } catch (IOException ex) {
+            log.warn("Failed to search downloads folder: {}", ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private int score(String folderNameLower, List<String> tokens) {
+        int s = 0;
+        for (String t : tokens) {
+            if (t.isEmpty()) continue;
+            if (folderNameLower.contains(t)) s++;
+        }
+        return s;
+    }
+
+    private record Scored(Path path, int score) {}
 
     public List<String> listAudioFiles(Path folderPath) throws IOException {
         try (Stream<Path> files = Files.walk(folderPath)) {

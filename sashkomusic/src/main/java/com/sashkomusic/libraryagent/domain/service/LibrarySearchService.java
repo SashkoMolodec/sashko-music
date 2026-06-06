@@ -94,6 +94,7 @@ public class LibrarySearchService {
         if (query == null || query.isBlank()) {
             return List.of();
         }
+        String normalized = normalizeQuery(query);
         try {
             return jdbcTemplate.query(SEARCH_SQL, (rs, rowNum) -> new LibrarySearchResult(
                     rs.getLong("id"),
@@ -104,11 +105,16 @@ public class LibrarySearchService {
                     rs.getString("directory_path"),
                     rs.getInt("track_count"),
                     rs.getDouble("rank")
-            ), query, query, limit);
+            ), normalized, normalized, limit);
         } catch (Exception e) {
             log.error("Library search failed for query '{}': {}", query, e.getMessage(), e);
             return List.of();
         }
+    }
+
+    private static String normalizeQuery(String query) {
+        // websearch_to_tsquery treats '-' as NOT operator — replace separator hyphens with spaces
+        return query.replaceAll("\\s*-\\s*", " ").trim();
     }
 
     public void indexRelease(Long releaseId) {

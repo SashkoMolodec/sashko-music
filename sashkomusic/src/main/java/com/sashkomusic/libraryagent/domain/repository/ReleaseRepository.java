@@ -13,5 +13,7 @@ public interface ReleaseRepository extends JpaRepository<Release, Long> {
 
     Optional<Release> findByMasterId(String masterId);
 
+    Optional<Release> findByDirectoryPath(String directoryPath);
+
     boolean existsBySourceId(String sourceId);
 }

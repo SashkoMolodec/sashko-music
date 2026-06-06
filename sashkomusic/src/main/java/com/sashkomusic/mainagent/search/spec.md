@@ -13,16 +13,20 @@
 Persists to `ChatStateStore` (flow_key: `"search"`):
 ```java
 record SearchState(SearchContext context, List<ReleaseMetadata> releases)
-record SearchContext(SearchEngine source, MetadataSearchRequest request, String rawInput, List<String> releaseIds)
+record SearchContext(SearchEngine source, MetadataSearchRequest request, String rawInput, List<String> releaseIds, int currentPage)
 ```
+
+`currentPage` — індекс поточної відкритої release картки (0-based). Оновлюється `buildPageResponse()` при кожному PAGE:/DIG_DEEPER переключенні. Читається `DiscoveryAgentTools.getTrackList()` аби знати для якого релізу показувати треклист.
 
 | Метод | Що робить |
 |-------|-----------|
-| `saveSearchContext(conversationId, source, rawInput, request, results)` | Merge + persist + update cache |
+| `saveSearchContext(conversationId, source, rawInput, request, results)` | Merge + persist + update cache, `currentPage=0` |
 | `getReleaseMetadata(releaseId)` | In-memory cache тільки |
 | `getReleaseMetadata(releaseId, conversationId)` | Cache + lazy loadContext при промаху (пережива рестарт JVM) |
 | `getSearchResults(conversationId)` | З store, відновлює cache як side-effect |
 | `getMetadataWithTracks(releaseId, conversationId)` | Lazy-load треків через `SearchEngineService` |
+| `updateCurrentPage(conversationId, page)` | Читає SearchState, пише назад з новим `currentPage` |
+| `getCurrentPage(conversationId)` | Читає `currentPage` (default 0) |
 | `copySearchContext(fromId, toId)` | Копіює `:d` → основний conversationId після Discovery |
 | `clearSearch(conversationId)` | Видаляє з store |
 | `clearAllCaches()` | Store + in-memory (по "стоп") |
@@ -49,7 +53,7 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 |-------|-------------|
 | `searchWithFallback(query, engines...)` | Послідовний fallback по движках |
 | `switchStrategyAndSearch(ctx)` | DIG_DEEPER: наступний engine по колу |
-| `buildPageResponse(ctx, page)` | Release картки з пагінацією |
+| `buildPageResponse(ctx, page)` | Release картки з пагінацією; зберігає `currentPage` через `searchContextService.updateCurrentPage()` |
 | `buildReleaseDownloadCard(release, engine)` | Картка для download flow |
 
 ---
@@ -58,11 +62,12 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 1. `SearchContextService` — єдиний writer в `ChatStateStore` для `flow_key = "search"`.
 2. `getReleaseMetadata(releaseId)` без `conversationId` → тільки in-memory cache, не ходить в store.
 3. Discovery flow зберігає під `conversationId + ":d"`, потім `copySearchContext` дублює під основний ID.
-4. `DownloadContextHolder` — окремий holder, не тут.
+4. `DownloadContextHolder` — окремий holder з flow_key `"dl_ctx"`, не тут.
+5. `currentPage` читається `getTrackList` (DiscoveryAgent) щоб знати який реліз показати.
 
 ---
 
 ## SDD checkpoints
 - Новий `SearchEngine` → `SearchEngineService` impl + реєстрація в `SearchEngineConfig`. `searchWithFallback` підхопить автоматично.
 - Змінити порядок пошуку → порядок у `SearchEngine` enum.
-- `DownloadContextHolder` мігрує на `ChatStateStore` → `flow_key = "download"`, оновити `CLAUDE.md`.
+- Нове поле в `SearchContext` → оновити `SearchState` deserialization (Jackson) і всі місця де будується `SearchContext`.

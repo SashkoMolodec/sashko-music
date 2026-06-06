@@ -35,13 +35,13 @@ public class ReprocessReleaseResultListener {
 
         if (result.success()) {
             return String.format("""
-                    ✅ **репроцеснуто!**
+                    ✅ репроцеснуто!
                     📁 _%s_ → _%s_
                     🎵 %d файлів оновлено
                     """, artist, releaseFolder, result.filesProcessed()).trim();
         } else {
             return String.format("""
-                    ❌ **помилка репроцесингу!(**
+                    ❌ помилка репроцесингу!(
                     📁 _%s_ → _%s_
                     %s
                     """, artist, releaseFolder, result.message()).trim();

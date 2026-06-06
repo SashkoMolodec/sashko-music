@@ -56,7 +56,8 @@ public class ReleaseService {
             String directoryPath,
             String coverPath,
             List<FileOrganizer.OrganizedFile> organizedFiles,
-            Integer metadataVersion
+            Integer metadataVersion,
+            String sublibrary
     ) {
         log.info("Saving release: {} by {} from source {}", metadata.title(), metadata.artist(), metadata.source());
 
@@ -70,6 +71,9 @@ public class ReleaseService {
         release.setDirectoryPath(directoryPath);
         release.setCoverPath(coverPath);
         release.setReleaseFormat(ReleaseFormat.DIGITAL);
+        if (sublibrary != null && !sublibrary.isBlank()) {
+            release.setSublibrary(sublibrary);
+        }
         release.setLastProcessed(java.time.LocalDateTime.now());
         if (metadataVersion != null) {
             release.setMetadataVersion(metadataVersion);

@@ -53,6 +53,15 @@ public class AgentModelsConfig {
                 .build();
     }
 
+    @Bean("libraryMemoryProvider")
+    public ChatMemoryProvider libraryMemoryProvider(ChatMemoryStore store) {
+        return convId -> MessageWindowChatMemory.builder()
+                .maxMessages(16)
+                .id(convId)
+                .chatMemoryStore(store)
+                .build();
+    }
+
     private ChatModel build(Environment env, String modelKey, String modelDefault,
                             String tokensKey, String tokensDefault) {
         String apiKey = env.getProperty("langchain4j.anthropic.chat-model.api-key", "");

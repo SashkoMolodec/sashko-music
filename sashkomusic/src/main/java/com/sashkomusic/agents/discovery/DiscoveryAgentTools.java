@@ -3,19 +3,19 @@ package com.sashkomusic.agents.discovery;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
+import com.sashkomusic.mainagent.shared.model.DateRange;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
-import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.ToolMemoryId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import com.sashkomusic.mainagent.shared.model.DateRange;
-
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -49,17 +49,46 @@ public class DiscoveryAgentTools {
         return "not found on any source. ask the user to provide more context: year, label, genre, or country.";
     }
 
-    @Tool("Returns a short summary of the user's last search in this chat — useful when the user says 'show me more like before'.")
-    public String getPreviousSearches(@ToolMemoryId String conversationId) {
+    @Tool("Dig deeper — search the same query on the next source in the chain. Use when user says 'копай', 'ще копай', 'try another source', 'dig deeper', or any 'look further' intent.")
+    public String digDeeper(@ToolMemoryId String conversationId) {
+        String lastQuery;
+        SearchEngine lastEngine;
         try {
-            var request = searchContextService.getSearchRequest(conversationId);
-            var source = searchContextService.getSource(conversationId);
-            int count = searchContextService.getSearchResults(conversationId).size();
-            return "last search on %s for artist='%s' release='%s' returned %d releases"
-                    .formatted(source, request.artist(), request.release(), count);
+            lastQuery = searchContextService.getRawInput(conversationId);
+            lastEngine = searchContextService.getSource(conversationId);
         } catch (Exception e) {
-            return "no previous search in this chat";
+            return "нема попереднього пошуку — спочатку знайди щось";
         }
+        SearchEngine[] values = SearchEngine.values();
+        SearchEngine nextEngine = values[(lastEngine.ordinal() + 1) % values.length];
+        log.info("Digging deeper: query='{}' previous={} next={}", lastQuery, lastEngine, nextEngine);
+        return runSearch(nextEngine, lastQuery, conversationId);
+    }
+
+    @Tool("Get the track list of the release the user is currently viewing. Use when the user asks about tracks, tracklist, or song names of the current release.")
+    public String getTrackList(@ToolMemoryId String conversationId) {
+        List<ReleaseMetadata> results;
+        try {
+            results = searchContextService.getSearchResults(conversationId);
+        } catch (Exception e) {
+            return "no release context — search for a release first";
+        }
+        if (results.isEmpty()) return "no release context — search for a release first";
+
+        // currentPage is saved by ReleaseSearchFlowService under the main conversationId (without ":d")
+        String mainId = conversationId.endsWith(":d") ? conversationId.substring(0, conversationId.length() - 2) : conversationId;
+        int page = searchContextService.getCurrentPage(mainId);
+        ReleaseMetadata r = results.get(Math.min(page, results.size() - 1));
+        ReleaseMetadata withTracks = searchContextService.getMetadataWithTracks(r.id(), conversationId);
+        if (withTracks != null) r = withTracks;
+
+        if (r.tracks() == null || r.tracks().isEmpty()) {
+            return "track list not available for this release";
+        }
+        String tracks = r.tracks().stream()
+                .map(t -> t.number() + ". " + t.title())
+                .collect(Collectors.joining("\n"));
+        return "%s — %s (%s)\n%s".formatted(r.artist(), r.title(), r.getYearsDisplay(), tracks);
     }
 
     private MetadataSearchRequest extractRequest(String query) {

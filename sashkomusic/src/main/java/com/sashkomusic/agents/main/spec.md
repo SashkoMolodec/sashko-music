@@ -4,7 +4,9 @@
 > Async events: [/.specs/events.md](../../../../../../.specs/events.md)
 
 ## Purpose
-Точка входу для будь-якого вільного тексту від користувача. Вирішує який tool (якщо взагалі) викликати, повертає коротку українську відповідь. Тільки цей агент говорить до користувача.
+Точка входу для будь-якого **вільного тексту** від користувача. Вирішує який tool викликати (якщо взагалі), повертає коротку українську відповідь. Тільки цей агент говорить до користувача.
+
+Slash-команди (`/library`, `/discovery`, `/np`, `/newtopic`, `/clear-context`) обходять MainAgent і йдуть напряму до sub-агентів через `UserInteractionOrchestrator`.
 
 ---
 
@@ -21,7 +23,7 @@ public interface MainAgent {
 |----------|----------|
 | `conversationId` | `"chatId"` для DM, `"chatId:topicId"` для групового топіку |
 | `userMessage` | Вербатимний текст від користувача |
-| Return | Коротка укр. відповідь ≤120 символів, lowercase, без markdown |
+| Return | Коротка укр. відповідь ≤600 символів, lowercase, без markdown |
 
 ---
 
@@ -29,13 +31,15 @@ public interface MainAgent {
 
 | Параметр | Значення |
 |----------|----------|
-| Модель | `claude-sonnet-4-6` (override: `agents.main.model-name`) |
+| Модель | `claude-sonnet-4-5` (override: `agents.main.model-name`) |
 | maxTokens | 2048 |
 | Memory window | 32 messages |
-| Memory store | `PostgresChatMemoryStore` |
+| Memory provider | `ChatLogBackedChatMemory` (backed by `chat_log` table) |
 | Prompt caching | `cacheSystemMessages=true`, `cacheTools=true` |
 
-DiscoveryAgent має **окремий** memory ID (`conversationId + ":d"`) — histories не перемішуються.
+`ChatLogBackedChatMemory` завантажує останні N рядків з `chat_log` при кожному виклику — тому MainAgent бачить повідомлення всіх сесій (`/library`, `/discovery`, free-text). Фінальна `AiMessage` зберігається в `chat_log` з `source='main'`.
+
+Sub-агенти мають **окремі** memory IDs (`conversationId + ":d"`, `conversationId + ":lib"`) — histories не перемішуються.
 
 ---
 
@@ -43,17 +47,12 @@ DiscoveryAgent має **окремий** memory ID (`conversationId + ":d"`) —
 
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
-| `findMusic(query)` | "знайди", "пошукай" — без конкретного джерела | `DiscoveryAgentService` (LLM path) |
-| `findMusicOnDiscogs(query)` | юзер явно каже "discogs" | `DiscoveryAgentService` (direct path) |
-| `findMusicOnBandcamp(query)` | юзер явно каже "bandcamp" | `DiscoveryAgentService` (direct path) |
-| `findMusicOnMusicBrainz(query)` | юзер явно каже "musicbrainz" | `DiscoveryAgentService` (direct path) |
-| `digDeeper()` | "копай ще", "try another source" | `ReleaseSearchFlowService.switchStrategyAndSearch()` |
-| `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "є у тебе" | `LibrarySearchService.search()` (PostgreSQL FTS) |
-| `downloadMusic(artist, album)` | "скачай", "завантаж" (явний намір) | `DownloadAgentService` |
-| `discussRelease(question)` | питання про щойно знайдений реліз | `SearchContextService.getMetadataWithTracks()` |
+| `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів | `DiscoveryAgentService` → LLM path (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування | `LibraryAgentService` → `LibraryAgent` (Haiku) |
 
-Side-effect всіх search tools: release cards → `ChatResponseAccumulator`.
-`downloadMusic` — fire-and-forget, результат через async events.
+`discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
+
+Side-effect пошуку: release cards → `ChatResponseAccumulator` → Telegram до того як MainAgent пише summary.
 
 ---
 
@@ -67,18 +66,41 @@ drain(conversationId) → drained cards  +  aiText(summary)  →  Telegram
 
 ---
 
+## Slash-команди (обходять MainAgent)
+
+`UserInteractionOrchestrator.processUserCommands()` перехоплює ці команди до `runMainAgent()`:
+
+| Команда | Handler | LLM? |
+|---------|---------|------|
+| `/library <query>` | `LibraryAgentService.handle()` | Haiku тільки |
+| `/discovery <query>` | `DiscoveryAgentService.handle()` | Haiku тільки |
+| `/np` | `NowPlayingFlowService.nowPlaying()` | ні |
+| `/newtopic` | `NewTopicFlowService.handle()` | ні |
+| `/clearctx` | `chatLogService.deleteConversation()` + `chatMemoryStore.deleteMessages()` | ні |
+| `/remove-release` | `RemoveReleaseFlowService.handleCommand()` | ні |
+| `стоп` | `clearAllCaches()` | ні |
+
+Відповіді slash-команд логуються в `chat_log` оркестратором (user message + assistant response), тому MainAgent бачить їх контекст при наступному free-text запиті.
+
+---
+
 ## Hard rules
-1. Рівно один tool per intent якщо підходить. Small talk → відповідь без tool.
+1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в `chat_log`).
 2. Не вигадувати параметри — тільки те що сказав юзер.
 3. Не описувати release картки в тексті — вони вже в accumulator.
 4. Тільки MainAgent говорить до юзера. Sub-агенти → records/pushAll.
-5. Callback-кнопки, slash-команди → `CallbackDispatcher` / `UserInteractionOrchestrator`, сюди не доходять.
+5. Callback-кнопки → `CallbackDispatcher`. Slash-команди → `UserInteractionOrchestrator`.
+6. `discoverMusic` отримує query вербатимно. MainAgent не вирішує який пошуковий движок — це відповідальність DiscoveryAgent.
 
 ---
 
 ## Out of scope
 - Callback-кнопки (`DL:`, `RATE:`, `STREAM:`, …) → `CallbackDispatcher`
 - Slash-команди → `UserInteractionOrchestrator`
+- Вибір пошукового движку (MusicBrainz / Discogs / Bandcamp) → `DiscoveryAgentTools`
+- `digDeeper` → `DiscoveryAgentTools.digDeeper()`
+- Форматування release списку → `DiscoveryAgentService.formatForMainAgent()`
+- Завантаження музики → кнопка DL на картці
 - Cross-conversation пам'ять
 
 ---

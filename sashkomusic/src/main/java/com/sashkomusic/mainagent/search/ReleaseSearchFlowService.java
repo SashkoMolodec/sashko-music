@@ -121,6 +121,7 @@ public class ReleaseSearchFlowService {
             return List.of(BotResponse.text("результатів немає."));
         }
         int index = Math.floorMod(page, releases.size());
+        contextService.updateCurrentPage(ctx.conversationId(), index);
         var release = releases.get(index);
         var rows = buildCardButtonRows(release, index, releases.size());
         String text = buildCardText(release, index, releases.size());

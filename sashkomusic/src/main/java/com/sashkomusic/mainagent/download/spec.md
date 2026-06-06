@@ -15,6 +15,7 @@
 ```
 CallbackDispatcher
   ├─ "DL:"         → MusicDownloadFlowService.handleDownload()
+  ├─ "DLOPT:"      → MusicDownloadFlowService.handleDownloadOptionCallback()
   ├─ "SEARCH_ALT:" → MusicDownloadFlowService.handleSearchAlternative()
   └─ "CANCEL_DL:"  → MusicDownloadFlowService.handleDownloadCancel()
 
@@ -24,9 +25,7 @@ DownloadAgentService (через MainAgentTools.downloadMusic)
 FileSearchResultEvent (async, від downloadagent)
   └─ SearchFilesResultListener
        └─ MusicDownloadFlowService.handleSearchResults()
-
-DownloadOptionSelectionOngoingFlow (text-based multi-turn, всі движки)
-  └─ MusicDownloadFlowService.handleDownloadOption()
+            └─ mergeWithSelectionButtons() → кнопки DLOPT:0, DLOPT:1, ..., DLOPT:cancel
 ```
 
 ---
@@ -64,22 +63,25 @@ dto → flowHandler.analyzeAll(options, releaseId, conversationId)
            └─ AnalysisResult(reports, aiSummary)
   → downloadContextHolder.saveDownloadOptions(conversationId, releaseId, reports)
   → DownloadOptionsCardFormatter.format(reports, aiSummary) + flowHandler.buildSearchResultsResponse()
+  → mergeWithSelectionButtons(sourceCard, reports)
+       ├─ buttons from sourceCard converted to row
+       ├─ DLOPT:0, DLOPT:1, ..., DLOPT:N-1 (5 per row, emoji-numbered)
+       └─ DLOPT:cancel (❌ скасувати)
 ```
 
 Результати завжди показуються юзеру — автоматичного скачування без підтвердження **немає**.
-`DownloadOptionSelectionOngoingFlow` стає активним для conversationId після збереження опцій.
 
 ---
 
-## Multi-turn: вибір варіанту (всі движки)
+## Button-based вибір варіанту
 
-`DownloadOptionSelectionOngoingFlow` активний поки `DownloadContextHolder` має опції для `conversationId`.
-Використовується для **всіх** движків — навіть якщо є тільки 1 варіант (API-джерела).
+Замість text-based `OngoingFlow` (видалений) — кнопки `DLOPT:<index>` прямо в картці результатів.
+Кнопки персистовані (ChatStateStore) — переживають рестарт JVM.
 
-### `handleDownloadOption(ctx, rawInput)`
-- `-` → `clearSession`, `"❌ скасовано"`.
-- Число `N` → `reports.get(N-1)`, `DownloadTaskProducer.send(...)`, `clearSession`.
-- Інше → `"🤔 незрозумілий зроз."`.
+### `handleDownloadOptionCallback(ctx, "DLOPT:<payload>")`
+- `payload = "cancel"` → `clearSession`, `"❌ скасовано"`.
+- `payload = "<N>"` → `reports.get(N)`, `DownloadTaskProducer.send(...)`, `clearSession`, повертає `formatDownloadConfirmation(option)`.
+- Невідомий index → `"❌ невідомий варіант"`.
 
 ---
 
@@ -108,17 +110,18 @@ String formatDownloadConfirmation(DownloadOption option);
 
 ## DownloadContextHolder (стан сесії)
 
-In-memory `ConcurrentHashMap<conversationId, DownloadContext>`.
+Персистується через `ChatStateStore` (flow_key: `"dl_ctx"`). Переживає рестарт JVM — кнопки DLOPT на старих картках залишаються робочими.
 
-**Увага:** не персистується через `ChatStateStore` — втрачається при рестарті JVM.
-Якщо юзер обирав варіант до рестарту — побачить `"варіанти пропали"`.
+```java
+record DownloadContext(String chosenReleaseId, List<DownloadFlowHandler.OptionReport> optionReports) {}
+```
 
-| Метод                                       | Дія                                  |
-|---------------------------------------------|--------------------------------------|
-| `saveDownloadOptions(conversationId, releaseId, reports)` | Зберігає результати пошуку |
-| `getDownloadOptions(conversationId)`        | Читає для `OngoingFlow.appliesTo()`  |
-| `getChosenRelease(conversationId)`          | `releaseId` для `handleDownloadOption` |
-| `clearSession(conversationId)`              | Після вибору або скасування          |
+| Метод                                                     | Дія                                                      |
+|-----------------------------------------------------------|----------------------------------------------------------|
+| `saveDownloadOptions(conversationId, releaseId, reports)` | Зберігає результати пошуку в ChatStateStore              |
+| `getDownloadOptions(conversationId)`                      | Читає для `handleDownloadOptionCallback`                 |
+| `clearSession(conversationId)`                            | Після вибору або скасування                              |
+| `clearAllSessions()`                                      | По "стоп" або `clearAllCaches()`                        |
 
 ---
 
@@ -153,7 +156,7 @@ record DownloadOption(
 
 ## Hard rules
 1. `MusicDownloadFlowService` — orchestration only. Жодного DB access, жодних AI-викликів.
-2. `DownloadContextHolder` — не `ChatStateStore`. Якщо потрібна персистентність після рестарту — мігрувати на `ChatStateStore` (flow_key: `"download"`).
+2. `DownloadContextHolder` персистується через `ChatStateStore` (flow_key: `"dl_ctx"`). Кнопки `DLOPT:` переживають рестарт JVM.
 3. Новий движок → новий `DownloadFlowHandler` + реєстрація в `DownloadSourceConfig` + оновити таблицю вище.
 4. Кнопки ALT-джерел — в `buildSearchResultsResponse` відповідного handler. Не в `MusicDownloadFlowService`.
 5. `SEARCH_ALT:` парсить `ENGINE` через `DownloadEngine.valueOf()` — значення enum має точно збігатись з `name()`.
@@ -172,5 +175,5 @@ record DownloadOption(
 ## SDD checkpoints (змінювати spec ДО коду)
 - Новий `DownloadEngine` → додати рядок у таблицю handlers + описати кнопки.
 - Змінити кнопки у якомусь handler → оновити колонку "Кнопки ALT в результаті".
-- Зробити `DownloadContextHolder` персистентним → описати нову схему `ChatStateStore` тут.
 - Зміна lazy-reload логіки `getReleaseMetadata` → оновити опис `handleDownload`.
+- Додати нову кнопку до результатів → оновити `mergeWithSelectionButtons` та документацію вище.

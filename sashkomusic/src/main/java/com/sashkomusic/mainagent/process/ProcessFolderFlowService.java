@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.sashkomusic.mainagent.search.SearchEngine.BANDCAMP;
 import static com.sashkomusic.mainagent.search.SearchEngine.DISCOGS;
@@ -67,7 +68,12 @@ public class ProcessFolderFlowService {
             FolderAudioScanner.ResolvedFolder folder = audioScanner.resolve(processPath);
 
             if (!folder.isDirectory()) {
-                return List.of(BotResponse.text("❌ папка не знайдена: `" + folder.path() + "`"));
+                Optional<Path> closest = audioScanner.findClosestFolder(folderName);
+                if (closest.isEmpty()) {
+                    return List.of(BotResponse.text("❌ папка не знайдена: `" + folder.path() + "`"));
+                }
+                log.info("Direct path not found, using closest match: {}", closest.get());
+                folder = audioScanner.resolve(closest.get().toString());
             }
 
             List<String> audioFiles = audioScanner.listAudioFiles(folder.path());
@@ -123,30 +129,35 @@ public class ProcessFolderFlowService {
         }
 
         if (trimmed.equals("-")) {
-            String key = contextHolder.getChatContextKey(ctx.conversationId());
-            if (key != null) contextHolder.remove(key);
-            contextHolder.clearChatSelection(ctx.conversationId());
+            contextHolder.clear(ctx.conversationId());
             return List.of(BotResponse.text("❌ скасовано"));
         }
 
-        Integer optionNumber = parseInt(trimmed);
-        if (optionNumber == null) {
-            return List.of(BotResponse.text("❌ невірний номер. спробуй ще раз"));
+        return List.of(BotResponse.text("обери варіант кнопкою вище або скинь посилання на реліз"));
+    }
+
+    public List<BotResponse> handleMetadataSelectionByIndex(ConversationContext ctx, String data) {
+        String payload = data.substring("PROC_SEL:".length());
+        if ("cancel".equals(payload)) {
+            contextHolder.clear(ctx.conversationId());
+            return List.of(BotResponse.text("❌ скасовано"));
         }
 
-        String contextKey = contextHolder.getChatContextKey(ctx.conversationId());
-        if (contextKey == null) {
+        int index;
+        try {
+            index = Integer.parseInt(payload);
+        } catch (NumberFormatException e) {
+            return List.of(BotResponse.text("❌ невідома команда"));
+        }
+
+        var state = contextHolder.get(ctx.conversationId());
+        if (state.isEmpty()) {
             return List.of(BotResponse.text("❌ сесія закінчилась. спробуй /process ще раз"));
         }
 
-        String releaseId = contextHolder.getReleaseIdByOption(ctx.conversationId(), optionNumber);
+        String releaseId = contextHolder.getReleaseIdByOption(ctx.conversationId(), index);
         if (releaseId == null) {
-            return List.of(BotResponse.text("❌ невірний номер. спробуй ще раз"));
-        }
-
-        ProcessFolderContextHolder.ProcessFolderContext folderContext = contextHolder.get(contextKey);
-        if (folderContext == null) {
-            return List.of(BotResponse.text("❌ контекст втрачено. спробуй /process ще раз"));
+            return List.of(BotResponse.text("❌ невірний варіант"));
         }
 
         ReleaseMetadata metadata = searchContextService.getMetadataWithTracks(releaseId, ctx.conversationId());
@@ -154,29 +165,24 @@ public class ProcessFolderFlowService {
             return List.of(BotResponse.text("❌ метадані не знайдено"));
         }
 
+        var folderState = state.get();
         libraryTaskProducer.send(ProcessLibraryTaskDto.of(
-                ctx.conversationId(), folderContext.directoryPath(), folderContext.audioFiles(), metadata));
-
-        contextHolder.remove(contextKey);
-        contextHolder.clearChatSelection(ctx.conversationId());
+                ctx.conversationId(), folderState.directoryPath(), folderState.audioFiles(), metadata));
+        contextHolder.clear(ctx.conversationId());
 
         log.info("Sent library processing task: conversationId={}, directory={}",
-                ctx.conversationId(), folderContext.directoryPath());
+                ctx.conversationId(), folderState.directoryPath());
         return List.of(BotResponse.text("🚀 опрацьовую..."));
     }
 
     public boolean hasActiveContext(ConversationContext ctx) {
-        return contextHolder.getChatContextKey(ctx.conversationId()) != null;
+        return contextHolder.hasActiveContext(ctx.conversationId());
     }
 
     private List<BotResponse> handleUrlMetadataSelection(ConversationContext ctx, String url) {
-        String contextKey = contextHolder.getChatContextKey(ctx.conversationId());
-        if (contextKey == null) {
+        var stateOpt = contextHolder.get(ctx.conversationId());
+        if (stateOpt.isEmpty()) {
             return List.of(BotResponse.text("❌ сесія закінчилась. спробуй /process ще раз"));
-        }
-        ProcessFolderContextHolder.ProcessFolderContext folderContext = contextHolder.get(contextKey);
-        if (folderContext == null) {
-            return List.of(BotResponse.text("❌ контекст втрачено. спробуй /process ще раз"));
         }
 
         var metadata = metadataUrlFetcher.fetch(url);
@@ -189,16 +195,14 @@ public class ProcessFolderFlowService {
         }
 
         var release = metadata.get();
-        String summary = buildReleaseSummary(release);
-
+        var state = stateOpt.get();
         libraryTaskProducer.send(ProcessLibraryTaskDto.of(
-                ctx.conversationId(), folderContext.directoryPath(), folderContext.audioFiles(), release));
-        contextHolder.remove(contextKey);
-        contextHolder.clearChatSelection(ctx.conversationId());
+                ctx.conversationId(), state.directoryPath(), state.audioFiles(), release));
+        contextHolder.clear(ctx.conversationId());
 
         log.info("Sent library processing task from URL: conversationId={}, directory={}, url={}",
-                ctx.conversationId(), folderContext.directoryPath(), url);
-        return List.of(BotResponse.text("✅ " + summary + "\n🚀 опрацьовую..."));
+                ctx.conversationId(), state.directoryPath(), url);
+        return List.of(BotResponse.text("✅ " + buildReleaseSummary(release) + "\n🚀 опрацьовую..."));
     }
 
     private static String buildReleaseSummary(ReleaseMetadata release) {
@@ -217,16 +221,12 @@ public class ProcessFolderFlowService {
     }
 
     private List<BotResponse> handleAdditionalContext(ConversationContext ctx, String additionalContext) {
-        String contextKey = contextHolder.getChatContextKey(ctx.conversationId());
-        if (contextKey == null) {
+        var stateOpt = contextHolder.get(ctx.conversationId());
+        if (stateOpt.isEmpty()) {
             return List.of(BotResponse.text("❌ сесія закінчилась. спробуй /process ще раз"));
         }
-        ProcessFolderContextHolder.ProcessFolderContext folderContext = contextHolder.get(contextKey);
-        if (folderContext == null) {
-            return List.of(BotResponse.text("❌ контекст втрачено. спробуй /process ще раз"));
-        }
         downloadContextHolder.clearSession(ctx.conversationId());
-        return process(ctx, folderContext.directoryPath(), additionalContext);
+        return process(ctx, stateOpt.get().directoryPath(), additionalContext);
     }
 
     private MetadataSearchRequest buildSearchRequest(String folderName, List<String> audioFiles, String additionalContext) {
@@ -289,23 +289,12 @@ public class ProcessFolderFlowService {
                 .peek(searchContextService::saveReleaseMetadata)
                 .map(ReleaseMetadata::id)
                 .toList();
-        contextHolder.storeReleaseIds(ctx.conversationId(), releaseIds);
 
-        String contextKey = contextHolder.generateShortKey();
-        contextHolder.store(contextKey, folderPath.toString(), audioFiles);
-        contextHolder.storeChatContext(ctx.conversationId(), contextKey);
+        contextHolder.save(ctx.conversationId(), folderPath.toString(), audioFiles, releaseIds);
     }
 
     private static String withContext(String value, String additionalContext) {
         return value + " " + additionalContext;
-    }
-
-    private static Integer parseInt(String input) {
-        try {
-            return Integer.parseInt(input.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private static String buildSuggesterInput(String folderName, List<String> audioFiles,

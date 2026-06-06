@@ -54,6 +54,9 @@ public class Release {
     @Column(nullable = false)
     private String directoryPath;
 
+    @Column(nullable = false)
+    private String sublibrary = "working";
+
     @Column
     private Integer metadataVersion;
 

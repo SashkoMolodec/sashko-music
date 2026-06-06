@@ -7,6 +7,7 @@ import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +40,25 @@ public class ProcessOptionsFormatter {
             appendResults(message, results.bandcampResults(), optionIndex);
             message.append("\n");
         }
-        return BotResponse.text(message.toString());
+
+        int total = results.allResults().size();
+        List<List<BotResponse.ButtonDto>> rows = buildSelectionButtons(total);
+        return BotResponse.withMultiRowButtons(message.toString(), rows);
+    }
+
+    private List<List<BotResponse.ButtonDto>> buildSelectionButtons(int count) {
+        List<List<BotResponse.ButtonDto>> rows = new ArrayList<>();
+        List<BotResponse.ButtonDto> row = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            row.add(new BotResponse.ButtonDto(toEmojiNumber(i + 1), "PROC_SEL:" + i));
+            if (row.size() == 5) {
+                rows.add(List.copyOf(row));
+                row.clear();
+            }
+        }
+        if (!row.isEmpty()) rows.add(List.copyOf(row));
+        rows.add(List.of(new BotResponse.ButtonDto("❌ скасувати", "PROC_SEL:cancel")));
+        return rows;
     }
 
     private int appendResults(StringBuilder message, List<ReleaseMetadata> results, int startIndex) {

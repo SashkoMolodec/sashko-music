@@ -22,8 +22,12 @@ import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -39,6 +43,18 @@ import java.util.Objects;
 public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
     private static final int MAX_TEXT_LENGTH = 4096;
     private static final String FILE_ID_PREFIX = "FILE_ID:";
+    private static final ReplyKeyboardMarkup DEFAULT_REPLY_KEYBOARD = buildDefaultReplyKeyboard();
+
+    private static ReplyKeyboardMarkup buildDefaultReplyKeyboard() {
+        KeyboardRow row = new KeyboardRow();
+        row.add(new KeyboardButton("шо грає 🎵"));
+        return ReplyKeyboardMarkup.builder()
+                .keyboardRow(row)
+                .resizeKeyboard(true)
+                .isPersistent(true)
+                .selective(false)
+                .build();
+    }
 
     private final UserInteractionOrchestrator orchestrator;
     private final FileIdCacheService fileIdCacheService;
@@ -131,7 +147,10 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
     public void sendResponse(ConversationContext ctx, BotResponse response) {
         var keyboardMarkup = createKeyboard(response.buttons(), response.buttonRows());
-        String formattedText = TelegramHtmlFormatter.format(response.text());
+        ReplyKeyboard outgoingMarkup = keyboardMarkup != null ? keyboardMarkup : DEFAULT_REPLY_KEYBOARD;
+        String formattedText = response.preformatted()
+                ? response.text()
+                : TelegramHtmlFormatter.format(response.text());
         boolean hasImage = response.imageUrl() != null && !response.imageUrl().isBlank();
 
         if (response.editMessageId() != null) {
@@ -146,7 +165,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .photo(new InputFile(response.imageUrl()))
                         .caption(formattedText)
                         .parseMode("HTML")
-                        .replyMarkup(keyboardMarkup);
+                        .replyMarkup(outgoingMarkup);
                 if (ctx.isGroupTopic()) {
                     photoBuilder.messageThreadId(ctx.topicId());
                 }
@@ -164,7 +183,8 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                     .chatId(ctx.chatId())
                     .text(formattedText)
                     .parseMode("HTML")
-                    .replyMarkup(keyboardMarkup);
+                    .disableWebPagePreview(true)
+                    .replyMarkup(outgoingMarkup);
             if (ctx.isGroupTopic()) {
                 msgBuilder.messageThreadId(ctx.topicId());
             }
@@ -177,7 +197,8 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 SendMessage.SendMessageBuilder<?, ?> plainBuilder = SendMessage.builder()
                         .chatId(ctx.chatId())
                         .text(response.text())
-                        .replyMarkup(keyboardMarkup);
+                        .disableWebPagePreview(true)
+                        .replyMarkup(outgoingMarkup);
                 if (ctx.isGroupTopic()) {
                     plainBuilder.messageThreadId(ctx.topicId());
                 }
@@ -218,6 +239,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .messageId(messageId)
                         .text(formattedText)
                         .parseMode("HTML")
+                        .disableWebPagePreview(true)
                         .replyMarkup(keyboardMarkup)
                         .build());
             }

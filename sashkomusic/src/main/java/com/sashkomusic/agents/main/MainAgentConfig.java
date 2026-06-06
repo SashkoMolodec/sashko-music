@@ -13,7 +13,7 @@ public class MainAgentConfig {
     @Bean
     public MainAgent mainAgent(
             @Qualifier("sonnetChatModel") ChatModel sonnetChatModel,
-            @Qualifier("mainMemoryProvider") ChatMemoryProvider memoryProvider,
+            @Qualifier("chatLogMemoryProvider") ChatMemoryProvider memoryProvider,
             MainAgentTools tools) {
         return AiServices.builder(MainAgent.class)
                 .chatModel(sonnetChatModel)

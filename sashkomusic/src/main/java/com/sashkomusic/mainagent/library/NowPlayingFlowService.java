@@ -76,10 +76,14 @@ public class NowPlayingFlowService {
             message.append("\n").append(emojiLine);
         }
 
+        if (trackDto.comment() != null && !trackDto.comment().isEmpty()) {
+            message.append("\n💬 ").append(trackDto.comment());
+        }
+
         message.append("\n\n✏️ оціни:");
 
-        Map<String, String> ratingButtons = createRatingButtons(trackDto.id(), trackInfo.navidromeId());
-        return List.of(BotResponse.withButtons(message.toString().toLowerCase(), ratingButtons));
+        List<List<BotResponse.ButtonDto>> rows = buildDjPanelRows(trackDto.id(), trackInfo.navidromeId());
+        return List.of(BotResponse.withMultiRowButtons(message.toString().toLowerCase(), rows));
     }
 
     public List<BotResponse> handleRate(ConversationContext ctx, String data) {
@@ -106,15 +110,30 @@ public class NowPlayingFlowService {
         }
     }
 
-    private Map<String, String> createRatingButtons(Long trackId, String navidromeId) {
-        Map<String, String> buttons = new LinkedHashMap<>();
-        buttons.put("⭐ 1", "RATE:" + trackId + ":1:" + navidromeId);
-        buttons.put("⭐ 2", "RATE:" + trackId + ":2:" + navidromeId);
-        buttons.put("⭐ 3", "RATE:" + trackId + ":3:" + navidromeId);
-        buttons.put("⭐ 4", "RATE:" + trackId + ":4:" + navidromeId);
-        buttons.put("⭐ 5", "RATE:" + trackId + ":5:" + navidromeId);
-        buttons.put("➕", "EXPAND_DJ_RATE:" + trackId + ":" + navidromeId);
-        return buttons;
+    private List<List<BotResponse.ButtonDto>> buildDjPanelRows(Long trackId, String navidromeId) {
+        List<List<BotResponse.ButtonDto>> rows = new ArrayList<>();
+
+        List<BotResponse.ButtonDto> stars = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            stars.add(BotResponse.ButtonDto.callback("⭐ " + i, "RATE:" + trackId + ":" + i + ":" + navidromeId));
+        }
+        rows.add(stars);
+
+        List<BotResponse.ButtonDto> energy = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            energy.add(BotResponse.ButtonDto.callback("⚡ " + i, "ENERGY_RATE:" + trackId + ":E" + i + ":" + navidromeId));
+        }
+        rows.add(energy);
+
+        List<BotResponse.ButtonDto> function = new ArrayList<>();
+        function.add(BotResponse.ButtonDto.callback("🌅", "FUNCTION_RATE:" + trackId + ":intro:" + navidromeId));
+        function.add(BotResponse.ButtonDto.callback("🔧", "FUNCTION_RATE:" + trackId + ":tool:" + navidromeId));
+        function.add(BotResponse.ButtonDto.callback("💥", "FUNCTION_RATE:" + trackId + ":banger:" + navidromeId));
+        function.add(BotResponse.ButtonDto.callback("🎆", "FUNCTION_RATE:" + trackId + ":closer:" + navidromeId));
+        function.add(BotResponse.ButtonDto.callback("💬", "ADD_COMMENT:" + trackId + ":" + navidromeId));
+        rows.add(function);
+
+        return rows;
     }
 
     public List<BotResponse> rateTrack(ConversationContext ctx, Long trackId, int rating) {

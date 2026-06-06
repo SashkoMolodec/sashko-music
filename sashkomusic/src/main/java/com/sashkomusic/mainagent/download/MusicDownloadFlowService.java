@@ -61,9 +61,9 @@ public class MusicDownloadFlowService {
 
         return List.of(BotResponse.text(
                 "🔎 шукаю опції завантаження (%s): _%s - %s_".formatted(
-                        source.getName().toLowerCase(),
+                        source.getName(),
                         metadata.artist(),
-                        metadata.title()).toLowerCase()
+                        metadata.title())
         ));
     }
 
@@ -72,7 +72,6 @@ public class MusicDownloadFlowService {
                 dto.conversationId(), dto.releaseId(), dto.source(), dto.results().size());
 
         var flowHandler = downloadFlowHandlers.get(dto.source());
-
         var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.conversationId());
         var reports = analysisResult.reports();
         downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), reports);
@@ -80,45 +79,80 @@ public class MusicDownloadFlowService {
         reports.forEach(r -> log.info("{}", r));
 
         String text = DownloadOptionsCardFormatter.format(reports, analysisResult.aiSummary());
-        return List.of(flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source()));
+        BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source());
+        return List.of(mergeWithSelectionButtons(sourceCard, reports));
     }
 
-    public List<BotResponse> handleDownloadOption(ConversationContext ctx, String rawInput) {
-        var reports = downloadContextHolder.getDownloadOptions(ctx.conversationId());
-        if (reports.isEmpty()) {
-            return List.of(BotResponse.text("😔 **варіанти пропали, нич нема, давай ше раз.**"));
-        }
-
-        if (rawInput.trim().equals("-")) {
+    public List<BotResponse> handleDownloadOptionCallback(ConversationContext ctx, String data) {
+        String payload = data.substring("DLOPT:".length());
+        if ("cancel".equals(payload)) {
             downloadContextHolder.clearSession(ctx.conversationId());
             return List.of(BotResponse.text("❌ скасовано"));
         }
 
-        Integer optionNumber = parseNumberFromInput(rawInput);
-        if (optionNumber == null || optionNumber < 1 || optionNumber > reports.size()) {
-            return List.of(BotResponse.text("🤔 **незрозумілий зроз.**"));
+        var reports = downloadContextHolder.getDownloadOptions(ctx.conversationId());
+        if (reports.isEmpty()) {
+            return List.of(BotResponse.text("😔 варіанти пропали — знайди реліз ще раз"));
         }
 
-        var chosenReport = reports.get(optionNumber - 1);
-        var option = chosenReport.option();
-        String releaseId = downloadContextHolder.getChosenRelease(ctx.conversationId());
+        int index;
+        try {
+            index = Integer.parseInt(payload);
+        } catch (NumberFormatException e) {
+            return List.of(BotResponse.text("❌ невідома команда"));
+        }
 
-        log.info("User chose option #{}: {} from {}", optionNumber, option.id(), option.displayName());
+        if (index < 0 || index >= reports.size()) {
+            return List.of(BotResponse.text("❌ невірний варіант"));
+        }
+
+        var option = reports.get(index).option();
+        String releaseId = downloadContextHolder.getChosenRelease(ctx.conversationId());
+        log.info("User chose option #{}: {} from {}", index, option.id(), option.displayName());
 
         downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
         downloadContextHolder.clearSession(ctx.conversationId());
 
         var flowHandler = downloadFlowHandlers.get(option.source());
-        String message = flowHandler.formatDownloadConfirmation(option);
-        return List.of(BotResponse.text(message));
+        return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));
     }
 
-    private Integer parseNumberFromInput(String input) {
-        try {
-            return Integer.parseInt(input.trim());
-        } catch (NumberFormatException e) {
-            return null;
+    private BotResponse mergeWithSelectionButtons(BotResponse sourceCard, List<DownloadFlowHandler.OptionReport> reports) {
+        List<List<BotResponse.ButtonDto>> allRows = new ArrayList<>();
+
+        // Convert flat source-switch buttons to a single row
+        if (sourceCard.buttons() != null && !sourceCard.buttons().isEmpty()) {
+            List<BotResponse.ButtonDto> sourceRow = sourceCard.buttons().entrySet().stream()
+                    .map(e -> new BotResponse.ButtonDto(e.getKey(), e.getValue()))
+                    .toList();
+            allRows.add(sourceRow);
         }
+        if (sourceCard.buttonRows() != null) {
+            allRows.addAll(sourceCard.buttonRows());
+        }
+
+        // Add numbered selection buttons (up to 5 per row)
+        List<BotResponse.ButtonDto> row = new ArrayList<>();
+        for (int i = 0; i < reports.size(); i++) {
+            row.add(new BotResponse.ButtonDto(indexIcon(i + 1), "DLOPT:" + i));
+            if (row.size() == 5) {
+                allRows.add(List.copyOf(row));
+                row.clear();
+            }
+        }
+        if (!row.isEmpty()) allRows.add(List.copyOf(row));
+        allRows.add(List.of(new BotResponse.ButtonDto("❌ скасувати", "DLOPT:cancel")));
+
+        return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false);
+    }
+
+    private static String indexIcon(int i) {
+        return switch (i) {
+            case 1 -> "1️⃣"; case 2 -> "2️⃣"; case 3 -> "3️⃣";
+            case 4 -> "4️⃣"; case 5 -> "5️⃣"; case 6 -> "6️⃣";
+            case 7 -> "7️⃣"; case 8 -> "8️⃣"; case 9 -> "9️⃣";
+            case 10 -> "🔟"; default -> i + ".";
+        };
     }
 
     public List<BotResponse> getDownloadOptions(ConversationContext ctx, String query) {

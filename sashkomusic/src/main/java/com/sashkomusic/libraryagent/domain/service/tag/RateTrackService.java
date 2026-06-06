@@ -36,24 +36,25 @@ public class RateTrackService {
             return new RateResult(false, "трек не знайдено");
         }
 
-        Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
-        if (audioFile == null || !Files.exists(audioFile)) {
-            return new RateResult(false, "файл не існує");
-        }
-
         int ratingWmp = convertStarsToWmpRating(rating);
         track.setTag("RATING", String.valueOf(ratingWmp));
         track.setTag("RATING WMP", String.valueOf(ratingWmp));
 
-        boolean success = audioTagExtractor.writeRating(audioFile, rating);
-        trackRepository.save(track);
-
-        if (success) {
-            log.info("Successfully rated track: id={}, rating={}", trackId, rating);
-            return new RateResult(true, "✅ рейтинг " + rating + "★");
+        Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
+        boolean fileWritten = false;
+        if (audioFile != null && Files.exists(audioFile)) {
+            fileWritten = audioTagExtractor.writeRating(audioFile, rating);
+            if (!fileWritten) {
+                log.warn("Failed to write rating tag to file: {}", audioFile);
+            }
         } else {
-            return new RateResult(false, "помилка запису рейтингу");
+            log.warn("Audio file missing for track id={} path={} — DB updated, file skipped",
+                    trackId, track.getLocalPath());
         }
+
+        trackRepository.save(track);
+        log.info("Rated track: id={}, rating={}, fileWritten={}", trackId, rating, fileWritten);
+        return new RateResult(true, "✅ рейтинг " + rating + "★");
     }
 
     @Transactional
