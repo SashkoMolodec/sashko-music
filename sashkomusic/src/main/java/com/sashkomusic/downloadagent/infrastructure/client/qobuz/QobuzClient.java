@@ -232,7 +232,7 @@ public class QobuzClient implements MusicSourcePort {
 
             String ripQuality = toRipQuality(quality);
             Process process = commandExecutor.execute(
-                    cliPath, "-ndb", "-f", downloadPath, "-q", ripQuality, "url", albumUrl
+                    cliPath, "-ndb", "--no-progress", "-f", downloadPath, "-q", ripQuality, "url", albumUrl
             );
 
             activeProcesses.put(releaseId, process);
