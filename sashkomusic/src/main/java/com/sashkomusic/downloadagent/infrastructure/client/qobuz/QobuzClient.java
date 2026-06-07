@@ -65,7 +65,7 @@ public class QobuzClient implements MusicSourcePort {
 
 
     @Override
-    public List<DownloadOption> search(String artist, String release) {
+    public List<DownloadOption> search(String artist, String release, String conversationId) {
         log.info("Searching Qobuz API: artist='{}', release='{}'", artist, release);
         try {
             if (authToken == null) authenticate();

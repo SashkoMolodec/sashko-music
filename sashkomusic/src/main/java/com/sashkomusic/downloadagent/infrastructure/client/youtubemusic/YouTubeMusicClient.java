@@ -56,7 +56,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
 
 
     @Override
-    public List<DownloadOption> search(String artist, String release) {
+    public List<DownloadOption> search(String artist, String release, String conversationId) {
         log.info("Searching YouTube Music: artist='{}', release='{}'", artist, release);
         try {
             List<YouTubeMusicSearchResult> results = scraperClient.get()

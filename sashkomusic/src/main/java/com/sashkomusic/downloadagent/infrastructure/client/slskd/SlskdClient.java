@@ -3,6 +3,8 @@ package com.sashkomusic.downloadagent.infrastructure.client.slskd;
 import com.sashkomusic.downloadagent.config.SlskdPathConfig;
 import com.sashkomusic.downloadagent.domain.ActiveDownloadRegistry;
 import com.sashkomusic.downloadagent.domain.MusicSourcePort;
+import com.sashkomusic.events.DownloadLogLineEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import com.sashkomusic.downloadagent.domain.exception.MusicDownloadException;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 import com.sashkomusic.mainagent.download.DownloadOption;
@@ -39,6 +41,7 @@ public class SlskdClient implements MusicSourcePort {
     private final SlskdPathConfig pathConfig;
     private final ActiveDownloadRegistry downloadRegistry;
     private final SoulseekProgressPoller progressPoller;
+    private final ApplicationEventPublisher events;
 
     private final ConcurrentHashMap<String, List<String>> transferIds = new ConcurrentHashMap<>();
 
@@ -47,39 +50,49 @@ public class SlskdClient implements MusicSourcePort {
                        @Value("${slskd.base-url:http://localhost:5030}") String baseUrl,
                        SlskdPathConfig pathConfig,
                        ActiveDownloadRegistry downloadRegistry,
-                       SoulseekProgressPoller progressPoller) {
+                       SoulseekProgressPoller progressPoller,
+                       ApplicationEventPublisher events) {
         log.info("Initializing SlskdClient with base URL: {}", baseUrl);
         this.client = builder.baseUrl(baseUrl).build();
         this.apiKey = apiKey;
         this.pathConfig = pathConfig;
         this.downloadRegistry = downloadRegistry;
         this.progressPoller = progressPoller;
+        this.events = events;
     }
 
 
     @Override
     @CircuitBreaker(name = "slskdClient", fallbackMethod = "searchFallback")
     @Retry(name = "slskdClient")
-    public List<DownloadOption> search(String artist, String release) {
+    public List<DownloadOption> search(String artist, String release, String conversationId) {
         var query = artist + " " + release;
         log.info("🔄 Soulseek search attempt for: {}", query);
+        emit(conversationId, "🔍 search: " + query);
 
         var searchId = initiateSearchRequest(query);
-        int fileCount = waitForSearchToComplete(searchId);
+        int fileCount = waitForSearchToComplete(searchId, conversationId);
         waitToStabilize(fileCount);
 
         List<DownloadOption> results = getSearchResults(searchId);
 
         if (results.isEmpty()) {
             log.warn("❌ No results found for query: {}, throwing exception to trigger retry", query);
+            emit(conversationId, "❌ no results for: " + query);
             throw new NoSearchResultsException("No results found for: " + query);
         }
 
         log.info("✅ Found {} results", results.size());
+        emit(conversationId, "✅ %d candidate uploads for: %s".formatted(results.size(), query));
         return results;
     }
 
-    private List<DownloadOption> searchFallback(String artist, String release, Exception e) {
+    private void emit(String conversationId, String line) {
+        if (conversationId == null) return;
+        events.publishEvent(new DownloadLogLineEvent(conversationId, "slskd-search", line));
+    }
+
+    private List<DownloadOption> searchFallback(String artist, String release, String conversationId, Exception e) {
         log.warn("Slskd search fallback triggered for '{}' - '{}': {}", artist, release, e.getMessage());
         return List.of();
     }
@@ -115,9 +128,10 @@ public class SlskdClient implements MusicSourcePort {
         }
     }
 
-    private int waitForSearchToComplete(UUID searchId) {
+    private int waitForSearchToComplete(UUID searchId, String conversationId) {
         long endTime = System.currentTimeMillis() + POLL_TIMEOUT_MS;
         SlskdSearchEventResponse lastStatus = null;
+        Integer lastEmittedCount = null;
 
         while (System.currentTimeMillis() < endTime) {
             try {
@@ -126,8 +140,15 @@ public class SlskdClient implements MusicSourcePort {
                 log.info("Status: searchId={}, state={}, isComplete={}, fileCount={}",
                         searchId, status.getState(), status.getIsComplete(), status.getFileCount());
 
+                Integer fc = status.getFileCount();
+                if (fc != null && !fc.equals(lastEmittedCount)) {
+                    emit(conversationId, "📂 %s — %d files".formatted(status.getState(), fc));
+                    lastEmittedCount = fc;
+                }
+
                 if (Boolean.TRUE.equals(status.getIsComplete())) {
-                    return status.getFileCount() != null ? status.getFileCount() : 0;
+                    emit(conversationId, "✅ search complete: %d files".formatted(fc != null ? fc : 0));
+                    return fc != null ? fc : 0;
                 }
 
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -139,8 +160,10 @@ public class SlskdClient implements MusicSourcePort {
                 log.warn("Error polling status, retrying in next tick: {}", e.getMessage());
             }
         }
+        int finalCount = lastStatus != null && lastStatus.getFileCount() != null ? lastStatus.getFileCount() : 0;
         log.warn("Search polling timed out locally for ID: {}. Returning accumulated results.", searchId);
-        return lastStatus != null && lastStatus.getFileCount() != null ? lastStatus.getFileCount() : 0;
+        emit(conversationId, "⏱ search timed out locally — using %d files".formatted(finalCount));
+        return finalCount;
     }
 
     private static void waitToStabilize(int fileCount) {

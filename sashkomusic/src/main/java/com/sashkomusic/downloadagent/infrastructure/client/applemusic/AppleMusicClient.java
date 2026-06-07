@@ -48,7 +48,7 @@ public class AppleMusicClient implements MusicSourcePort {
 
 
     @Override
-    public List<DownloadOption> search(String artist, String release) {
+    public List<DownloadOption> search(String artist, String release, String conversationId) {
         log.info("Searching Apple Music: artist='{}', release='{}'", artist, release);
 
         try {

@@ -26,7 +26,7 @@ public class AcquisitionService {
         log.info("Starting music search: artist='{}', title='{}', source={}, releaseId={}", artist, title, task.source(), task.releaseId());
         MusicSourcePort source = musicSources.get(task.source());
 
-        List<DownloadOption> results = source.search(artist, title);
+        List<DownloadOption> results = source.search(artist, title, task.conversationId());
 
         searchResultProducer.sendResults(task.conversationId(), task.releaseId(), task.source(), results);
     }
