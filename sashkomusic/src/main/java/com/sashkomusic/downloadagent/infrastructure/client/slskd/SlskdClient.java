@@ -38,6 +38,7 @@ public class SlskdClient implements MusicSourcePort {
     private final String apiKey;
     private final SlskdPathConfig pathConfig;
     private final ActiveDownloadRegistry downloadRegistry;
+    private final SoulseekProgressPoller progressPoller;
 
     private final ConcurrentHashMap<String, List<String>> transferIds = new ConcurrentHashMap<>();
 
@@ -45,12 +46,14 @@ public class SlskdClient implements MusicSourcePort {
                        @Value("${slskd.api-key:}") String apiKey,
                        @Value("${slskd.base-url:http://localhost:5030}") String baseUrl,
                        SlskdPathConfig pathConfig,
-                       ActiveDownloadRegistry downloadRegistry) {
+                       ActiveDownloadRegistry downloadRegistry,
+                       SoulseekProgressPoller progressPoller) {
         log.info("Initializing SlskdClient with base URL: {}", baseUrl);
         this.client = builder.baseUrl(baseUrl).build();
         this.apiKey = apiKey;
         this.pathConfig = pathConfig;
         this.downloadRegistry = downloadRegistry;
+        this.progressPoller = progressPoller;
     }
 
 
@@ -306,6 +309,7 @@ public class SlskdClient implements MusicSourcePort {
             log.debug("Stored {} transfer IDs for releaseId={}", ids.size(), releaseId);
 
             downloadRegistry.registerCancelHandle(releaseId, () -> cancelSlskdTransfers(releaseId));
+            progressPoller.register(releaseId, conversationId, username, ids);
 
             String batchId = response.enqueued().getFirst().id();
             log.info("Batch ID: {}", batchId);
@@ -326,6 +330,7 @@ public class SlskdClient implements MusicSourcePort {
     }
 
     private void cancelSlskdTransfers(String releaseId) {
+        progressPoller.unregister(releaseId);
         List<String> ids = transferIds.remove(releaseId);
         if (ids != null) {
             for (String transferId : ids) {
