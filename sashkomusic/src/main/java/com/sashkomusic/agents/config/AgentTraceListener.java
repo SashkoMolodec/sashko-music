@@ -11,17 +11,30 @@ import dev.langchain4j.model.output.TokenUsage;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class AgentTraceListener implements ChatModelListener {
 
-    private static final ConcurrentHashMap<String, Double> flowCosts = new ConcurrentHashMap<>();
+    public record CallEntry(String agent, List<String> toolNames, int tokensIn, int tokensOut,
+                             int cacheRead, int cacheWrite, double cost) {}
+
+    private static final ConcurrentHashMap<String, List<CallEntry>> flowCalls = new ConcurrentHashMap<>();
 
     public static double drainFlowCost(String flowId) {
         if (flowId == null) return 0.0;
-        Double cost = flowCosts.remove(flowId);
-        return cost != null ? cost : 0.0;
+        List<CallEntry> calls = flowCalls.get(flowId);
+        if (calls == null) return 0.0;
+        return calls.stream().mapToDouble(CallEntry::cost).sum();
+    }
+
+    public static List<CallEntry> drainFlowCalls(String flowId) {
+        if (flowId == null) return List.of();
+        List<CallEntry> calls = flowCalls.remove(flowId);
+        return calls == null ? List.of() : calls;
     }
 
     private final String agentName;
@@ -63,7 +76,14 @@ public class AgentTraceListener implements ChatModelListener {
         }
         double costUsd = estimateCostUsd(agentName, inputTokens, outputTokens, cacheRead, cacheWrite);
         String flowId = MDC.get("flowId");
-        if (flowId != null) flowCosts.merge(flowId, costUsd, Double::sum);
+        List<String> toolNames = toolCalls > 0
+                ? aiMessage.toolExecutionRequests().stream().map(t -> t.name()).collect(Collectors.toList())
+                : List.of();
+        if (flowId != null) {
+            CallEntry entry = new CallEntry(agentName, toolNames, inputTokens, outputTokens,
+                    cacheRead, cacheWrite, costUsd);
+            flowCalls.computeIfAbsent(flowId, k -> new ArrayList<>()).add(entry);
+        }
         log.info("[agent={}] [flow={}] ← response toolCalls={} tokensIn={} tokensOut={} cacheRead={} cacheWrite={} cost=${}",
                 agentName, flowId, toolCalls, inputTokens, outputTokens, cacheRead, cacheWrite,
                 String.format("%.4f", costUsd));

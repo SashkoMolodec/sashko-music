@@ -66,12 +66,22 @@ public class UserInteractionOrchestrator {
 
     private void logFlowCost() {
         String flowId = MDC.get("flowId");
-        double total = AgentTraceListener.drainFlowCost(flowId);
-        if (total > 0) {
-            String msg = String.format("[flow=%s] TOTAL cost=$%.4f", flowId, total);
-            log.info(msg);
-            logsChannel.send(msg);
+        var calls = AgentTraceListener.drainFlowCalls(flowId);
+        if (calls.isEmpty()) return;
+        double total = calls.stream().mapToDouble(AgentTraceListener.CallEntry::cost).sum();
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("[flow=%s] TOTAL $%.4f (%d calls)\n", flowId, total, calls.size()));
+        for (int i = 0; i < calls.size(); i++) {
+            var c = calls.get(i);
+            String tools = c.toolNames().isEmpty() ? "text" : String.join(",", c.toolNames());
+            sb.append(String.format("  %d. %s → %s  (in=%d out=%d cR=%d cW=%d) $%.4f\n",
+                    i + 1, c.agent(), tools,
+                    c.tokensIn(), c.tokensOut(), c.cacheRead(), c.cacheWrite(),
+                    c.cost()));
         }
+        String msg = sb.toString().stripTrailing();
+        log.info(msg);
+        logsChannel.send(msg);
     }
 
     public List<BotResponse> handleCallback(ConversationContext ctx, String data, Integer messageId) {
