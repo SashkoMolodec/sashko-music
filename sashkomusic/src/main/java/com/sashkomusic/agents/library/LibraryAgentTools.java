@@ -2,7 +2,9 @@ package com.sashkomusic.agents.library;
 
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
+import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
+import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
@@ -34,6 +36,7 @@ public class LibraryAgentTools {
             "щойно", "last", "the last one", "поточний");
 
     private final LibrarySearchService librarySearchService;
+    private final TrackRepository trackRepository;
     private final LibraryConfig libraryConfig;
     private final LastReleaseContextHolder lastReleaseContextHolder;
     private final MoveReleaseTaskProducer moveTaskProducer;
@@ -65,6 +68,31 @@ public class LibraryAgentTools {
             if (r.year() != null) sb.append(" (").append(r.year()).append(")");
             if (r.tags() != null && !r.tags().isBlank()) sb.append(" [").append(r.tags()).append("]");
             sb.append(", ").append(r.trackCount()).append(" треків\n");
+        }
+        return sb.toString().strip();
+    }
+
+    @Tool("""
+            Get the track list of a release from the user's own library (local DB, no external API).
+            Use for: "трекліст X", "які треки на X", "tracklist X", "track list", when the release is in the user's library.
+            releaseQuery: the release name, or 'this'/'оцей'/'цей' to use the last-referenced release.
+            """)
+    public String getTrackListFromLibrary(
+            @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
+            @ToolMemoryId String conversationId) {
+        String mainId = mainConversationId(conversationId);
+        ReleaseRef ref = resolveRelease(releaseQuery, mainId);
+        if (ref == null) {
+            return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
+        }
+        List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(ref.id());
+        if (tracks.isEmpty()) {
+            return "реліз знайдено (%s), але треки не знайдено у БД".formatted(ref.label());
+        }
+        var sb = new StringBuilder(ref.label()).append("\n");
+        for (Track t : tracks) {
+            if (t.getTrackNumber() != null) sb.append(t.getTrackNumber()).append(". ");
+            sb.append(t.getTitle()).append("\n");
         }
         return sb.toString().strip();
     }

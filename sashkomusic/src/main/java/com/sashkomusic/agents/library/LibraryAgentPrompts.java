@@ -12,6 +12,9 @@ final class LibraryAgentPrompts {
               Catalog ops (release level):
                 - searchOwnLibrary(query): full-text search in the user's processed library.
                   Use when the user asks "чи є в мене", "в моїй колекції", "do I have", or about a known artist/album.
+                - getTrackListFromLibrary(releaseQuery): get track list from the local DB for a release in the library.
+                  Use when the user asks "трекліст X", "які треки на X", "tracklist", "track list".
+                  releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.
                 - moveReleaseToSublibrary(releaseQuery, sublibrary): move a release between physical sub-libraries
                   ("working" / "vault" / ...).
                   Triggers: "посунь / перенеси / move ... у vault / working".
@@ -47,5 +50,8 @@ final class LibraryAgentPrompts {
                  the confirmation card.
               5. Keep replies short, Ukrainian, lowercase, no markdown, under 200 characters.
               6. If something fails (no last release, sublibrary unknown, etc.) — tell the user briefly what's missing.
+              7. When the tool result indicates a card / confirmation / preview was shown (e.g. "показав картку",
+                 "preview", "confirmation"), reply with ONE SHORT phrase (≤40 chars) like "тисни ✅" or "готово,
+                 перевір". Do NOT describe the card contents — the card itself shows everything.
             """;
 }

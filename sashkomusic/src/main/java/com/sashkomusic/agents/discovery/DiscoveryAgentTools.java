@@ -1,8 +1,11 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
+import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
+import com.sashkomusic.mainagent.search.WebSearchService;
 import com.sashkomusic.mainagent.shared.model.DateRange;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
@@ -25,6 +28,8 @@ public class DiscoveryAgentTools {
     private final Map<SearchEngine, SearchEngineService> engines;
     private final SearchContextService searchContextService;
     private final SearchRequestExtractor searchRequestExtractor;
+    private final WebSearchService webSearchService;
+    private final ChatResponseAccumulator accumulator;
 
     @Tool("""
             Search for music releases. Tries MusicBrainz → Discogs → Bandcamp in order, stops at first hit.
@@ -89,6 +94,23 @@ public class DiscoveryAgentTools {
                 .map(t -> t.number() + ". " + t.title())
                 .collect(Collectors.joining("\n"));
         return "%s — %s (%s)\n%s".formatted(r.artist(), r.title(), r.getYearsDisplay(), tracks);
+    }
+
+    @Tool("""
+            Search the web for artist biography, discography, label history, or any factual music info.
+            Use for: "розкажи про X", "хто такий X", "що за лейбл Y", "коли заснований Z", "дискографія X",
+            "який жанр у X", "що відомо про реліз Y", or any research/info question that catalog search can't answer.
+            Do NOT use for finding releases to download — use search() for that.
+            """)
+    public String webSearch(
+            @P("search query, e.g. 'Miles Davis biography', 'Warp Records history', 'Burial discography'") String query,
+            @ToolMemoryId String conversationId) {
+        String mainId = conversationId.endsWith(":d")
+                ? conversationId.substring(0, conversationId.length() - 2)
+                : conversationId;
+        accumulator.push(mainId, BotResponse.text("🌐 виходимо у світ божий…"));
+        log.info("Web search: query='{}'", query);
+        return webSearchService.search(query);
     }
 
     private MetadataSearchRequest extractRequest(String query) {

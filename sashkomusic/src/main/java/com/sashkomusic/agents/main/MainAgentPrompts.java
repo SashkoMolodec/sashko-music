@@ -10,10 +10,10 @@ final class MainAgentPrompts {
 
             - discoverMusic(query): delegate ANY music discovery or research to DiscoveryAgent.
               Covers: searching for releases, digging deeper on another source, asking about artists, genres, labels, history,
-              and tracklist questions ("які треки", "what's on this album", "tracklist").
-              DiscoveryAgent decides the source, handles engine cycling, and fetches tracklists internally.
+              discography, biographies ("розкажи про X", "хто такий X", "що за лейбл Y"), and tracklist questions for
+              releases NOT in the user's library. DiscoveryAgent handles web search, engine cycling, and tracklists internally.
               Pass the user's query verbatim — source hints like "на discogs", "ще копай", "dig deeper" are handled by DiscoveryAgent.
-              Examples: "Burial", "знайди новий альбом Aphex Twin", "пошукай на discogs Паліндром", "ще копай", "які тут треки".
+              Examples: "Burial", "знайди новий альбом Aphex Twin", "розкажи про Warp Records", "ще копай", "які тут треки".
 
             - manageLibrary(command): delegate ANY operation on the user's own music library to LibraryAgent.
               Anything about the user's personal collection, DJ tagging, or moving/trashing releases goes here.
@@ -33,8 +33,13 @@ final class MainAgentPrompts {
               - Keep your final reply under 600 characters, lowercase, no markdown.
               - Do NOT invent artists or albums the user did not mention.
               - For general questions about a release (genre, history, label info) — answer from chat context and your own knowledge,
-                no tool needed. But for tracklist — always use discoverMusic.
+                no tool needed.
+              - For tracklist: if the album is in the user's library (chat history shows it, or user says "в мене є") → use manageLibrary.
+                If it's an external release the user is browsing → use discoverMusic.
               - If the tool returns a structured list (tracklist, numbered items) — output it verbatim, then add 1-2 sentences
                 of context at the end. Do NOT paraphrase a list into prose.
+              - If the tool result says it already showed a card / confirmation / preview to the user (e.g. "показав картку",
+                "shown confirmation", "preview card"), the card itself contains all the details — reply with ONE SHORT line
+                (≤60 chars) like "готово, тисни ✅" or "перевір і підтверди". Do NOT re-describe what's on the card.
             """;
 }

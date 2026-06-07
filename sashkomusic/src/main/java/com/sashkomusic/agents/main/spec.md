@@ -39,7 +39,13 @@ public interface MainAgent {
 
 `MainChatMemoryProvider` кешує `MessageWindowChatMemory` per conversationId, так що in-memory window і persistent store залишаються синхронізованими. Cross-agent context: `UserInteractionOrchestrator` викликає `mainMemoryProvider.appendUserAndAi(...)` після кожного `/discovery` чи `/library`, дописуючи чистий `UserMessage` + `AiMessage(summary)` в основну MainAgent memory.
 
-Sub-агенти юзають той самий `PostgresChatMemoryStore` під **окремими** ключами (`conversationId + ":d"`, `conversationId + ":lib"`) — це гарантує що `tool_use`/`tool_result` ланцюжки агентів не перемішуються (Claude API вимагає цілісних пар), але cross-agent context передається через чисті summary-повідомлення в MainAgent memory.
+**Auto-summarization:** коли `get(conversationId)` повертає memory з ≥ 26 повідомленнями (тільки для main conversation, не `:d`/`:lib`), `MainChatMemoryProvider` автоматично стискає старіші повідомлення:
+1. Всі повідомлення крім останніх 10 подаються в Haiku з проханням стиснути до одного абзацу (≤150 слів, **англійською** — менше токенів, більше контексту вміщується).
+2. Memory замінюється на: `UserMessage("Підсумок попередньої розмови:")` + `AiMessage(summaryText)` + останні 10 повідомлень (~12 повідомлень разом).
+3. Межа розрізання вирівнюється по найближчому `UserMessage` щоб не розривати `tool_use`/`tool_result` пари.
+4. У разі помилки моделі — fallback до сирого тексту першого 800 символів.
+
+Sub-агенти юзають той самий `PostgresChatMemoryStore` під **окремими** ключами (`conversationId + ":d"`, `conversationId + ":lib"`) — це гарантує що `tool_use`/`tool_result` ланцюжки агентів не перемішуються (Claude API вимагає цілісних пар), але cross-agent context передається через чисті summary-повідомлення в MainAgent memory. Sub-agent memory (window 16) summarization не застосовується.
 
 ---
 
@@ -47,8 +53,8 @@ Sub-агенти юзають той самий `PostgresChatMemoryStore` під
 
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
-| `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів | `DiscoveryAgentService` → LLM path (Haiku) |
-| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів; треклист релізу якого **немає** в бібліотеці | `DiscoveryAgentService` → LLM path (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist") | `LibraryAgentService` → `LibraryAgent` (Haiku) |
 | `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.

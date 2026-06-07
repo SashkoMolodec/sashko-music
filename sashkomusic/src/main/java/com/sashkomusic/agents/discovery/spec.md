@@ -45,6 +45,13 @@ Memory **не очищається** між викликами `handle()` — т
 
 ## Tools (`DiscoveryAgentTools`)
 
+### `webSearch(query, conversationId)`
+Research tool for artist bio, discography, label history, and factual music questions.
+1. Pushes `BotResponse.text("🌐 виходимо у світ божий…")` into `ChatResponseAccumulator` under the **main** conversationId (strips `:d` suffix).
+2. Calls `WebSearchService.search(query)` → jsoup POST to `https://html.duckduckgo.com/html/`, parses `.result__snippet` + `a.result__a` elements, returns top-4 results as text.
+3. LangChain4j agent synthesizes into 3-5 Ukrainian sentences.
+Тригер: "розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X", будь-яке дослідницьке питання.
+
 ### `search(query, conversationId)`
 1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest`
 2. Перебирає `SearchEngine.values()` (MusicBrainz → Discogs → Bandcamp), зупиняється на першому hit
@@ -79,6 +86,7 @@ Memory **не очищається** між викликами `handle()` — т
 - Для SEARCH-запитів: передати query прямо в `search` tool.
 - Для TRACKLIST-запитів: **завжди** викликати `getTrackList` — ніколи не відповідати з пам'яті.
 - Для "ще копай"/"dig deeper": викликати `digDeeper`, не `search`.
+- Для дослідницьких питань (bio, discography, label info): **завжди** викликати `webSearch`.
 - Якщо `getTrackList` повернув треки — вивести **повний** пронумерований список дослівно.
 
 ---

@@ -23,4 +23,6 @@ public interface TrackRepository extends JpaRepository<Track, Long>, TrackReposi
         AND REPLACE(REPLACE(LOWER(a.name), ' ', ''), '+', '') = REPLACE(REPLACE(LOWER(:artist), ' ', ''), '+', '')
         """)
     List<Track> findByArtistAndTitle(@Param("artist") String artist, @Param("title") String title);
+
+    List<Track> findByReleaseIdOrderByTrackNumberAsc(Long releaseId);
 }
