@@ -103,7 +103,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 if (!isAllowed(ctx)) return;
 
                 var text = msg.getText();
-                log.info("📩 Text from [{}]: {}", ctx.conversationId(), text);
+                log.info("📩 Text from [{}]: {} | replyToMsgId={} threadId={} isTopic={}",
+                        ctx.conversationId(), text,
+                        msg.getReplyToMessage() != null ? msg.getReplyToMessage().getMessageId() : null,
+                        msg.getMessageThreadId(),
+                        msg.getIsTopicMessage());
 
                 orchestrator.handleUserRequest(ctx, text)
                         .forEach(res -> sendResponse(ctx, res));
