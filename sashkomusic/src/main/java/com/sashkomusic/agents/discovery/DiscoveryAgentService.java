@@ -41,6 +41,7 @@ public class DiscoveryAgentService {
     private DiscoverResult handleViaLlm(DiscoverRequest request) {
         String discoveryMemoryId = request.conversationId() + ":d";
         String rawInputBefore = safeGetRawInput(discoveryMemoryId);
+        SearchEngine engineBefore = safeGetEngine(discoveryMemoryId);
         String summary;
         try {
             summary = discoveryAgent.chat(discoveryMemoryId, request.query());
@@ -48,17 +49,18 @@ public class DiscoveryAgentService {
             log.error("Discovery agent failure: {}", ex.getMessage(), ex);
             return DiscoverResult.empty("вибач, шось накрилось");
         }
-        return buildResult(request.conversationId(), discoveryMemoryId, summary, rawInputBefore);
+        return buildResult(request.conversationId(), discoveryMemoryId, summary, rawInputBefore, engineBefore);
     }
 
     private DiscoverResult handleDirect(DiscoverRequest request) {
         String discoveryMemoryId = request.conversationId() + ":d";
         String toolResult = discoveryAgentTools.runSearch(request.preferredEngine(), request.query(), discoveryMemoryId);
         log.info("Direct search on {}: {}", request.preferredEngine(), toolResult);
-        return buildResult(request.conversationId(), discoveryMemoryId, toolResult, null);
+        return buildResult(request.conversationId(), discoveryMemoryId, toolResult, null, null);
     }
 
-    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary, String rawInputBefore) {
+    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary,
+                                       String rawInputBefore, SearchEngine engineBefore) {
         try {
             var releases = searchContextService.getSearchResults(discoveryMemoryId);
             var engine = searchContextService.getSource(discoveryMemoryId);
@@ -66,7 +68,8 @@ public class DiscoveryAgentService {
                 return DiscoverResult.empty(summary);
             }
             String rawInputAfter = safeGetRawInput(discoveryMemoryId);
-            boolean newSearch = !Objects.equals(rawInputBefore, rawInputAfter);
+            boolean newSearch = !Objects.equals(rawInputBefore, rawInputAfter)
+                    || !Objects.equals(engineBefore, engine);
             if (newSearch || rawInputBefore == null) {
                 searchContextService.copySearchContext(discoveryMemoryId, conversationId);
                 accumulator.replaceAll(conversationId,
@@ -85,6 +88,14 @@ public class DiscoveryAgentService {
     private String safeGetRawInput(String discoveryMemoryId) {
         try {
             return searchContextService.getRawInput(discoveryMemoryId);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private SearchEngine safeGetEngine(String discoveryMemoryId) {
+        try {
+            return searchContextService.getSource(discoveryMemoryId);
         } catch (Exception e) {
             return null;
         }

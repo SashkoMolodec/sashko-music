@@ -179,9 +179,9 @@ public class SmartlistCreationFlowService {
                 String artist = t.getArtists().stream().findFirst().map(Artist::getName).orElse("?");
                 String title = t.getTitle() == null ? "" : t.getTitle();
                 sb.append("• <i>")
-                        .append(escape(artist.toLowerCase(java.util.Locale.ROOT)))
+                        .append(escape(artist))
                         .append(" — ")
-                        .append(escape(title.toLowerCase(java.util.Locale.ROOT)))
+                        .append(escape(title))
                         .append("</i>\n");
             }
             sb.append("\nможеш уточнити правило текстом або підтвердити кнопкою");

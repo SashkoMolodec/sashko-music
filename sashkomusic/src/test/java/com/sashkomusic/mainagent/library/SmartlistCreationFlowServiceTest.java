@@ -68,7 +68,7 @@ class SmartlistCreationFlowServiceTest {
         assertThat(result.responses()).hasSize(1);
         BotResponse card = result.responses().get(0);
         assertThat(card.text()).contains("house 4plus", "genre contains", "Artist", "track A");
-        assertThat(card.buttons()).containsKeys("✅ створити", "❌ скасувати");
+        assertThat(card.buttons()).containsKeys("✅", "❌");
         assertThat(card.buttons().values()).contains("SM:OK", "SM:NO");
     }
 
