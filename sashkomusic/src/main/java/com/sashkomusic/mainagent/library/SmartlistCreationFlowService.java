@@ -7,11 +7,13 @@ import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDraft;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDsl;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDslExtractor;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
+import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -61,9 +63,14 @@ public class SmartlistCreationFlowService {
         return chatStateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class).isPresent();
     }
 
-    /** Drop the in-flight draft for this conversation. Used by global "стоп" / /clearctx. */
+    /** Drop the in-flight draft for this conversation. */
     public void clear(ConversationContext ctx) {
         chatStateStore.remove(ctx.conversationId(), SmartlistDraft.FLOW_KEY);
+    }
+
+    @EventListener
+    public void onHardReset(ChatHardResetEvent event) {
+        chatStateStore.remove(event.conversationId(), SmartlistDraft.FLOW_KEY);
     }
 
     public List<BotResponse> refine(ConversationContext ctx, String userInput) {

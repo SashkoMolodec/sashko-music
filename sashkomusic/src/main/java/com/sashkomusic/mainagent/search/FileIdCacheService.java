@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.search;
 
+import com.sashkomusic.events.ChatHardResetEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
@@ -21,5 +23,10 @@ public class FileIdCacheService {
     public void clearForConversation(String conversationId) {
         String prefix = conversationId + "|";
         cache.keySet().removeIf(k -> k.startsWith(prefix));
+    }
+
+    @EventListener
+    public void onHardReset(ChatHardResetEvent event) {
+        clearForConversation(event.conversationId());
     }
 }

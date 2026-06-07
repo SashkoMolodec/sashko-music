@@ -155,7 +155,11 @@ mainagent            →  SetEnergyTaskEvent                 →  libraryagent
 mainagent            →  SetFunctionTaskEvent               →  libraryagent
 libraryagent         →  TrackUpdateResultEvent             →  mainagent
 libraryagent         →  TagChangesNotificationEvent        →  mainagent
+mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider
+mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheService, DownloadContextHolder, DjTagContextHolder, LastReleaseContextHolder, SmartlistCreationFlowService
 ```
+
+`ChatContextClearedEvent` and `ChatHardResetEvent` are **synchronous** (no `@Async`) — they fire from `UserInteractionOrchestrator` on `/clearctx` (soft only) and `стоп` (both). The orchestrator's response is gated on listener completion. Each owner of per-conversation state subscribes only to the event it cares about — keeps cleanup wiring out of the orchestrator.
 
 Audio analyzer REST bridge:
 - Java → Python: `POST {AUDIO_ANALYZER_URL}/analyze` (WebClient, fire-and-forget)

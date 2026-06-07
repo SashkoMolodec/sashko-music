@@ -1,8 +1,10 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -41,6 +43,13 @@ public class DownloadContextHolder {
     public void clearAllSessions() {
         int count = stateStore.clearAll(FLOW_KEY);
         log.info("Cleared all download sessions: {} sessions", count);
+    }
+
+    @EventListener
+    public void onHardReset(ChatHardResetEvent event) {
+        // Preserves prior behavior — clears every conversation's download session. Switch to
+        // clearSession(event.conversationId()) once we care about multi-conversation isolation.
+        clearAllSessions();
     }
 
     public record DownloadContext(

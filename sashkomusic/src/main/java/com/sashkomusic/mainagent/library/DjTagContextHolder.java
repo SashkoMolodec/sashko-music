@@ -1,9 +1,11 @@
 package com.sashkomusic.mainagent.library;
 
 import com.sashkomusic.api.dto.TrackDto;
+import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -49,6 +51,14 @@ public class DjTagContextHolder {
     public void clearAllContexts() {
         int removed = store.clearAll(FLOW_KEY);
         log.info("Cleared {} DJ tag contexts", removed);
+    }
+
+    @EventListener
+    public void onHardReset(ChatHardResetEvent event) {
+        // Preserves prior behavior — see orchestrator history. Single-user deployment means
+        // global vs per-conversation is equivalent; switch to clearContext(event.conversationId())
+        // when multi-conversation isolation matters.
+        clearAllContexts();
     }
 
     public record DjTagContext(TrackDto track, String navidromeId, boolean waitingForComment) {

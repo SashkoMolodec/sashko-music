@@ -8,19 +8,15 @@ import com.sashkomusic.agents.contract.LibraryRequest;
 import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.main.MainAgent;
+import com.sashkomusic.events.ChatContextClearedEvent;
+import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.libraryagent.config.SublibraryMigrationRunner;
-import com.sashkomusic.mainagent.download.DownloadContextHolder;
-import com.sashkomusic.mainagent.library.DjTagContextHolder;
-import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
-import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
-import com.sashkomusic.mainagent.search.FileIdCacheService;
-import com.sashkomusic.mainagent.search.SearchContextService;
-import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import org.slf4j.MDC;
@@ -44,16 +40,10 @@ public class UserInteractionOrchestrator {
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
     private final RemoveReleaseFlowService removeReleaseFlowService;
-    private final SmartlistCreationFlowService smartlistCreationFlowService;
     private final NewTopicFlowService newTopicFlowService;
-    private final SearchContextService searchContextService;
-    private final FileIdCacheService fileIdCacheService;
-    private final DownloadContextHolder downloadContextHolder;
-    private final DjTagContextHolder djTagContextHolder;
-    private final LastReleaseContextHolder lastReleaseContextHolder;
     private final SublibraryMigrationRunner sublibraryMigrationRunner;
-    private final ChatMemoryStore chatMemoryStore;
     private final MainChatMemoryProvider mainMemoryProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
         if (rawInput.trim().equalsIgnoreCase("стоп")) {
@@ -175,23 +165,14 @@ public class UserInteractionOrchestrator {
 
     private List<BotResponse> clearContext(ConversationContext ctx) {
         log.info("Clearing context for conversation {}", ctx.conversationId());
-        mainMemoryProvider.clear(ctx.conversationId());
-        chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
-        chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");
-        smartlistCreationFlowService.clear(ctx);
+        eventPublisher.publishEvent(new ChatContextClearedEvent(ctx.conversationId()));
         return List.of(BotResponse.text("🧹 контекст чату очищено"));
     }
 
     private List<BotResponse> clearAllCaches(ConversationContext ctx) {
         log.info("Clearing all caches for conversation {}", ctx.conversationId());
-        fileIdCacheService.clearForConversation(ctx.conversationId());
-        downloadContextHolder.clearAllSessions();
-        djTagContextHolder.clearAllContexts();
-        lastReleaseContextHolder.clear(ctx.conversationId());
-        smartlistCreationFlowService.clear(ctx);
-        mainMemoryProvider.clear(ctx.conversationId());
-        chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
-        chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");
+        eventPublisher.publishEvent(new ChatContextClearedEvent(ctx.conversationId()));
+        eventPublisher.publishEvent(new ChatHardResetEvent(ctx.conversationId()));
         return List.of(BotResponse.text("🧹 усі кеші очищено"));
     }
 }

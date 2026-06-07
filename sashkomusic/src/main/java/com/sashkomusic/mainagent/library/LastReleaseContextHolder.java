@@ -1,8 +1,10 @@
 package com.sashkomusic.mainagent.library;
 
+import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
@@ -32,6 +34,11 @@ public class LastReleaseContextHolder {
     public void clearAll() {
         int removed = store.clearAll(FLOW_KEY);
         log.info("Cleared {} last-release contexts", removed);
+    }
+
+    @EventListener
+    public void onHardReset(ChatHardResetEvent event) {
+        clear(event.conversationId());
     }
 
     public record LastReleaseContext(Long releaseId, String title, String artist) {}

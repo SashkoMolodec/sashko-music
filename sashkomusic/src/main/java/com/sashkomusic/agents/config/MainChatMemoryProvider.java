@@ -6,8 +6,10 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import com.sashkomusic.events.ChatContextClearedEvent;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,5 +49,17 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
         ChatMemory memory = memories.remove(memoryId);
         if (memory != null) memory.clear();
         store.deleteMessages(memoryId);
+    }
+
+    /** Clear chat memory across all agent suffixes ({@code ""}, {@code ":d"}, {@code ":lib"}) for one conversation. */
+    public void clearAllForConversation(String conversationId) {
+        clear(conversationId);
+        store.deleteMessages(conversationId + ":d");
+        store.deleteMessages(conversationId + ":lib");
+    }
+
+    @EventListener
+    public void onContextCleared(ChatContextClearedEvent event) {
+        clearAllForConversation(event.conversationId());
     }
 }
