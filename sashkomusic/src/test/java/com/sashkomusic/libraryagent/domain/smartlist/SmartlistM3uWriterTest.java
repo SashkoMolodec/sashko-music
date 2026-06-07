@@ -45,24 +45,24 @@ class SmartlistM3uWriterTest {
         String content = Files.readString(result, StandardCharsets.UTF_8);
         assertThat(content).startsWith("#EXTM3U");
         assertThat(content).contains("#EXTINF:180,Artist Name - Song Title");
-        // relative to Smartlists/ directory
+        // relative to smartlists/ directory
         assertThat(content).contains("../working/Artist/Album/01. song.mp3");
     }
 
     @Test
     void rename_moves_file() throws Exception {
         writer.write("old", List.of());
-        assertThat(tempDir.resolve("Smartlists/old.m3u8")).exists();
+        assertThat(tempDir.resolve("smartlists/old.m3u8")).exists();
 
         assertThat(writer.rename("old", "new")).isTrue();
-        assertThat(tempDir.resolve("Smartlists/old.m3u8")).doesNotExist();
-        assertThat(tempDir.resolve("Smartlists/new.m3u8")).exists();
+        assertThat(tempDir.resolve("smartlists/old.m3u8")).doesNotExist();
+        assertThat(tempDir.resolve("smartlists/new.m3u8")).exists();
     }
 
     @Test
     void delete_removes_file() throws Exception {
         writer.write("doomed", List.of());
-        Path file = tempDir.resolve("Smartlists/doomed.m3u8");
+        Path file = tempDir.resolve("smartlists/doomed.m3u8");
         assertThat(file).exists();
 
         assertThat(writer.delete("doomed")).isTrue();

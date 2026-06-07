@@ -21,7 +21,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SmartlistM3uWriter {
 
-    private static final String DIR_NAME = "Smartlists";
+    private static final String DIR_NAME = "smartlists";
 
     private final LibraryConfig libraryConfig;
 

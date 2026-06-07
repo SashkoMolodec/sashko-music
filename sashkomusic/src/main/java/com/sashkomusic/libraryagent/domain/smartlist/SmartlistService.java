@@ -2,9 +2,11 @@ package com.sashkomusic.libraryagent.domain.smartlist;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sashkomusic.events.SmartlistsChangedEvent;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ public class SmartlistService {
     private final SmartlistEvaluator evaluator;
     private final SmartlistM3uWriter m3uWriter;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public record SmartlistSummary(Long id, String name, int trackCount, String dslDescription) {}
 
@@ -37,6 +40,7 @@ public class SmartlistService {
         m3uWriter.write(name, tracks);
         sl.setLastGeneratedAt(Instant.now());
         log.info("Smartlist created: '{}' — {} tracks", name, tracks.size());
+        eventPublisher.publishEvent(new SmartlistsChangedEvent());
         return new SmartlistSummary(sl.getId(), name, tracks.size(), evaluator.describe(dsl));
     }
 
@@ -52,6 +56,7 @@ public class SmartlistService {
         m3uWriter.rename(oldName, newName);
         SmartlistDsl dsl = parse(sl.getDsl());
         int count = evaluator.evaluate(dsl).size();
+        eventPublisher.publishEvent(new SmartlistsChangedEvent());
         return new SmartlistSummary(sl.getId(), newName, count, evaluator.describe(dsl));
     }
 
@@ -61,6 +66,7 @@ public class SmartlistService {
         if (opt.isEmpty()) return false;
         repository.delete(opt.get());
         m3uWriter.delete(name);
+        eventPublisher.publishEvent(new SmartlistsChangedEvent());
         return true;
     }
 
@@ -93,7 +99,8 @@ public class SmartlistService {
                 log.warn("Failed to regenerate smartlist '{}': {}", sl.getName(), e.getMessage());
             }
         }
-        log.info("Smartlists regenerated: {}/{}", ok, all.size());
+        log.info("smartlists regenerated: {}/{}", ok, all.size());
+        if (ok > 0) eventPublisher.publishEvent(new SmartlistsChangedEvent());
         return new RegenerationResult(ok, all.size());
     }
 

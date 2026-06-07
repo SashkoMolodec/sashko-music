@@ -58,7 +58,7 @@ public class SmartlistCreationFlowService {
         SmartlistDraft draft = new SmartlistDraft(name.trim(), dsl);
         chatStateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, draft);
         return new StartResult(true, buildPreviewCard(draft),
-                "показав картку підтвердження смартлиста '" + draft.name() + "'");
+                "показав картку підтвердження смартлиста '" + draft.name() + "' (картка вже містить усі деталі — не переказуй)");
     }
 
     public boolean hasDraft(ConversationContext ctx) {
@@ -166,13 +166,18 @@ public class SmartlistCreationFlowService {
             sb.append("приклад треків (").append(preview.size()).append("):\n");
             for (Track t : preview) {
                 String artist = t.getArtists().stream().findFirst().map(Artist::getName).orElse("?");
-                sb.append("• ").append(escape(artist)).append(" — ").append(escape(t.getTitle())).append("\n");
+                String title = t.getTitle() == null ? "" : t.getTitle();
+                sb.append("• <i>")
+                        .append(escape(artist.toLowerCase(java.util.Locale.ROOT)))
+                        .append(" — ")
+                        .append(escape(title.toLowerCase(java.util.Locale.ROOT)))
+                        .append("</i>\n");
             }
             sb.append("\nможеш уточнити правило текстом або підтвердити кнопкою");
         }
         Map<String, String> buttons = new LinkedHashMap<>();
-        buttons.put("✅ створити", CB_CONFIRM);
-        buttons.put("❌ скасувати", CB_CANCEL);
+        buttons.put("✅", CB_CONFIRM);
+        buttons.put("❌", CB_CANCEL);
         return List.of(BotResponse.htmlWithButtons(sb.toString(), buttons));
     }
 
