@@ -1,4 +1,4 @@
-package com.sashkomusic.mainagent.process;
+package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
