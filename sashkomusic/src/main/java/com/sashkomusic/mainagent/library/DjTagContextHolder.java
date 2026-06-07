@@ -55,10 +55,7 @@ public class DjTagContextHolder {
 
     @EventListener
     public void onHardReset(ChatHardResetEvent event) {
-        // Preserves prior behavior — see orchestrator history. Single-user deployment means
-        // global vs per-conversation is equivalent; switch to clearContext(event.conversationId())
-        // when multi-conversation isolation matters.
-        clearAllContexts();
+        clearContext(event.conversationId());
     }
 
     public record DjTagContext(TrackDto track, String navidromeId, boolean waitingForComment) {

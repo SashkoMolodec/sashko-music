@@ -140,7 +140,7 @@ On disk: `lib/<sublibrary>/<artist>/<album>/…`. Navidrome multi-library and Tr
 - Telegram I/O (handled by `ChatResponseAccumulator` + `TelegramChatBot`)
 - Filesystem writes outside relocation / trash (those belong to `processFolder` services)
 - Direct discovery — searches that hit external APIs go to `DiscoveryAgent`
-- Slash command parsing (`/np`, `/remove-release`, `/migrate-sublibs`) — handled by `UserInteractionOrchestrator`
+- Slash command parsing (`/np`) — handled by `UserInteractionOrchestrator`. Release removal goes through the `trashRelease` tool; no dedicated slash exists.
 
 ---
 

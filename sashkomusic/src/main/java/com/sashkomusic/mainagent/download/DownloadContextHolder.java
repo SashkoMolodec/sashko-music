@@ -47,9 +47,7 @@ public class DownloadContextHolder {
 
     @EventListener
     public void onHardReset(ChatHardResetEvent event) {
-        // Preserves prior behavior — clears every conversation's download session. Switch to
-        // clearSession(event.conversationId()) once we care about multi-conversation isolation.
-        clearAllSessions();
+        clearSession(event.conversationId());
     }
 
     public record DownloadContext(

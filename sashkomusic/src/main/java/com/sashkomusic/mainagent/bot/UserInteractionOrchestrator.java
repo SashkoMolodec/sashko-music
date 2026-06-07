@@ -10,9 +10,7 @@ import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.main.MainAgent;
 import com.sashkomusic.events.ChatContextClearedEvent;
 import com.sashkomusic.events.ChatHardResetEvent;
-import com.sashkomusic.libraryagent.config.SublibraryMigrationRunner;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
-import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +37,7 @@ public class UserInteractionOrchestrator {
     private final LibraryAgentService libraryAgentService;
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
-    private final RemoveReleaseFlowService removeReleaseFlowService;
     private final NewTopicFlowService newTopicFlowService;
-    private final SublibraryMigrationRunner sublibraryMigrationRunner;
     private final MainChatMemoryProvider mainMemoryProvider;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -124,13 +120,6 @@ public class UserInteractionOrchestrator {
         }
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
             return nowPlayingFlowService.nowPlaying(ctx);
-        }
-        if (rawInput.startsWith("/remove-release")) {
-            return removeReleaseFlowService.handleCommand(ctx, rawInput);
-        }
-        if (rawInput.startsWith("/migrate-sublibs")) {
-            SublibraryMigrationRunner.MigrationStats stats = sublibraryMigrationRunner.migrate();
-            return List.of(BotResponse.text("🗂 sublibrary migration: " + stats.summary()));
         }
         return Collections.emptyList();
     }

@@ -77,9 +77,8 @@ drain(conversationId) → drained cards  +  aiText(summary)  →  Telegram
 | `/discovery <query>` | `DiscoveryAgentService.handle()` | Haiku тільки |
 | `/np` | `NowPlayingFlowService.nowPlaying()` | ні |
 | `/newtopic` | `NewTopicFlowService.handle()` | ні |
-| `/clearctx` | `mainMemoryProvider.clear()` + `chatMemoryStore.deleteMessages(":d"/":lib")` | ні |
-| `/remove-release` | `RemoveReleaseFlowService.handleCommand()` | ні |
-| `стоп` | `clearAllCaches()` | ні |
+| `/clearctx` | publishes `ChatContextClearedEvent` → `MainChatMemoryProvider` clears chat memory across all agent suffixes | ні |
+| `стоп` | publishes `ChatContextClearedEvent` + `ChatHardResetEvent` → all per-conversation holders drop state | ні |
 
 Після `/discovery` і `/library` оркестратор викликає `mainMemoryProvider.appendUserAndAi(...)` що дописує summary в основну MainAgent memory (`conversation_messages` під `<conversationId>`). Тому MainAgent бачить активність slash-команд при наступному free-text запиті, а `/newtopic` може взяти цей контекст для seed нового топіка та генерації назви.
 

@@ -22,22 +22,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class RemoveReleaseFlowService {
 
-    private static final String CMD = "/remove-release";
     private static final String CB_CONFIRM = "RM_OK:";
     private static final String CB_CANCEL = "RM_NO:";
 
     private final LibrarySearchService librarySearchService;
     private final ReleaseRepository releaseRepository;
     private final RemoveReleaseTaskProducer taskProducer;
-
-    @Transactional(readOnly = true)
-    public List<BotResponse> handleCommand(ConversationContext ctx, String rawInput) {
-        String query = rawInput.substring(CMD.length()).trim();
-        if (query.isEmpty()) {
-            return List.of(BotResponse.text("Usage: " + CMD + " <release name | artist>"));
-        }
-        return presentConfirmationByQuery(query);
-    }
 
     @Transactional(readOnly = true)
     public List<BotResponse> presentConfirmationByQuery(String query) {
