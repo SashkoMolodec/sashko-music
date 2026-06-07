@@ -40,6 +40,7 @@ public class UserInteractionOrchestrator {
     private final NewTopicFlowService newTopicFlowService;
     private final MainChatMemoryProvider mainMemoryProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final TelegramLogsChannel logsChannel;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
         try {
@@ -67,7 +68,9 @@ public class UserInteractionOrchestrator {
         String flowId = MDC.get("flowId");
         double total = AgentTraceListener.drainFlowCost(flowId);
         if (total > 0) {
-            log.info("[flow={}] TOTAL cost=${}", flowId, String.format("%.4f", total));
+            String msg = String.format("[flow=%s] TOTAL cost=$%.4f", flowId, total);
+            log.info(msg);
+            logsChannel.send(msg);
         }
     }
 

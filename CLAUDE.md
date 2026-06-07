@@ -154,7 +154,8 @@ mainagent            →  AddCommentTaskEvent                →  libraryagent
 mainagent            →  SetEnergyTaskEvent                 →  libraryagent
 mainagent            →  SetFunctionTaskEvent               →  libraryagent
 libraryagent         →  TrackUpdateResultEvent             →  mainagent
-libraryagent         →  TagChangesNotificationEvent        →  mainagent
+libraryagent         →  TagChangesNotificationEvent        →  mainagent (TagChangesNotificationListener → TelegramLogsChannel)
+libraryagent         →  SmartlistsRegeneratedEvent         →  mainagent (SmartlistLogListener → TelegramLogsChannel)
 mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider
 mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheService, DownloadContextHolder, DjTagContextHolder, LastReleaseContextHolder, SmartlistCreationFlowService
 ```

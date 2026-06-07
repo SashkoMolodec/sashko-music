@@ -1,11 +1,13 @@
 package com.sashkomusic.libraryagent.domain.smartlist;
 
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
+import com.sashkomusic.events.SmartlistsRegeneratedEvent;
 import com.sashkomusic.events.TagChangesNotificationEvent;
 import com.sashkomusic.events.TrackAnalysisCompleteEvent;
 import com.sashkomusic.events.TrackUpdateResultEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -16,36 +18,40 @@ import org.springframework.stereotype.Component;
 public class SmartlistRegenerationListener {
 
     private final SmartlistService smartlistService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Async("asyncExecutor")
     @EventListener
     public void onTrackUpdate(TrackUpdateResultEvent event) {
-        regenerate("TrackUpdateResultEvent");
+        regenerate();
     }
 
     @Async("asyncExecutor")
     @EventListener
     public void onTagChanges(TagChangesNotificationEvent event) {
-        regenerate("TagChangesNotificationEvent");
+        regenerate();
     }
 
     @Async("asyncExecutor")
     @EventListener
     public void onTrackAnalysisComplete(TrackAnalysisCompleteEvent event) {
-        regenerate("TrackAnalysisCompleteEvent");
+        regenerate();
     }
 
     @Async("asyncExecutor")
     @EventListener
     public void onLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
-        regenerate("LibraryProcessingCompleteEvent");
+        regenerate();
     }
 
-    private void regenerate(String trigger) {
+    private void regenerate() {
         try {
-            smartlistService.regenerateAll();
+            SmartlistService.RegenerationResult result = smartlistService.regenerateAll();
+            if (result.total() > 0) {
+                eventPublisher.publishEvent(new SmartlistsRegeneratedEvent(result.count(), result.total()));
+            }
         } catch (Exception e) {
-            log.warn("Smartlist regeneration after {} failed: {}", trigger, e.getMessage());
+            log.warn("Smartlist regeneration failed: {}", e.getMessage());
         }
     }
 }

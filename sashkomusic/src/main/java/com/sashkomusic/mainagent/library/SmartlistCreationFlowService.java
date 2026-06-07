@@ -10,6 +10,7 @@ import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
+import com.sashkomusic.mainagent.bot.TelegramLogsChannel;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class SmartlistCreationFlowService {
     private final SmartlistDslExtractor dslExtractor;
     private final ChatStateStore chatStateStore;
     private final ObjectMapper objectMapper;
+    private final TelegramLogsChannel logsChannel;
 
     /**
      * Outcome of a smartlist creation attempt. {@code responses} go to the chat;
@@ -110,6 +112,7 @@ public class SmartlistCreationFlowService {
         try {
             SmartlistService.SmartlistSummary summary = smartlistService.create(draft.name(), draft.dsl());
             chatStateStore.remove(ctx.conversationId(), SmartlistDraft.FLOW_KEY);
+            logsChannel.send("✅ смартлист '" + summary.name() + "' створено — " + summary.trackCount() + " треків");
             return List.of(BotResponse.text("✅ смартлист '" + summary.name() + "' створено, " + summary.trackCount() + " треків"));
         } catch (IllegalArgumentException e) {
             return List.of(BotResponse.text("❌ " + e.getMessage()));

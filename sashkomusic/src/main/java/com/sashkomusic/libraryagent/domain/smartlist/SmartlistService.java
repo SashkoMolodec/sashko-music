@@ -75,10 +75,12 @@ public class SmartlistService {
                 .toList();
     }
 
+    public record RegenerationResult(int count, int total) {}
+
     @Transactional
-    public void regenerateAll() {
+    public RegenerationResult regenerateAll() {
         List<Smartlist> all = repository.findAll();
-        if (all.isEmpty()) return;
+        if (all.isEmpty()) return new RegenerationResult(0, 0);
         int ok = 0;
         for (Smartlist sl : all) {
             try {
@@ -92,6 +94,7 @@ public class SmartlistService {
             }
         }
         log.info("Smartlists regenerated: {}/{}", ok, all.size());
+        return new RegenerationResult(ok, all.size());
     }
 
     public List<Track> previewTracks(SmartlistDsl dsl, int limit) {

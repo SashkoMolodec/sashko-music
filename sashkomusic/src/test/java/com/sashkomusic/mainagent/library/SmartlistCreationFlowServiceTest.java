@@ -9,6 +9,7 @@ import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDslExtractor;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
+import com.sashkomusic.mainagent.bot.TelegramLogsChannel;
 import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class SmartlistCreationFlowServiceTest {
     private InMemoryChatStateStore stateStore;
     private SmartlistService smartlistService;
     private SmartlistDslExtractor extractor;
+    private TelegramLogsChannel logsChannel;
     private SmartlistCreationFlowService sut;
 
     @BeforeEach
@@ -39,7 +41,8 @@ class SmartlistCreationFlowServiceTest {
         stateStore = new InMemoryChatStateStore();
         smartlistService = mock(SmartlistService.class);
         extractor = mock(SmartlistDslExtractor.class);
-        sut = new SmartlistCreationFlowService(smartlistService, extractor, stateStore, new ObjectMapper());
+        logsChannel = mock(TelegramLogsChannel.class);
+        sut = new SmartlistCreationFlowService(smartlistService, extractor, stateStore, new ObjectMapper(), logsChannel);
     }
 
     @Test
