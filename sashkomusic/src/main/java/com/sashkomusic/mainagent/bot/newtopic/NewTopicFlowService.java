@@ -59,7 +59,7 @@ public class NewTopicFlowService {
     }
 
     private String generateNameFromMemory(String conversationId) {
-        String context = buildContextString(chatMemoryStore.getMessages(conversationId));
+        String context = buildContextFromAllMemories(conversationId);
         if (context.isBlank()) return "новий чат";
         try {
             return topicNameGenerator.generateName(context);
@@ -70,7 +70,7 @@ public class NewTopicFlowService {
     }
 
     private String generateOpeningSummary(String topicName, String conversationId) {
-        String context = buildContextString(chatMemoryStore.getMessages(conversationId));
+        String context = buildContextFromAllMemories(conversationId);
         if (context.isBlank()) return topicName;
         try {
             return topicNameGenerator.generateOpeningSummary(topicName, context);
@@ -93,6 +93,14 @@ public class NewTopicFlowService {
             chatMemoryStore.updateMessages(newConversationId, seedMessages);
             log.info("Seeded new topic {} with {} messages from {}", newConversationId, seedMessages.size(), sourceConversationId);
         }
+    }
+
+    private String buildContextFromAllMemories(String conversationId) {
+        for (String id : List.of(conversationId, conversationId + ":d", conversationId + ":lib")) {
+            String context = buildContextString(chatMemoryStore.getMessages(id));
+            if (!context.isBlank()) return context;
+        }
+        return "";
     }
 
     private String buildContextString(List<ChatMessage> messages) {

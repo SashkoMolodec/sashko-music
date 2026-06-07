@@ -18,6 +18,9 @@ import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -153,6 +156,9 @@ public class UserInteractionOrchestrator {
         String logText = all.stream().map(BotResponse::text).filter(Objects::nonNull)
                 .collect(Collectors.joining("\n"));
         if (!logText.isBlank()) chatLogService.log(ctx.conversationId(), "assistant", logText, "library");
+        if (!result.summary().isBlank()) {
+            appendToMainMemory(ctx.conversationId(), "/library " + query, result.summary());
+        }
         return all;
     }
 
@@ -164,8 +170,22 @@ public class UserInteractionOrchestrator {
         List<BotResponse> all = new ArrayList<>(drained);
         if (result.summary() != null && !result.summary().isBlank()) all.add(BotResponse.aiText(result.summary()));
         String summary = result.summary() != null ? result.summary() : "";
-        if (!summary.isBlank()) chatLogService.log(ctx.conversationId(), "assistant", summary, "discovery");
+        if (!summary.isBlank()) {
+            chatLogService.log(ctx.conversationId(), "assistant", summary, "discovery");
+            appendToMainMemory(ctx.conversationId(), "/discovery " + query, summary);
+        }
         return all;
+    }
+
+    private void appendToMainMemory(String conversationId, String userText, String assistantText) {
+        try {
+            List<ChatMessage> messages = new ArrayList<>(chatMemoryStore.getMessages(conversationId));
+            messages.add(UserMessage.from(userText));
+            messages.add(AiMessage.from(assistantText));
+            chatMemoryStore.updateMessages(conversationId, messages);
+        } catch (Exception e) {
+            log.warn("Failed to append to main memory for {}: {}", conversationId, e.getMessage());
+        }
     }
 
     private List<BotResponse> clearContext(ConversationContext ctx) {
