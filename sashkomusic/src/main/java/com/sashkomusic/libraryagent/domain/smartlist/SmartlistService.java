@@ -36,6 +36,7 @@ public class SmartlistService {
         List<Track> tracks = evaluator.evaluate(dsl);
         m3uWriter.write(name, tracks);
         sl.setLastGeneratedAt(Instant.now());
+        log.info("Smartlist created: '{}' — {} tracks", name, tracks.size());
         return new SmartlistSummary(sl.getId(), name, tracks.size(), evaluator.describe(dsl));
     }
 
@@ -76,16 +77,21 @@ public class SmartlistService {
 
     @Transactional
     public void regenerateAll() {
-        for (Smartlist sl : repository.findAll()) {
+        List<Smartlist> all = repository.findAll();
+        if (all.isEmpty()) return;
+        int ok = 0;
+        for (Smartlist sl : all) {
             try {
                 SmartlistDsl dsl = parse(sl.getDsl());
                 List<Track> tracks = evaluator.evaluate(dsl);
                 m3uWriter.write(sl.getName(), tracks);
                 sl.setLastGeneratedAt(Instant.now());
+                ok++;
             } catch (Exception e) {
                 log.warn("Failed to regenerate smartlist '{}': {}", sl.getName(), e.getMessage());
             }
         }
+        log.info("Smartlists regenerated: {}/{}", ok, all.size());
     }
 
     public List<Track> previewTracks(SmartlistDsl dsl, int limit) {

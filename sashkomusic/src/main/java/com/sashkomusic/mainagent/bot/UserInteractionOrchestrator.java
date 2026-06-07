@@ -42,24 +42,25 @@ public class UserInteractionOrchestrator {
     private final ApplicationEventPublisher eventPublisher;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
-        if (rawInput.trim().equalsIgnoreCase("стоп")) {
-            return clearAllCaches(ctx);
-        }
+        try {
+            if (rawInput.trim().equalsIgnoreCase("стоп")) {
+                return clearAllCaches(ctx);
+            }
 
-        // Slash commands (/clearctx, /np, /library, …) must always reach the dispatcher
-        // even when an OngoingFlow is pending — otherwise the user has no way out.
-        if (!rawInput.startsWith("/")) {
-            var res = processOngoingFlow(ctx, rawInput);
+            // Slash commands (/clearctx, /np, /library, …) must always reach the dispatcher
+            // even when an OngoingFlow is pending — otherwise the user has no way out.
+            if (!rawInput.startsWith("/")) {
+                var res = processOngoingFlow(ctx, rawInput);
+                if (!res.isEmpty()) return res;
+            }
+
+            List<BotResponse> res = processUserCommands(ctx, rawInput);
             if (!res.isEmpty()) return res;
+
+            return runMainAgent(ctx, rawInput);
+        } finally {
+            logFlowCost();
         }
-        List<BotResponse> res;
-
-        res = processUserCommands(ctx, rawInput);
-        if (!res.isEmpty()) return res;
-
-        res = runMainAgent(ctx, rawInput);
-        logFlowCost();
-        return res;
     }
 
     private void logFlowCost() {
