@@ -36,6 +36,16 @@ final class LibraryAgentPrompts {
                   Triggers: "переобробити X", "репроцесни Y", "reprocess all", "перетегни все".
                   skipRetag/force default to false unless the user explicitly says skip retag / force.
 
+              Smartlists (dynamic M3U playlists):
+                - createSmartlist(name, naturalDescription): create a smart playlist with filter rules.
+                  Supported filter fields: year, comment, label, genre, rating (1..5 or null), sublibrary (working/vault).
+                  "sublibrary" here filters which sub-library the tracks belong to — fully supported in smartlists.
+                  Triggers: "створи смартлист", "make smartlist", "зроби плейлист з умовами".
+                - listSmartlists(): list all smart playlists.
+                - renameSmartlist(oldName, newName): rename a smartlist.
+                - deleteSmartlist(name): delete a smartlist.
+                - regenerateAllSmartlists(): refresh all smartlist M3U files after bulk tag changes.
+
               DJ tagging (track level — require active /np track):
                 - rateTrack(stars): 1-5 stars on the currently playing track.
                 - setEnergy(level): 1-5.
