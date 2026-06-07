@@ -30,6 +30,27 @@ class SmartlistDslSerializationTest {
     }
 
     @Test
+    void roundtrips_comparison_conditions() throws Exception {
+        SmartlistDsl dsl = new SmartlistDsl(List.of(
+                new SmartlistDsl.GtCondition("year", 2000),
+                new SmartlistDsl.GteCondition("rating", 4),
+                new SmartlistDsl.LtCondition("year", 1990),
+                new SmartlistDsl.LteCondition("rating", 3)
+        ));
+
+        String json = mapper.writeValueAsString(dsl);
+        assertThat(json).contains("\"op\":\"gt\"", "\"op\":\"gte\"", "\"op\":\"lt\"", "\"op\":\"lte\"");
+
+        SmartlistDsl parsed = mapper.readValue(json, SmartlistDsl.class);
+        assertThat(parsed.conditions()).containsExactly(
+                new SmartlistDsl.GtCondition("year", 2000),
+                new SmartlistDsl.GteCondition("rating", 4),
+                new SmartlistDsl.LtCondition("year", 1990),
+                new SmartlistDsl.LteCondition("rating", 3)
+        );
+    }
+
+    @Test
     void parses_is_null_from_json_with_explicit_null() throws Exception {
         String json = "{\"conditions\":[{\"op\":\"is\",\"field\":\"rating\",\"value\":null}]}";
         SmartlistDsl parsed = mapper.readValue(json, SmartlistDsl.class);

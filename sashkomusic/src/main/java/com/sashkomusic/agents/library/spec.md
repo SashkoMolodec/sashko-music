@@ -67,13 +67,16 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 | `listSmartlists()` | "які смартлисти", "list smartlists" | `SmartlistService.list()` — name, track count, DSL summary |
 | `renameSmartlist(oldName, newName)` | "перейменуй смартлист X на Y" | `SmartlistService.rename` — DB row + `.m3u8` file renamed |
 | `deleteSmartlist(name)` | "видали смартлист X" | `SmartlistService.delete` — DB row + `.m3u8` file removed |
+| `regenerateAllSmartlists()` | "оновити всі смартлисти", "regenerate smartlists" | `SmartlistService.regenerateAll` — re-eval + rewrite every `.m3u8` |
 
 DSL form: `{ "conditions": [...] }` joined with `AND`. Supported fields & ops:
 - `comment`, `label`, `genre` → `contains` (case-insensitive substring on `track_tags.tag_value`) or `is` (exact match / `null` ⇒ tag absent)
-- `year` → `contains` / `is` (string match) **or** `range` with raw 4-digit integers (e.g. `min=1970, max=1989`)
-- `rating` → `range` with `min`/`max` in `1..5` stars (mapped to WMP 51/102/153/204/255), or `is` with single `1..5` value, or `is null` (unrated)
+- `year` → `contains` / `is` (string match) **or** numeric: `range` with raw 4-digit integers (`min=1970, max=1989`), or `gt`/`gte`/`lt`/`lte` with a single integer year
+- `rating` → `range` with `min`/`max` in `1..5` stars (mapped to WMP 51/102/153/204/255), `gt`/`gte`/`lt`/`lte` with single `1..5` value, `is` with single `1..5` value, or `is null` (unrated)
 
-`SmartlistEvaluator` rejects `range` on `comment`/`label`/`genre` with `IllegalArgumentException` — the LLM prompt forbids it but defence-in-depth catches drift.
+Comparison ops (`gt`/`gte`/`lt`/`lte`) are preferred for one-sided bounds ("> 1990", "≥ 4 stars"); `range` is for closed intervals.
+
+`SmartlistEvaluator` rejects `range`/`gt`/`gte`/`lt`/`lte` on `comment`/`label`/`genre` with `IllegalArgumentException` — the LLM prompt forbids it but defence-in-depth catches drift.
 
 Auto-regeneration: `SmartlistRegenerationListener` (`@Async`) listens to `TrackUpdateResultEvent`, `TagChangesNotificationEvent`, `TrackAnalysisCompleteEvent`, `LibraryProcessingCompleteEvent` and calls `SmartlistService.regenerateAll()` — re-evaluates every smartlist and rewrites `{library.rootPath}/Smartlists/<name>.m3u8`.
 

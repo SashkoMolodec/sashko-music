@@ -201,6 +201,19 @@ public class LibraryAgentTools {
                 : "❌ смартлист '" + name + "' не знайдено";
     }
 
+    @Tool("""
+            Re-evaluate every smart playlist and rewrite every .m3u8 file.
+            Use when M3U files look stale, after bulk tag edits, or when the user explicitly asks to
+            "оновити всі смартлисти" / "regenerate smartlists" / "refresh playlists".
+            Returns the number of smartlists processed.
+            """)
+    public String regenerateAllSmartlists() {
+        int count = smartlistService.list().size();
+        if (count == 0) return "ще немає жодного смартлиста";
+        smartlistService.regenerateAll();
+        return "✅ оновлено " + count + " смартлист(ів)";
+    }
+
     // ───────────────── helpers ─────────────────
 
     private record ReleaseRef(Long id, String label) {}

@@ -77,6 +77,24 @@ public class SmartlistEvaluator {
                             .append(" AND tt.tag_name = :").append(nameParam)
                             .append(" AND LOWER(tt.tag_value) = LOWER(:").append(valParam).append("))");
                 }
+            } else if (cond instanceof SmartlistDsl.NumericComparison cmp) {
+                if (!fieldMapper.isRangeField(cmp.field())) {
+                    throw new IllegalArgumentException(
+                            cmp.sqlOperator() + " op is not supported on field '" + cmp.field() + "' (only rating, year)");
+                }
+                if (cmp.value() == null) {
+                    throw new IllegalArgumentException(cmp.sqlOperator() + " op requires a value on field '" + cmp.field() + "'");
+                }
+                int v = fieldMapper.usesStarsScale(cmp.field())
+                        ? fieldMapper.starsToWmp(cmp.value())
+                        : cmp.value();
+                String valParam = "v" + i;
+                params.put(valParam, v);
+                sql.append("EXISTS (SELECT 1 FROM track_tags tt WHERE tt.track_id = t.id")
+                        .append(" AND tt.tag_name = :").append(nameParam)
+                        .append(" AND tt.tag_value ~ '^[0-9]+$'")
+                        .append(" AND tt.tag_value::integer ").append(cmp.sqlOperator()).append(" :")
+                        .append(valParam).append(")");
             } else if (cond instanceof SmartlistDsl.RangeCondition r) {
                 if (!fieldMapper.isRangeField(r.field())) {
                     throw new IllegalArgumentException(
@@ -124,6 +142,8 @@ public class SmartlistEvaluator {
                 parts.add(c.field() + " contains \"" + c.value() + "\"");
             } else if (cond instanceof SmartlistDsl.IsCondition is) {
                 parts.add(is.field() + " is " + (is.value() == null ? "null" : "\"" + is.value() + "\""));
+            } else if (cond instanceof SmartlistDsl.NumericComparison cmp) {
+                parts.add(cmp.field() + " " + cmp.sqlOperator() + " " + cmp.value());
             } else if (cond instanceof SmartlistDsl.RangeCondition r) {
                 String lo = r.min() == null ? "?" : String.valueOf(r.min());
                 String hi = r.max() == null ? "?" : String.valueOf(r.max());

@@ -14,17 +14,23 @@ public interface SmartlistDslExtractor {
             {
               "conditions": [
                 {"op": "contains", "field": "<year|comment|label|genre>", "value": "<string>"},
-                {"op": "range",    "field": "rating", "min": <1..5>, "max": <1..5>},
-                {"op": "is",       "field": "<year|comment|label|genre|rating>", "value": "<string>" | null}
+                {"op": "range",    "field": "<year|rating>", "min": <int>, "max": <int>},
+                {"op": "is",       "field": "<year|comment|label|genre|rating>", "value": "<string>" | null},
+                {"op": "gt"|"gte"|"lt"|"lte", "field": "<year|rating>", "value": <int>}
               ]
             }
 
             Allowed fields and ops:
             - comment, label, genre — "contains" (substring, case-insensitive) or "is" (exact match / null absence).
-            - year — "contains" / "is" (string match) OR "range" with min/max as 4-digit integer years (e.g. min=1970, max=1989).
-            - rating — "range" with min/max in [1..5] stars, or "is" with a single 1..5 value, or "is null" for unrated tracks.
+            - year — "contains" / "is" (string match) OR numeric: "range" with min/max as 4-digit integer years
+              (e.g. min=1970, max=1989), or "gt"/"gte"/"lt"/"lte" with a single integer year.
+            - rating — "range" with min/max in [1..5] stars, "gt"/"gte"/"lt"/"lte" with single 1..5 value,
+              "is" with single 1..5 value, or "is null" for unrated tracks.
             - "is" with value=null means the tag is absent on the track (e.g. {"op":"is","field":"rating","value":null} matches tracks WITHOUT a rating).
-            - NEVER emit "range" on comment / label / genre — those are text fields. Use "contains" instead.
+            - NEVER emit "range"/"gt"/"lt"/"gte"/"lte" on comment / label / genre — those are text fields. Use "contains" instead.
+            - Prefer gt/lt/gte/lte over range when the user expresses a one-sided bound
+              ("більше 1990", "менше ніж 4 зірки", "from 2000 onward", "≥ 4", "<2020").
+              Use range only for closed two-sided intervals ("between 1980 and 1989", "70s and 80s").
 
             Rules:
             - Conditions are joined with AND only.
@@ -41,11 +47,17 @@ public interface SmartlistDslExtractor {
             Output: {"conditions":[{"op":"contains","field":"genre","value":"house"},{"op":"contains","field":"year","value":"2024"},{"op":"range","field":"rating","min":4,"max":5}]}
 
             User: "latina або bolero, по роках менше 1990"
-            Output: {"conditions":[{"op":"contains","field":"genre","value":"latina"},{"op":"contains","field":"genre","value":"bolero"},{"op":"range","field":"year","min":0,"max":1989}]}
+            Output: {"conditions":[{"op":"contains","field":"genre","value":"latina"},{"op":"contains","field":"genre","value":"bolero"},{"op":"lt","field":"year","value":1990}]}
             (Multiple genre conditions are combined with AND, so this only matches tracks whose genre contains BOTH substrings — clarify with the user if they meant OR. When unsure prefer the looser of the two.)
 
             User: "70s і 80s"
             Output: {"conditions":[{"op":"range","field":"year","min":1970,"max":1989}]}
+
+            User: "rating 4 або вище"
+            Output: {"conditions":[{"op":"gte","field":"rating","value":4}]}
+
+            User: "релізи з 2010 і пізніше"
+            Output: {"conditions":[{"op":"gte","field":"year","value":2010}]}
 
             User: "треки без рейтингу"
             Output: {"conditions":[{"op":"is","field":"rating","value":null}]}
