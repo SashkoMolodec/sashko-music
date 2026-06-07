@@ -1,12 +1,13 @@
 package com.sashkomusic.downloadagent.infrastructure.client.slskd;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sashkomusic.events.DownloadBatchCompleteEvent;
 import com.sashkomusic.events.DownloadLogLineEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -23,6 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * Lifecycle: SlskdClient calls register() right after enqueueing transfers; the poller
  * removes the entry when all files are done, or when a batch-complete / error event arrives.
+ *
+ * slskd's /api/v0/transfers/downloads/{username} returns either a single user object or a list of
+ * them depending on version, so we parse via JsonNode and walk both shapes.
  */
 @Component
 @Slf4j
@@ -36,19 +40,22 @@ public class SoulseekProgressPoller {
     private final RestClient client;
     private final String apiKey;
     private final ApplicationEventPublisher events;
+    private final ObjectMapper mapper;
     private final Map<String, Active> tracked = new ConcurrentHashMap<>();
 
     public SoulseekProgressPoller(RestClient.Builder builder,
                                   @Value("${slskd.api-key:}") String apiKey,
                                   @Value("${slskd.base-url:http://localhost:5030}") String baseUrl,
-                                  ApplicationEventPublisher events) {
+                                  ApplicationEventPublisher events,
+                                  ObjectMapper mapper) {
         this.client = builder.baseUrl(baseUrl).build();
         this.apiKey = apiKey;
         this.events = events;
+        this.mapper = mapper;
     }
 
     public void register(String releaseId, String conversationId, String username, List<String> transferIds) {
-        if (conversationId == null) return; // no log target
+        if (conversationId == null) return;
         tracked.put(releaseId, new Active(releaseId, conversationId, username, Set.copyOf(transferIds)));
         log.info("Tracking soulseek progress for releaseId={}, transfers={}", releaseId, transferIds.size());
     }
@@ -76,9 +83,10 @@ public class SoulseekProgressPoller {
         }
     }
 
-    private void pollOne(Active a) {
-        List<Map<String, Object>> dirs = fetchUserDownloads(a.username);
-        if (dirs == null) return;
+    private void pollOne(Active a) throws Exception {
+        String json = fetchRaw(a.username);
+        if (json == null || json.isBlank()) return;
+        JsonNode root = mapper.readTree(json);
 
         int total = a.transferIds.size();
         int done = 0;
@@ -87,26 +95,25 @@ public class SoulseekProgressPoller {
         String slowestState = null;
         double slowestSpeed = Double.MAX_VALUE;
 
-        for (Map<String, Object> dir : dirs) {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> files = (List<Map<String, Object>>) dir.get("files");
-            if (files == null) continue;
-            for (Map<String, Object> f : files) {
-                String id = (String) f.get("id");
-                if (!a.transferIds.contains(id)) continue;
+        for (JsonNode userNode : usersOf(root)) {
+            for (JsonNode dirNode : arrayOf(userNode.path("directories"))) {
+                for (JsonNode file : arrayOf(dirNode.path("files"))) {
+                    String id = file.path("id").asText("");
+                    if (!a.transferIds.contains(id)) continue;
 
-                long size = asLong(f.get("size"));
-                long bytes = asLong(f.get("bytesTransferred"));
-                String state = String.valueOf(f.getOrDefault("state", "")).toLowerCase();
-                double speed = asDouble(f.get("averageSpeed"));
+                    long size = file.path("size").asLong(0);
+                    long bytes = file.path("bytesTransferred").asLong(0);
+                    String state = file.path("state").asText("").toLowerCase();
+                    double speed = file.path("averageSpeed").asDouble(0);
 
-                totalSize += size;
-                totalDone += bytes;
-                if (isCompleted(state)) {
-                    done++;
-                } else if (speed >= 0 && speed < slowestSpeed) {
-                    slowestSpeed = speed;
-                    slowestState = state;
+                    totalSize += size;
+                    totalDone += bytes;
+                    if (isCompleted(state)) {
+                        done++;
+                    } else if (speed < slowestSpeed) {
+                        slowestSpeed = speed;
+                        slowestState = state;
+                    }
                 }
             }
         }
@@ -123,28 +130,25 @@ public class SoulseekProgressPoller {
         }
     }
 
-    private List<Map<String, Object>> fetchUserDownloads(String username) {
+    private String fetchRaw(String username) {
         return client.get()
                 .uri("/api/v0/transfers/downloads/{username}", username)
                 .header("X-API-KEY", apiKey)
                 .retrieve()
-                .body(new ParameterizedTypeReference<>() {});
+                .body(String.class);
+    }
+
+    /** slskd 0.x sometimes returns the single user object directly; 1.x wraps it in an array. */
+    private static Iterable<JsonNode> usersOf(JsonNode root) {
+        return root.isArray() ? root : List.of(root);
+    }
+
+    private static Iterable<JsonNode> arrayOf(JsonNode node) {
+        return node.isArray() ? node : List.of();
     }
 
     private static boolean isCompleted(String state) {
         return COMPLETED_STATES.stream().anyMatch(state::contains);
-    }
-
-    private static long asLong(Object v) {
-        if (v == null) return 0;
-        if (v instanceof Number n) return n.longValue();
-        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return 0; }
-    }
-
-    private static double asDouble(Object v) {
-        if (v == null) return 0;
-        if (v instanceof Number n) return n.doubleValue();
-        try { return Double.parseDouble(v.toString()); } catch (NumberFormatException e) { return 0; }
     }
 
     private record Active(String releaseId, String conversationId, String username, Set<String> transferIds) {}
