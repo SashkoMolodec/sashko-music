@@ -60,4 +60,22 @@ class SmartlistDslSerializationTest {
                     assertThat(c.value()).isNull();
                 });
     }
+
+    @Test
+    void roundtrips_sublibrary_is_condition() throws Exception {
+        SmartlistDsl dsl = new SmartlistDsl(List.of(
+                new SmartlistDsl.ContainsCondition("genre", "house"),
+                new SmartlistDsl.IsCondition("sublibrary", "working")
+        ));
+
+        String json = mapper.writeValueAsString(dsl);
+        SmartlistDsl parsed = mapper.readValue(json, SmartlistDsl.class);
+
+        assertThat(parsed.conditions()).hasSize(2);
+        assertThat(parsed.conditions().get(1))
+                .isInstanceOfSatisfying(SmartlistDsl.IsCondition.class, c -> {
+                    assertThat(c.field()).isEqualTo("sublibrary");
+                    assertThat(c.value()).isEqualTo("working");
+                });
+    }
 }

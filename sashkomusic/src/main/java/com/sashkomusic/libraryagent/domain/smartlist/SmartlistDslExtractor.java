@@ -13,9 +13,9 @@ public interface SmartlistDslExtractor {
             Format:
             {
               "conditions": [
-                {"op": "contains", "field": "<year|comment|label|genre>", "value": "<string>"},
+                {"op": "contains", "field": "<year|comment|label|genre|sublibrary>", "value": "<string>"},
                 {"op": "range",    "field": "<year|rating>", "min": <int>, "max": <int>},
-                {"op": "is",       "field": "<year|comment|label|genre|rating>", "value": "<string>" | null},
+                {"op": "is",       "field": "<year|comment|label|genre|rating|sublibrary>", "value": "<string>" | null},
                 {"op": "gt"|"gte"|"lt"|"lte", "field": "<year|rating>", "value": <int>}
               ]
             }
@@ -26,14 +26,21 @@ public interface SmartlistDslExtractor {
               (e.g. min=1970, max=1989), or "gt"/"gte"/"lt"/"lte" with a single integer year.
             - rating — "range" with min/max in [1..5] stars, "gt"/"gte"/"lt"/"lte" with single 1..5 value,
               "is" with single 1..5 value, or "is null" for unrated tracks.
-            - "is" with value=null means the tag is absent on the track (e.g. {"op":"is","field":"rating","value":null} matches tracks WITHOUT a rating).
-            - NEVER emit "range"/"gt"/"lt"/"gte"/"lte" on comment / label / genre — those are text fields. Use "contains" instead.
+            - sublibrary — "is" or "contains". Values are "working" or "vault".
+              Use when user says "тільки working", "з vault", "не vault" (use "is" for exact match).
+            - "is" with value=null means the tag is absent on the track.
+            - NEVER emit "range"/"gt"/"lt"/"gte"/"lte" on comment / label / genre / sublibrary — text fields only.
             - Prefer gt/lt/gte/lte over range when the user expresses a one-sided bound
               ("більше 1990", "менше ніж 4 зірки", "from 2000 onward", "≥ 4", "<2020").
               Use range only for closed two-sided intervals ("between 1980 and 1989", "70s and 80s").
 
+            OR vs AND semantics:
+            - Multiple conditions on DIFFERENT fields → AND (track must match ALL).
+            - Multiple conditions on the SAME field → OR (track matches any of them).
+              Example: genre contains "latina" + genre contains "bolero" → tracks whose genre has "latina" OR "bolero".
+            - Emit separate condition objects for each value — the evaluator handles OR grouping automatically.
+
             Rules:
-            - Conditions are joined with AND only.
             - Omit fields the user did not mention. Do not invent.
             - If the user gives a single rating (e.g. "rating 5"), set min=max.
             - If user says "rating ≥ 4" set min=4, max=5. If "rating ≤ 3" set min=1, max=3.
@@ -44,11 +51,14 @@ public interface SmartlistDslExtractor {
 
             Examples:
             User: "house tracks from 2024 with rating 4 and above"
-            Output: {"conditions":[{"op":"contains","field":"genre","value":"house"},{"op":"contains","field":"year","value":"2024"},{"op":"range","field":"rating","min":4,"max":5}]}
+            Output: {"conditions":[{"op":"contains","field":"genre","value":"house"},{"op":"contains","field":"year","value":"2024"},{"op":"gte","field":"rating","value":4}]}
 
             User: "latina або bolero, по роках менше 1990"
             Output: {"conditions":[{"op":"contains","field":"genre","value":"latina"},{"op":"contains","field":"genre","value":"bolero"},{"op":"lt","field":"year","value":1990}]}
-            (Multiple genre conditions are combined with AND, so this only matches tracks whose genre contains BOTH substrings — clarify with the user if they meant OR. When unsure prefer the looser of the two.)
+            (Two genre conditions → OR: tracks whose genre contains "latina" OR "bolero", AND year < 1990.)
+
+            User: "techno або house, тільки working"
+            Output: {"conditions":[{"op":"contains","field":"genre","value":"techno"},{"op":"contains","field":"genre","value":"house"},{"op":"is","field":"sublibrary","value":"working"}]}
 
             User: "70s і 80s"
             Output: {"conditions":[{"op":"range","field":"year","min":1970,"max":1989}]}
@@ -67,6 +77,9 @@ public interface SmartlistDslExtractor {
 
             User: "комент порожній і genre techno"
             Output: {"conditions":[{"op":"is","field":"comment","value":null},{"op":"contains","field":"genre","value":"techno"}]}
+
+            User: "only vault releases"
+            Output: {"conditions":[{"op":"is","field":"sublibrary","value":"vault"}]}
 
             User: "also only on Warp label"
             (with previousDsl = {"conditions":[{"op":"contains","field":"genre","value":"house"}]})

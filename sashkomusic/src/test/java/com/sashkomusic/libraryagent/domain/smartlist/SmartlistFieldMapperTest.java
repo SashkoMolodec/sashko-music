@@ -56,4 +56,23 @@ class SmartlistFieldMapperTest {
         assertThat(mapper.usesStarsScale("rating")).isTrue();
         assertThat(mapper.usesStarsScale("year")).isFalse();
     }
+
+    @Test
+    void sublibrary_is_a_direct_column_field() {
+        assertThat(mapper.isDirectColumnField("sublibrary")).isTrue();
+        assertThat(mapper.isDirectColumnField("genre")).isFalse();
+        assertThat(mapper.isDirectColumnField("rating")).isFalse();
+    }
+
+    @Test
+    void sublibrary_column_name() {
+        assertThat(mapper.columnName("sublibrary")).isEqualTo("sublibrary");
+    }
+
+    @Test
+    void tagName_throws_for_sublibrary_since_it_is_not_a_tag_field() {
+        assertThatThrownBy(() -> mapper.tagName("sublibrary"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tag field");
+    }
 }

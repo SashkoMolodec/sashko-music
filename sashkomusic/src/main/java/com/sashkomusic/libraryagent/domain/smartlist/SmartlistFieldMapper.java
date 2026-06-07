@@ -10,7 +10,9 @@ public class SmartlistFieldMapper {
     public static final Set<String> CONTAINS_FIELDS = Set.of("year", "comment", "label", "genre");
     public static final Set<String> RANGE_FIELDS = Set.of("rating", "year");
     public static final Set<String> IS_FIELDS = Set.of("year", "comment", "label", "genre", "rating");
-    public static final Set<String> ALL_FIELDS = Set.of("year", "comment", "label", "genre", "rating");
+    /** Fields backed by a direct column on {@code tracks}, not by {@code track_tags} rows. */
+    public static final Set<String> DIRECT_COLUMN_FIELDS = Set.of("sublibrary");
+    public static final Set<String> ALL_FIELDS = Set.of("year", "comment", "label", "genre", "rating", "sublibrary");
 
     public String tagName(String field) {
         return switch (field.toLowerCase()) {
@@ -19,8 +21,20 @@ public class SmartlistFieldMapper {
             case "label" -> "PUBLISHER";
             case "genre" -> "TCON";
             case "rating" -> "RATING";
-            default -> throw new IllegalArgumentException("unknown smartlist field: " + field);
+            default -> throw new IllegalArgumentException("unknown smartlist tag field: " + field);
         };
+    }
+
+    /** Column name on {@code tracks} table for direct-column fields. */
+    public String columnName(String field) {
+        return switch (field.toLowerCase()) {
+            case "sublibrary" -> "sublibrary";
+            default -> throw new IllegalArgumentException("not a direct column field: " + field);
+        };
+    }
+
+    public boolean isDirectColumnField(String field) {
+        return DIRECT_COLUMN_FIELDS.contains(field.toLowerCase());
     }
 
     public boolean isRangeField(String field) {

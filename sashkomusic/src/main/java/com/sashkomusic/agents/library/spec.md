@@ -69,14 +69,15 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 | `deleteSmartlist(name)` | "видали смартлист X" | `SmartlistService.delete` — DB row + `.m3u8` file removed |
 | `regenerateAllSmartlists()` | "оновити всі смартлисти", "regenerate smartlists" | `SmartlistService.regenerateAll` — re-eval + rewrite every `.m3u8` |
 
-DSL form: `{ "conditions": [...] }` joined with `AND`. Supported fields & ops:
+DSL form: `{ "conditions": [...] }`. **OR/AND semantics**: multiple conditions on the **same field** are ORed; conditions on **different fields** are ANDed. Supported fields & ops:
 - `comment`, `label`, `genre` → `contains` (case-insensitive substring on `track_tags.tag_value`) or `is` (exact match / `null` ⇒ tag absent)
 - `year` → `contains` / `is` (string match) **or** numeric: `range` with raw 4-digit integers (`min=1970, max=1989`), or `gt`/`gte`/`lt`/`lte` with a single integer year
 - `rating` → `range` with `min`/`max` in `1..5` stars (mapped to WMP 51/102/153/204/255), `gt`/`gte`/`lt`/`lte` with single `1..5` value, `is` with single `1..5` value, or `is null` (unrated)
+- `sublibrary` → `is "working"` / `is "vault"` or `contains` (direct column on `tracks`, not a tag). Use when user wants to filter by sub-library.
 
 Comparison ops (`gt`/`gte`/`lt`/`lte`) are preferred for one-sided bounds ("> 1990", "≥ 4 stars"); `range` is for closed intervals.
 
-`SmartlistEvaluator` rejects `range`/`gt`/`gte`/`lt`/`lte` on `comment`/`label`/`genre` with `IllegalArgumentException` — the LLM prompt forbids it but defence-in-depth catches drift.
+`SmartlistEvaluator` rejects `range`/`gt`/`gte`/`lt`/`lte` on `comment`/`label`/`genre`/`sublibrary` with `IllegalArgumentException` — the LLM prompt forbids it but defence-in-depth catches drift.
 
 Auto-regeneration: `SmartlistRegenerationListener` (`@Async`) listens to `TrackUpdateResultEvent`, `TagChangesNotificationEvent`, `TrackAnalysisCompleteEvent`, `LibraryProcessingCompleteEvent` and calls `SmartlistService.regenerateAll()` — re-evaluates every smartlist and rewrites `{library.rootPath}/Smartlists/<name>.m3u8`.
 
