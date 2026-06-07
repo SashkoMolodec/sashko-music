@@ -12,8 +12,8 @@ import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramLogsChannel;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +24,6 @@ import java.util.Optional;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SmartlistCreationFlowService {
 
     private static final String CB_CONFIRM = "SM:OK";
@@ -36,6 +35,18 @@ public class SmartlistCreationFlowService {
     private final ChatStateStore chatStateStore;
     private final ObjectMapper objectMapper;
     private final TelegramLogsChannel logsChannel;
+
+    public SmartlistCreationFlowService(SmartlistService smartlistService,
+                                        SmartlistDslExtractor dslExtractor,
+                                        ChatStateStore chatStateStore,
+                                        ObjectMapper objectMapper,
+                                        @Lazy TelegramLogsChannel logsChannel) {
+        this.smartlistService = smartlistService;
+        this.dslExtractor = dslExtractor;
+        this.chatStateStore = chatStateStore;
+        this.objectMapper = objectMapper;
+        this.logsChannel = logsChannel;
+    }
 
     /**
      * Outcome of a smartlist creation attempt. {@code responses} go to the chat;
