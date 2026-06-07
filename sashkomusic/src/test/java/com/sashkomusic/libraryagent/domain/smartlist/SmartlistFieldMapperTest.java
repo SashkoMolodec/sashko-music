@@ -65,6 +65,13 @@ class SmartlistFieldMapperTest {
     }
 
     @Test
+    void sublibrary_is_a_release_column_field() {
+        assertThat(mapper.isReleaseColumnField("sublibrary")).isTrue();
+        assertThat(mapper.isReleaseColumnField("genre")).isFalse();
+        assertThat(mapper.isReleaseColumnField("rating")).isFalse();
+    }
+
+    @Test
     void sublibrary_column_name() {
         assertThat(mapper.columnName("sublibrary")).isEqualTo("sublibrary");
     }

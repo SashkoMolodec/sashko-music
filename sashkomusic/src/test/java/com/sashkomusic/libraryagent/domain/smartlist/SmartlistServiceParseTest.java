@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent.domain.smartlist;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -12,7 +13,8 @@ class SmartlistServiceParseTest {
             mock(SmartlistRepository.class),
             mock(SmartlistEvaluator.class),
             mock(SmartlistM3uWriter.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ApplicationEventPublisher.class)
     );
 
     @Test

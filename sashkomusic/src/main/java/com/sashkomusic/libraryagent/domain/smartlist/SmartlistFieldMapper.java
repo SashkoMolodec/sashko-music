@@ -12,6 +12,8 @@ public class SmartlistFieldMapper {
     public static final Set<String> IS_FIELDS = Set.of("year", "comment", "label", "genre", "rating");
     /** Fields backed by a direct column on {@code tracks}, not by {@code track_tags} rows. */
     public static final Set<String> DIRECT_COLUMN_FIELDS = Set.of("sublibrary");
+    /** Direct-column fields that live on {@code releases}, not {@code tracks} — require a subquery. */
+    public static final Set<String> RELEASE_COLUMN_FIELDS = Set.of("sublibrary");
     public static final Set<String> ALL_FIELDS = Set.of("year", "comment", "label", "genre", "rating", "sublibrary");
 
     public String tagName(String field) {
@@ -35,6 +37,10 @@ public class SmartlistFieldMapper {
 
     public boolean isDirectColumnField(String field) {
         return DIRECT_COLUMN_FIELDS.contains(field.toLowerCase());
+    }
+
+    public boolean isReleaseColumnField(String field) {
+        return RELEASE_COLUMN_FIELDS.contains(field.toLowerCase());
     }
 
     public boolean isRangeField(String field) {

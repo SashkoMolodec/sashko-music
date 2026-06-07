@@ -161,23 +161,39 @@ public class SmartlistEvaluator {
         }
     }
 
-    /** Handles conditions on direct {@code tracks} columns (e.g. {@code sublibrary}). */
+    /** Handles conditions on direct columns (e.g. {@code sublibrary} on {@code releases}). */
     private void appendDirectColumnSql(StringBuilder sql, Map<String, Object> params,
                                        SmartlistDsl.Condition cond, int i) {
         String col = fieldMapper.columnName(cond.field());
+        boolean isRelease = fieldMapper.isReleaseColumnField(cond.field());
 
         if (cond instanceof SmartlistDsl.ContainsCondition c) {
             String valParam = "v" + i;
             params.put(valParam, "%" + (c.value() == null ? "" : c.value()) + "%");
-            sql.append("t.").append(col).append(" ILIKE :").append(valParam);
+            if (isRelease) {
+                sql.append("t.release_id IN (SELECT r.id FROM releases r WHERE r.")
+                        .append(col).append(" ILIKE :").append(valParam).append(")");
+            } else {
+                sql.append("t.").append(col).append(" ILIKE :").append(valParam);
+            }
 
         } else if (cond instanceof SmartlistDsl.IsCondition is) {
             if (is.value() == null) {
-                sql.append("t.").append(col).append(" IS NULL");
+                if (isRelease) {
+                    sql.append("t.release_id IN (SELECT r.id FROM releases r WHERE r.")
+                            .append(col).append(" IS NULL)");
+                } else {
+                    sql.append("t.").append(col).append(" IS NULL");
+                }
             } else {
                 String valParam = "v" + i;
                 params.put(valParam, is.value());
-                sql.append("LOWER(t.").append(col).append(") = LOWER(:").append(valParam).append(")");
+                if (isRelease) {
+                    sql.append("t.release_id IN (SELECT r.id FROM releases r WHERE LOWER(r.")
+                            .append(col).append(") = LOWER(:").append(valParam).append("))");
+                } else {
+                    sql.append("LOWER(t.").append(col).append(") = LOWER(:").append(valParam).append(")");
+                }
             }
 
         } else {
