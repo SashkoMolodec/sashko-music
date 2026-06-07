@@ -14,6 +14,7 @@ import com.sashkomusic.mainagent.library.DjTagContextHolder;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
+import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchContextService;
@@ -43,6 +44,7 @@ public class UserInteractionOrchestrator {
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
     private final RemoveReleaseFlowService removeReleaseFlowService;
+    private final SmartlistCreationFlowService smartlistCreationFlowService;
     private final NewTopicFlowService newTopicFlowService;
     private final SearchContextService searchContextService;
     private final FileIdCacheService fileIdCacheService;
@@ -58,8 +60,13 @@ public class UserInteractionOrchestrator {
             return clearAllCaches(ctx);
         }
 
-        var res = processOngoingFlow(ctx, rawInput);
-        if (!res.isEmpty()) return res;
+        // Slash commands (/clearctx, /np, /library, …) must always reach the dispatcher
+        // even when an OngoingFlow is pending — otherwise the user has no way out.
+        if (!rawInput.startsWith("/")) {
+            var res = processOngoingFlow(ctx, rawInput);
+            if (!res.isEmpty()) return res;
+        }
+        List<BotResponse> res;
 
         res = processUserCommands(ctx, rawInput);
         if (!res.isEmpty()) return res;
@@ -171,6 +178,7 @@ public class UserInteractionOrchestrator {
         mainMemoryProvider.clear(ctx.conversationId());
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");
+        smartlistCreationFlowService.clear(ctx);
         return List.of(BotResponse.text("🧹 контекст чату очищено"));
     }
 
@@ -180,6 +188,7 @@ public class UserInteractionOrchestrator {
         downloadContextHolder.clearAllSessions();
         djTagContextHolder.clearAllContexts();
         lastReleaseContextHolder.clear(ctx.conversationId());
+        smartlistCreationFlowService.clear(ctx);
         mainMemoryProvider.clear(ctx.conversationId());
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");

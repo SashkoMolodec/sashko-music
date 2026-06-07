@@ -61,6 +61,11 @@ public class SmartlistCreationFlowService {
         return chatStateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class).isPresent();
     }
 
+    /** Drop the in-flight draft for this conversation. Used by global "стоп" / /clearctx. */
+    public void clear(ConversationContext ctx) {
+        chatStateStore.remove(ctx.conversationId(), SmartlistDraft.FLOW_KEY);
+    }
+
     public List<BotResponse> refine(ConversationContext ctx, String userInput) {
         Optional<SmartlistDraft> opt = chatStateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class);
         if (opt.isEmpty()) return List.of();

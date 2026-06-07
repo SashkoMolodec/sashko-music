@@ -128,6 +128,17 @@ class SmartlistCreationFlowServiceTest {
     }
 
     @Test
+    void clear_drops_draft_silently() {
+        stateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY,
+                new SmartlistDraft("x", new SmartlistDsl(List.of(new SmartlistDsl.ContainsCondition("genre", "house")))));
+        assertThat(sut.hasDraft(ctx)).isTrue();
+
+        sut.clear(ctx);
+
+        assertThat(sut.hasDraft(ctx)).isFalse();
+    }
+
+    @Test
     void refine_text_ok_confirms_creation() {
         SmartlistDsl dsl = new SmartlistDsl(List.of(new SmartlistDsl.ContainsCondition("genre", "house")));
         stateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, new SmartlistDraft("hl", dsl));
