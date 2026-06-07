@@ -108,7 +108,12 @@ public class SmartlistEvaluator {
             if (is.value() == null) {
                 sql.append("NOT EXISTS (SELECT 1 FROM track_tags tt WHERE tt.track_id = t.id")
                         .append(" AND tt.tag_name = :").append(nameParam)
-                        .append(" AND tt.tag_value IS NOT NULL AND tt.tag_value <> '')");
+                        .append(" AND tt.tag_value IS NOT NULL AND tt.tag_value <> ''");
+                // WMP rating 0 means "no rating" — treat it the same as missing
+                if (fieldMapper.usesStarsScale(field)) {
+                    sql.append(" AND tt.tag_value <> '0'");
+                }
+                sql.append(")");
             } else {
                 String valParam = "v" + i;
                 params.put(valParam, resolveIsValue(is));
