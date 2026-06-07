@@ -33,9 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SoulseekProgressPoller {
 
     private static final long POLL_INTERVAL_MS = 60_000;
-    private static final Set<String> COMPLETED_STATES = Set.of(
+    private static final Set<String> TERMINAL_STATES = Set.of(
             "completed, succeeded", "completed, cancelled", "completed, errored",
             "completed, timedout", "completed, rejected");
+    private static final String SUCCEEDED_STATE = "completed, succeeded";
 
     private final RestClient client;
     private final String apiKey;
@@ -89,7 +90,8 @@ public class SoulseekProgressPoller {
         JsonNode root = mapper.readTree(json);
 
         int total = a.transferIds.size();
-        int done = 0;
+        int succeeded = 0;
+        int failed = 0;
         long totalSize = 0;
         long totalDone = 0;
         String slowestState = null;
@@ -108,8 +110,10 @@ public class SoulseekProgressPoller {
 
                     totalSize += size;
                     totalDone += bytes;
-                    if (isCompleted(state)) {
-                        done++;
+                    if (SUCCEEDED_STATE.equals(state)) {
+                        succeeded++;
+                    } else if (isTerminal(state)) {
+                        failed++;
                     } else if (speed < slowestSpeed) {
                         slowestSpeed = speed;
                         slowestState = state;
@@ -120,12 +124,19 @@ public class SoulseekProgressPoller {
 
         double mbDone = totalDone / (1024.0 * 1024.0);
         double mbTotal = totalSize / (1024.0 * 1024.0);
-        String line = "soulseek %s — %d/%d files, %.1f / %.1f MB%s".formatted(
-                a.releaseId, done, total, mbDone, mbTotal,
-                slowestState != null ? " (slowest: " + slowestState + ")" : "");
+        String tail;
+        if (failed > 0) {
+            tail = " (%d failed)".formatted(failed);
+        } else if (slowestState != null) {
+            tail = " (slowest: " + slowestState + ")";
+        } else {
+            tail = "";
+        }
+        String line = "soulseek %s — %d ok / %d total, %.1f / %.1f MB%s".formatted(
+                a.releaseId, succeeded, total, mbDone, mbTotal, tail);
         events.publishEvent(new DownloadLogLineEvent(a.conversationId, "slskd-progress", line));
 
-        if (done == total && total > 0) {
+        if (succeeded + failed == total && total > 0) {
             unregister(a.releaseId);
         }
     }
@@ -147,8 +158,8 @@ public class SoulseekProgressPoller {
         return node.isArray() ? node : List.of();
     }
 
-    private static boolean isCompleted(String state) {
-        return COMPLETED_STATES.stream().anyMatch(state::contains);
+    private static boolean isTerminal(String state) {
+        return TERMINAL_STATES.stream().anyMatch(state::contains);
     }
 
     private record Active(String releaseId, String conversationId, String username, Set<String> transferIds) {}
