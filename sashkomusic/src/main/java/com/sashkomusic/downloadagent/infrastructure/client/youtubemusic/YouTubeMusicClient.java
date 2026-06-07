@@ -105,7 +105,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
     }
 
     @Override
-    public String initiateDownload(DownloadOption option, String releaseId) {
+    public String initiateDownload(DownloadOption option, String releaseId, String conversationId) {
         String playlistId = option.technicalMetadata().get("playlistId");
         String videoId = option.technicalMetadata().get("videoId");
         boolean isSingle = playlistId == null || playlistId.isBlank();
@@ -126,7 +126,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
             });
 
             List<String> cmd = buildCommand(url, isSingle);
-            Process process = commandExecutor.execute("yt-dlp", cmd.toArray(new String[0]));
+            Process process = commandExecutor.execute("yt-dlp", conversationId, cmd.toArray(new String[0]));
             activeProcesses.put(releaseId, process);
             log.info("YouTube Music download completed for releaseId={}", releaseId);
             return isSingle ? videoId : playlistId;
@@ -176,8 +176,4 @@ public class YouTubeMusicClient implements MusicSourcePort {
         log.info("Started monitoring for YouTube Music download: {}", downloadPath);
     }
 
-    @Override
-    public void cancelDownload(String releaseId) {
-        downloadRegistry.cancel(releaseId);
-    }
 }

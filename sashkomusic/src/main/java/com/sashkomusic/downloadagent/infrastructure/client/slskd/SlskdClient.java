@@ -262,7 +262,7 @@ public class SlskdClient implements MusicSourcePort {
     @Override
     @CircuitBreaker(name = "slskdClient", fallbackMethod = "initiateDownloadFallback")
     @Retry(name = "slskdClient")
-    public String initiateDownload(DownloadOption option, String releaseId) {
+    public String initiateDownload(DownloadOption option, String releaseId, String conversationId) {
         String username = option.technicalMetadata().get("username");
 
         if (username == null) {
@@ -341,11 +341,6 @@ public class SlskdClient implements MusicSourcePort {
                 }
             }
         }
-    }
-
-    @Override
-    public void cancelDownload(String releaseId) {
-        downloadRegistry.cancel(releaseId);
     }
 
     @Override

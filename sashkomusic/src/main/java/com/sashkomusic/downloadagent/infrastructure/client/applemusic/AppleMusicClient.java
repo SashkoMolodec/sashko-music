@@ -72,7 +72,7 @@ public class AppleMusicClient implements MusicSourcePort {
     }
 
     @Override
-    public String initiateDownload(DownloadOption option, String releaseId) {
+    public String initiateDownload(DownloadOption option, String releaseId, String conversationId) {
         String url = option.technicalMetadata().get("url");
 
         if (url == null) {
@@ -100,7 +100,7 @@ public class AppleMusicClient implements MusicSourcePort {
                 monitorService.stopMonitoring(releaseId);
             });
 
-            Process process = commandExecutor.execute("gamdl",
+            Process process = commandExecutor.execute("gamdl", conversationId,
                     gamdlPath,
                     url,
                     "--cookies-path", cookiesPath,
@@ -165,8 +165,4 @@ public class AppleMusicClient implements MusicSourcePort {
         );
     }
 
-    @Override
-    public void cancelDownload(String releaseId) {
-        downloadRegistry.cancel(releaseId);
-    }
 }

@@ -4,7 +4,6 @@ import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.CallbackDispatcher;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.DownloadCancelTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
@@ -38,7 +37,7 @@ import static org.mockito.Mockito.when;
 @SpringJUnitConfig
 @RecordApplicationEvents
 @Import({CallbackDispatcher.class, MusicDownloadFlowService.class,
-        SearchFilesTaskProducer.class, DownloadTaskProducer.class, DownloadCancelTaskProducer.class,
+        SearchFilesTaskProducer.class, DownloadTaskProducer.class,
         SearchContextService.class, DownloadContextHolder.class,
         DownloadFlowIntegrationTest.TestConfig.class})
 class DownloadFlowIntegrationTest {

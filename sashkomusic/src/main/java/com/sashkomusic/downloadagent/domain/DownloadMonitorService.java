@@ -35,9 +35,11 @@ public class DownloadMonitorService {
     );
 
     private static final Duration NO_FILES_TIMEOUT = Duration.ofMinutes(2);
+    private static final Duration STALL_TIMEOUT = Duration.ofMinutes(5);
 
     private final DownloadBatchCompleteProducer batchCompleteProducer;
     private final DownloadErrorProducer errorProducer;
+    private final ActiveDownloadRegistry downloadRegistry;
     private final Map<String, DownloadMonitorTask> activeTasks = new ConcurrentHashMap<>();
 
     public void startMonitoring(String conversationId, String releaseId, String downloadPath,
@@ -108,6 +110,17 @@ public class DownloadMonitorService {
                     errorProducer.sendError(DownloadErrorDto.of(
                             task.conversationId(),
                             "не вдалося завантажити «" + artist + " — " + title + "»: жоден трек не доступний"
+                    ));
+                    return true;
+                }
+
+                // Stall detection: count > 0 але > 5 хв немає прогресу
+                if (task.isStalled(currentCount)) {
+                    log.warn("Download stalled (no new files for 5min): taskId={}, count={}", taskId, currentCount);
+                    downloadRegistry.cancel(task.releaseId());
+                    errorProducer.sendError(DownloadErrorDto.of(
+                            task.conversationId(),
+                            "скачування зависло без прогресу > 5 хв, скасовую: «" + artist + " — " + title + "»"
                     ));
                     return true;
                 }
@@ -269,6 +282,7 @@ public class DownloadMonitorService {
         private final String artist;
         private final String title;
         private final Instant startedAt = Instant.now();
+        private Instant lastProgressAt = Instant.now();
         private int lastFileCount = -1;
         private int stableChecks = 0;
 
@@ -295,6 +309,14 @@ public class DownloadMonitorService {
 
         public boolean isTimedOut() {
             return Duration.between(startedAt, Instant.now()).compareTo(NO_FILES_TIMEOUT) > 0;
+        }
+
+        public boolean isStalled(int currentCount) {
+            if (currentCount > lastFileCount) {
+                lastProgressAt = Instant.now();
+            }
+            return currentCount > 0
+                    && Duration.between(lastProgressAt, Instant.now()).compareTo(STALL_TIMEOUT) > 0;
         }
 
         public boolean isStable(int currentCount) {

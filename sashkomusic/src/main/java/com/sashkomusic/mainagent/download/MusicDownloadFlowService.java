@@ -8,10 +8,8 @@ import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.downloadagent.messaging.producer.dto.SearchFilesResultDto;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadCancelTaskDto;
 import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
 import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
-import com.sashkomusic.mainagent.download.messaging.DownloadCancelTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +27,6 @@ public class MusicDownloadFlowService {
 
     private final SearchFilesTaskProducer searchFilesProducer;
     private final DownloadTaskProducer downloadTaskProducer;
-    private final DownloadCancelTaskProducer downloadCancelTaskProducer;
     private final SearchContextService contextService;
     private final DownloadContextHolder downloadContextHolder;
     private final ReleaseSearchFlowService releaseSearchFlowService;
@@ -177,16 +174,6 @@ public class MusicDownloadFlowService {
 
         return responses;
     }
-
-    public List<BotResponse> handleDownloadCancel(ConversationContext ctx, String data) {
-        String releaseId = data.substring("CANCEL_DL:".length());
-        log.info("User requested cancel for releaseId={}", releaseId);
-
-        downloadCancelTaskProducer.send(DownloadCancelTaskDto.of(ctx.conversationId(), releaseId));
-
-        return List.of(BotResponse.text("❌ скасовано"));
-    }
-
 
     public List<BotResponse> handleSearchAlternative(ConversationContext ctx, String data) {
         int lastColonIndex = data.lastIndexOf(':');

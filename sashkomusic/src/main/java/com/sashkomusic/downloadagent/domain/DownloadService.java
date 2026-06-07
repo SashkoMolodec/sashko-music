@@ -35,7 +35,7 @@ public class DownloadService {
             MusicSourcePort client = musicSources.get(option.source());
             log.info("Using {} client for download", option.source());
 
-            String downloadId = client.initiateDownload(option, task.releaseId());
+            String downloadId = client.initiateDownload(option, task.releaseId(), task.conversationId());
             log.info("Download initiated: downloadId={}, source={}, releaseId={}, files={}",
                     downloadId, option.source(), task.releaseId(), filenames.size());
 
@@ -51,25 +51,4 @@ public class DownloadService {
         }
     }
 
-    public void cancelDownload(String conversationId, String releaseId) {
-        log.info("Attempting to cancel download for conversationId={}, releaseId={}", conversationId, releaseId);
-
-        DownloadBatch batch = downloadContext.findBatchByReleaseId(releaseId);
-
-        if (batch == null) {
-            log.warn("Cancel failed: no active download found for releaseId={}", releaseId);
-            // batch not found = download already completed or never started; nothing to cancel
-            return;
-        }
-
-        DownloadEngine source = batch.getSource();
-        MusicSourcePort client = musicSources.get(source);
-
-        if (client != null) {
-            client.cancelDownload(releaseId);
-        }
-
-        downloadContext.removeBatchByReleaseId(releaseId);
-        log.info("Successfully cancelled download for releaseId={}", releaseId);
-    }
 }

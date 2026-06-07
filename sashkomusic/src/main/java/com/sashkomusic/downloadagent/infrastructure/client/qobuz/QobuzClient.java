@@ -210,7 +210,7 @@ public class QobuzClient implements MusicSourcePort {
     }
 
     @Override
-    public String initiateDownload(DownloadOption option, String releaseId) {
+    public String initiateDownload(DownloadOption option, String releaseId, String conversationId) {
         String albumUrl = option.technicalMetadata().get("albumUrl");
         String quality = option.technicalMetadata().get("quality");
 
@@ -232,7 +232,7 @@ public class QobuzClient implements MusicSourcePort {
             });
 
             String ripQuality = toRipQuality(quality);
-            Process process = commandExecutor.execute("qobuz-dl",
+            Process process = commandExecutor.execute("qobuz-dl", conversationId,
                     cliPath, "-ndb", "--no-progress", "-f", downloadPath, "-q", ripQuality, "url", albumUrl
             );
 
@@ -260,11 +260,6 @@ public class QobuzClient implements MusicSourcePort {
         int expectedFileCount = option.files().isEmpty() ? 1 : option.files().size();
         monitorService.startMonitoring(conversationId, releaseId, downloadPath, expectedFileCount, artist, title);
         log.info("Started monitoring for Qobuz download: {}", downloadPath);
-    }
-
-    @Override
-    public void cancelDownload(String releaseId) {
-        downloadRegistry.cancel(releaseId);
     }
 
     private static String toRipQuality(String qobuzQuality) {

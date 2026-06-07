@@ -141,7 +141,6 @@ mainagent            →  FilesDownloadTaskEvent             →  downloadagent
 downloadagent        →  DownloadCompleteEvent              →  mainagent
 downloadagent        →  DownloadBatchCompleteEvent         →  mainagent
 downloadagent        →  DownloadErrorEvent                 →  mainagent
-mainagent            →  DownloadCancelTaskEvent            →  downloadagent
 mainagent            →  ProcessLibraryTaskEvent            →  libraryagent
 libraryagent         →  LibraryProcessingCompleteEvent     →  mainagent
 mainagent            →  ReprocessReleaseTaskEvent          →  libraryagent
