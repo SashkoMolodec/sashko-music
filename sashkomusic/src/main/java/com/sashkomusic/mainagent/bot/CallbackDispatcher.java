@@ -4,6 +4,7 @@ import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
+import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.library.SublibraryAssignmentHandler;
 import com.sashkomusic.mainagent.process.PendingProcessCallbackHandler;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
@@ -30,7 +31,8 @@ public class CallbackDispatcher {
                               DjTagFlowService djTag,
                               RemoveReleaseFlowService removeRelease,
                               SublibraryAssignmentHandler sublibAssignment,
-                              PendingProcessCallbackHandler pendingProcess) {
+                              PendingProcessCallbackHandler pendingProcess,
+                              SmartlistCreationFlowService smartlistCreation) {
         handlers.put("CARD:", search::handleCardCallback);
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
@@ -49,6 +51,8 @@ public class CallbackDispatcher {
         handlers.put("PROC_SEL:", (ctx, data, msgId) -> processFolder.handleMetadataSelectionByIndex(ctx, data));
         handlers.put("PROC_OK:", (ctx, data, msgId) -> pendingProcess.handleConfirm(ctx, data));
         handlers.put("PROC_NO:", (ctx, data, msgId) -> pendingProcess.handleCancel(ctx, data));
+        handlers.put("SM:OK", (ctx, data, msgId) -> smartlistCreation.handleConfirm(ctx, data));
+        handlers.put("SM:NO", (ctx, data, msgId) -> smartlistCreation.handleCancel(ctx, data));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {

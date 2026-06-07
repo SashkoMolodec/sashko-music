@@ -117,5 +117,8 @@ class DownloadFlowIntegrationTest {
         @Bean com.sashkomusic.mainagent.process.ProcessFolderFlowService processFolderFlowService() {
             return mock(com.sashkomusic.mainagent.process.ProcessFolderFlowService.class);
         }
+        @Bean com.sashkomusic.mainagent.library.SmartlistCreationFlowService smartlistCreationFlowService() {
+            return mock(com.sashkomusic.mainagent.library.SmartlistCreationFlowService.class);
+        }
     }
 }

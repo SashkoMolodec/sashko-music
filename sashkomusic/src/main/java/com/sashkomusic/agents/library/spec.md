@@ -6,7 +6,10 @@
 ## Purpose
 LLM-driven manager for the user's own processed library. Handles:
 - catalog ops (release-level): search, move between sub-libraries, send to trash
-- DJ tagging (track-level): rate / energy / function / comment for the currently playing track
+- processing / reprocessing of downloads into the library
+- smartlists: dynamic M3U playlists driven by DSL rules over track tags
+
+DJ tagging (rate / energy / function / comment) is **button-driven via `/np`** and intentionally NOT an agent tool — see "DJ tagging" section.
 
 The agent is a `@AiService` running on **Haiku** with its own memory id `<conversationId>:lib`.
 
@@ -56,6 +59,21 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 | `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → pushes confirmation card (RM_OK/RM_NO buttons) into accumulator |
 | `listSublibraries()` | "які vaults", "куди можна перенести" | Returns config list `library.sublibraries` |
 
+### Smartlists (dynamic M3U playlists)
+
+| Tool | Trigger | Action |
+|------|---------|--------|
+| `createSmartlist(name, naturalDescription)` | "створи смартлист X — ...", "make smartlist <name> with <rules>" | `SmartlistDslExtractor` (Haiku) → DSL; stores `SmartlistDraft` via `ChatStateStore` (flow_key `smartlist_create`); pushes preview card (top-5 tracks + DSL summary) with `SM:OK` / `SM:NO` buttons into accumulator. User can refine via free text (handled by `SmartlistCreationOngoingFlow`). |
+| `listSmartlists()` | "які смартлисти", "list smartlists" | `SmartlistService.list()` — name, track count, DSL summary |
+| `renameSmartlist(oldName, newName)` | "перейменуй смартлист X на Y" | `SmartlistService.rename` — DB row + `.m3u8` file renamed |
+| `deleteSmartlist(name)` | "видали смартлист X" | `SmartlistService.delete` — DB row + `.m3u8` file removed |
+
+DSL form: `{ "conditions": [...] }` joined with `AND`. Supported fields & ops:
+- `year`, `comment`, `label`, `genre` → `contains` (case-insensitive substring on `track_tags.tag_value`) or `is` (exact match / `null` ⇒ tag absent)
+- `rating` → `range` with `min`/`max` in `1..5` (mapped to WMP 51/102/153/204/255), or `is` with single `1..5` value, or `is null` (unrated)
+
+Auto-regeneration: `SmartlistRegenerationListener` (`@Async`) listens to `TrackUpdateResultEvent`, `TagChangesNotificationEvent`, `TrackAnalysisCompleteEvent`, `LibraryProcessingCompleteEvent` and calls `SmartlistService.regenerateAll()` — re-evaluates every smartlist and rewrites `{library.rootPath}/Smartlists/<name>.m3u8`.
+
 ### Processing / reprocessing (release-level)
 
 | Tool | Trigger | Action |
@@ -65,14 +83,7 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 
 ### DJ tagging (track-level)
 
-Require active `/np` track in `DjTagContextHolder`.
-
-| Tool | Trigger | Action |
-|------|---------|--------|
-| `rateTrack(stars)` | "оціни N", "rate N" | `NowPlayingFlowService.rateTrack` |
-| `setEnergy(level)` | "energy N", "енергія N" | `DjTagFlowService.setDjEnergy` |
-| `setFunction(name)` | "intro / tool / banger / closer" + UA aliases | `DjTagFlowService.setDjFunction` |
-| `addComment(text)` | "comment <text>", "коментар <text>" | `DjTagFlowService.addComment` |
+Track-level DJ tagging (rate / energy / function / comment) is **not** exposed as agent tools — it is driven entirely by the inline keyboard from `/np` (`RATE:`, `ENERGY_RATE:`, `FUNCTION_RATE:`, `ADD_COMMENT:` callbacks → `NowPlayingFlowService` / `DjTagFlowService` / `CommentInputOngoingFlow`). The agent should not attempt to mutate track tags directly; if the user asks for it in NL, point them at `/np`.
 
 ---
 

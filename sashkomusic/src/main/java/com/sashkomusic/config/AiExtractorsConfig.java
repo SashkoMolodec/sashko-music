@@ -5,6 +5,7 @@ import com.sashkomusic.mainagent.bot.newtopic.TopicNameGenerator;
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
 import com.sashkomusic.mainagent.process.MetadataSuggester;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderNameParser;
+import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDslExtractor;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -41,5 +42,10 @@ public class AiExtractorsConfig {
     @Bean
     public TopicNameGenerator topicNameGenerator(@Qualifier("haikuChatModel") ChatModel haiku) {
         return AiServices.builder(TopicNameGenerator.class).chatModel(haiku).build();
+    }
+
+    @Bean
+    public SmartlistDslExtractor smartlistDslExtractor(@Qualifier("haikuChatModel") ChatModel haiku) {
+        return AiServices.builder(SmartlistDslExtractor.class).chatModel(haiku).build();
     }
 }

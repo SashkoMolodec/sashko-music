@@ -4,13 +4,12 @@ import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
+import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.library.DjTagContextHolder;
-import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
-import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
+import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.library.messaging.MoveReleaseTaskProducer;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
 import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService;
@@ -40,11 +39,10 @@ public class LibraryAgentTools {
     private final MoveReleaseTaskProducer moveTaskProducer;
     private final RemoveReleaseFlowService removeReleaseFlowService;
     private final ChatResponseAccumulator accumulator;
-    private final NowPlayingFlowService nowPlayingFlowService;
-    private final DjTagFlowService djTagFlowService;
-    private final DjTagContextHolder djTagContextHolder;
     private final ProcessFolderFlowService processFolderFlowService;
     private final ReprocessReleasesFlowService reprocessReleasesFlowService;
+    private final SmartlistCreationFlowService smartlistCreationFlowService;
+    private final SmartlistService smartlistService;
 
     // ───────────────── catalog ops ─────────────────
 
@@ -151,46 +149,55 @@ public class LibraryAgentTools {
         return result.message();
     }
 
-    // ───────────────── DJ tagging ─────────────────
+    // ───────────────── smartlists ─────────────────
 
-    @Tool("Rate the currently playing track (1-5 stars). Requires an active /np track.")
-    public String rateTrack(@P("stars 1..5") int stars, @ToolMemoryId String conversationId) {
+    @Tool("""
+            Start creating a smart playlist (dynamic M3U updated when tracks change).
+            Use for: "створи смартлист X — house 2024 з рейтингом 4+", "make smartlist <name> with <rules>".
+            Triggers a confirmation card with a 5-track preview and ✅/❌ buttons.
+            Supported rules: year/comment/label/genre 'contains' a substring, rating range 1..5,
+            or 'is' exact match (with null meaning the tag is absent — e.g. "rating is null" = unrated tracks).
+            Conditions are joined with AND.
+            """)
+    public String createSmartlist(
+            @P("smartlist name (short, unique)") String name,
+            @P("natural-language description of the membership rules") String naturalDescription,
+            @ToolMemoryId String conversationId) {
         String mainId = mainConversationId(conversationId);
-        var ctx = djTagContextHolder.getContext(mainId);
-        if (ctx == null) return "нема активного треку — спочатку /np";
         accumulator.pushAll(mainId,
-                nowPlayingFlowService.rateTrack(ConversationContext.from(mainId), ctx.trackId(), stars));
-        return "оцінив на " + stars;
+                smartlistCreationFlowService.startCreate(ConversationContext.from(mainId), name, naturalDescription));
+        return "показав картку підтвердження смартлиста '" + name + "'";
     }
 
-    @Tool("Set energy level (1-5) on the currently playing track. Requires /np.")
-    public String setEnergy(@P("level 1..5") String level, @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        var ctx = djTagContextHolder.getContext(mainId);
-        if (ctx == null) return "нема активного треку — спочатку /np";
-        accumulator.pushAll(mainId,
-                djTagFlowService.setDjEnergy(ConversationContext.from(mainId), ctx.trackId(), level));
-        return "energy=" + level;
+    @Tool("List all smart playlists with track counts and DSL rule. Use for: 'які в мене смартлисти', 'list smartlists'.")
+    public String listSmartlists() {
+        List<SmartlistService.SmartlistSummary> all = smartlistService.list();
+        if (all.isEmpty()) return "ще немає жодного смартлиста";
+        StringBuilder sb = new StringBuilder("Смартлисти (").append(all.size()).append("):\n");
+        for (var s : all) {
+            sb.append("• ").append(s.name()).append(" — ").append(s.trackCount()).append(" треків [")
+                    .append(s.dslDescription()).append("]\n");
+        }
+        return sb.toString().strip();
     }
 
-    @Tool("Set DJ function (intro/tool/banger/closer) on the currently playing track. Requires /np.")
-    public String setFunction(@P("intro/tool/banger/closer") String function, @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        var ctx = djTagContextHolder.getContext(mainId);
-        if (ctx == null) return "нема активного треку — спочатку /np";
-        accumulator.pushAll(mainId,
-                djTagFlowService.setDjFunction(ConversationContext.from(mainId), ctx.trackId(), function));
-        return "function=" + function;
+    @Tool("Rename a smart playlist. The M3U file is renamed on disk too.")
+    public String renameSmartlist(
+            @P("current smartlist name") String oldName,
+            @P("new smartlist name") String newName) {
+        try {
+            var s = smartlistService.rename(oldName, newName);
+            return "✅ перейменовано на '" + s.name() + "' (" + s.trackCount() + " треків)";
+        } catch (IllegalArgumentException e) {
+            return "❌ " + e.getMessage();
+        }
     }
 
-    @Tool("Add a DJ comment on the currently playing track. Requires /np.")
-    public String addComment(@P("free text comment") String text, @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        var ctx = djTagContextHolder.getContext(mainId);
-        if (ctx == null) return "нема активного треку — спочатку /np";
-        accumulator.pushAll(mainId,
-                djTagFlowService.addComment(ConversationContext.from(mainId), ctx.trackId(), text));
-        return "коментар додано";
+    @Tool("Delete a smart playlist by name. The M3U file is also removed.")
+    public String deleteSmartlist(@P("smartlist name") String name) {
+        return smartlistService.delete(name)
+                ? "✅ видалено смартлист '" + name + "'"
+                : "❌ смартлист '" + name + "' не знайдено";
     }
 
     // ───────────────── helpers ─────────────────
