@@ -45,7 +45,7 @@ public class SmartlistCreationFlowService {
             return new StartResult(false, List.of(BotResponse.text("❌ потрібна назва смартлиста")),
                     "не створено: пуста назва смартлиста");
         }
-        SmartlistDsl dsl = extract(naturalDescription, null);
+        SmartlistDsl dsl = extractAndValidate(naturalDescription, null);
         if (dsl == null || dsl.conditions().isEmpty()) {
             return new StartResult(false,
                     List.of(BotResponse.text("❌ не зміг розібрати умови — спробуй сформулювати інакше")),
@@ -74,7 +74,7 @@ public class SmartlistCreationFlowService {
         }
 
         SmartlistDraft current = opt.get();
-        SmartlistDsl updated = extract(userInput, current.dsl());
+        SmartlistDsl updated = extractAndValidate(userInput, current.dsl());
         if (updated == null || updated.conditions().isEmpty()) {
             return List.of(BotResponse.text("❌ не зміг оновити умови — спробуй ще раз або напиши 'ок' щоб підтвердити"));
         }
@@ -119,6 +119,23 @@ public class SmartlistCreationFlowService {
             return smartlistService.parse(json);
         } catch (Exception e) {
             log.warn("Failed to extract smartlist DSL from '{}': {}", userText, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Run extract + smoke-test the DSL against the evaluator. If the LLM produced
+     * a condition the evaluator rejects (e.g. range on a text field), surface it
+     * as a parse failure rather than a 500 to the user.
+     */
+    private SmartlistDsl extractAndValidate(String userText, SmartlistDsl previous) {
+        SmartlistDsl dsl = extract(userText, previous);
+        if (dsl == null || dsl.conditions().isEmpty()) return dsl;
+        try {
+            smartlistService.previewTracks(dsl, 1);
+            return dsl;
+        } catch (IllegalArgumentException e) {
+            log.warn("Extractor produced unsupported DSL ({}): {}", e.getMessage(), dsl.conditions());
             return null;
         }
     }

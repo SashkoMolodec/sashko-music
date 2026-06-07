@@ -63,9 +63,13 @@ public class SmartlistEvaluator {
                     String value = is.value();
                     if ("rating".equalsIgnoreCase(is.field())) {
                         try {
-                            value = String.valueOf(fieldMapper.starsToWmp(Integer.parseInt(value.trim())));
+                            int stars = Integer.parseInt(value.trim());
+                            if (stars >= 0 && stars <= 5) {
+                                value = String.valueOf(fieldMapper.starsToWmp(stars));
+                            }
+                            // else: out-of-stars-range — pass through raw (likely already a WMP number)
                         } catch (NumberFormatException ignored) {
-                            // fall through with raw value (e.g. user passed already-wmp string)
+                            // pass through raw value (e.g. user passed already-wmp string)
                         }
                     }
                     params.put(valParam, value);
@@ -74,10 +78,21 @@ public class SmartlistEvaluator {
                             .append(" AND LOWER(tt.tag_value) = LOWER(:").append(valParam).append("))");
                 }
             } else if (cond instanceof SmartlistDsl.RangeCondition r) {
+                if (!fieldMapper.isRangeField(r.field())) {
+                    throw new IllegalArgumentException(
+                            "range op is not supported on field '" + r.field() + "' (only rating, year)");
+                }
                 String minParam = "min" + i;
                 String maxParam = "max" + i;
-                int min = r.min() == null ? 0 : fieldMapper.starsToWmp(r.min());
-                int max = r.max() == null ? 255 : fieldMapper.starsToWmp(r.max());
+                int min;
+                int max;
+                if (fieldMapper.usesStarsScale(r.field())) {
+                    min = r.min() == null ? 0 : fieldMapper.starsToWmp(r.min());
+                    max = r.max() == null ? 255 : fieldMapper.starsToWmp(r.max());
+                } else {
+                    min = r.min() == null ? Integer.MIN_VALUE : r.min();
+                    max = r.max() == null ? Integer.MAX_VALUE : r.max();
+                }
                 params.put(minParam, min);
                 params.put(maxParam, max);
                 sql.append("EXISTS (SELECT 1 FROM track_tags tt WHERE tt.track_id = t.id")

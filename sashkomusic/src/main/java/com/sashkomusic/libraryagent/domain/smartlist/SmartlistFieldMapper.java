@@ -8,7 +8,7 @@ import java.util.Set;
 public class SmartlistFieldMapper {
 
     public static final Set<String> CONTAINS_FIELDS = Set.of("year", "comment", "label", "genre");
-    public static final Set<String> RANGE_FIELDS = Set.of("rating");
+    public static final Set<String> RANGE_FIELDS = Set.of("rating", "year");
     public static final Set<String> IS_FIELDS = Set.of("year", "comment", "label", "genre", "rating");
     public static final Set<String> ALL_FIELDS = Set.of("year", "comment", "label", "genre", "rating");
 
@@ -33,6 +33,11 @@ public class SmartlistFieldMapper {
 
     public boolean isIsField(String field) {
         return IS_FIELDS.contains(field.toLowerCase());
+    }
+
+    /** Only the rating field uses the 1..5 stars → WMP 0..255 mapping. */
+    public boolean usesStarsScale(String field) {
+        return "rating".equalsIgnoreCase(field);
     }
 
     /**

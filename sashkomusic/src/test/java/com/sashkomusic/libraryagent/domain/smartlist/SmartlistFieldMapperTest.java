@@ -41,4 +41,19 @@ class SmartlistFieldMapperTest {
         assertThatThrownBy(() -> mapper.starsToWmp(6))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void range_op_supported_only_on_rating_and_year() {
+        assertThat(mapper.isRangeField("rating")).isTrue();
+        assertThat(mapper.isRangeField("year")).isTrue();
+        assertThat(mapper.isRangeField("genre")).isFalse();
+        assertThat(mapper.isRangeField("comment")).isFalse();
+        assertThat(mapper.isRangeField("label")).isFalse();
+    }
+
+    @Test
+    void only_rating_uses_stars_scale() {
+        assertThat(mapper.usesStarsScale("rating")).isTrue();
+        assertThat(mapper.usesStarsScale("year")).isFalse();
+    }
 }

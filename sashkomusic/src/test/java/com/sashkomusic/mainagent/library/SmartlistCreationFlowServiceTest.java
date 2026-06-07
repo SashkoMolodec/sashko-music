@@ -85,6 +85,24 @@ class SmartlistCreationFlowServiceTest {
     }
 
     @Test
+    void startCreate_returns_failure_when_evaluator_rejects_dsl() {
+        SmartlistDsl bogus = new SmartlistDsl(List.of(
+                new SmartlistDsl.RangeCondition("genre", 1, 5) // range on text field — unsupported
+        ));
+        when(extractor.extractJson(anyString(), anyString())).thenReturn("{}");
+        when(smartlistService.parse("{}")).thenReturn(bogus);
+        when(smartlistService.previewTracks(any(), anyInt()))
+                .thenThrow(new IllegalArgumentException("range op is not supported on field 'genre'"));
+
+        SmartlistCreationFlowService.StartResult result =
+                sut.startCreate(ctx, "x", "some rule");
+
+        assertThat(result.drafted()).isFalse();
+        assertThat(sut.hasDraft(ctx)).isFalse();
+        assertThat(result.responses().get(0).text()).contains("не зміг розібрати");
+    }
+
+    @Test
     void confirm_creates_smartlist_and_clears_draft() {
         SmartlistDsl dsl = new SmartlistDsl(List.of(new SmartlistDsl.ContainsCondition("genre", "house")));
         stateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, new SmartlistDraft("hl", dsl));

@@ -69,8 +69,11 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 | `deleteSmartlist(name)` | "видали смартлист X" | `SmartlistService.delete` — DB row + `.m3u8` file removed |
 
 DSL form: `{ "conditions": [...] }` joined with `AND`. Supported fields & ops:
-- `year`, `comment`, `label`, `genre` → `contains` (case-insensitive substring on `track_tags.tag_value`) or `is` (exact match / `null` ⇒ tag absent)
-- `rating` → `range` with `min`/`max` in `1..5` (mapped to WMP 51/102/153/204/255), or `is` with single `1..5` value, or `is null` (unrated)
+- `comment`, `label`, `genre` → `contains` (case-insensitive substring on `track_tags.tag_value`) or `is` (exact match / `null` ⇒ tag absent)
+- `year` → `contains` / `is` (string match) **or** `range` with raw 4-digit integers (e.g. `min=1970, max=1989`)
+- `rating` → `range` with `min`/`max` in `1..5` stars (mapped to WMP 51/102/153/204/255), or `is` with single `1..5` value, or `is null` (unrated)
+
+`SmartlistEvaluator` rejects `range` on `comment`/`label`/`genre` with `IllegalArgumentException` — the LLM prompt forbids it but defence-in-depth catches drift.
 
 Auto-regeneration: `SmartlistRegenerationListener` (`@Async`) listens to `TrackUpdateResultEvent`, `TagChangesNotificationEvent`, `TrackAnalysisCompleteEvent`, `LibraryProcessingCompleteEvent` and calls `SmartlistService.regenerateAll()` — re-evaluates every smartlist and rewrites `{library.rootPath}/Smartlists/<name>.m3u8`.
 
