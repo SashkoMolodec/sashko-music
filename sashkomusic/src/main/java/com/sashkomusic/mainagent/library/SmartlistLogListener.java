@@ -16,6 +16,9 @@ public class SmartlistLogListener {
     @EventListener
     @Async("asyncExecutor")
     public void onSmartlistsRegenerated(SmartlistsRegeneratedEvent event) {
-        logsChannel.send("🔄 смартлисти оновлено: " + event.count() + "/" + event.total());
+        if (event.count() < event.total()) {
+            int failed = event.total() - event.count();
+            logsChannel.send("⚠️ смартлисти: " + failed + "/" + event.total() + " не оновились");
+        }
     }
 }

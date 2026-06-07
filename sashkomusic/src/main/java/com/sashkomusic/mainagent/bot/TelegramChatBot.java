@@ -99,7 +99,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         try {
             if (update.hasMessage() && update.getMessage().hasText()) {
                 Message msg = update.getMessage();
-                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
+                ConversationContext ctx = buildContext(msg);
                 if (!isAllowed(ctx)) return;
 
                 var text = msg.getText();
@@ -112,7 +112,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 var callback = update.getCallbackQuery();
                 var data = callback.getData();
                 Message msg = (Message) callback.getMessage();
-                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
+                ConversationContext ctx = buildContext(msg);
                 if (!isAllowed(ctx)) return;
 
                 log.info("👆 Click from [{}]: {}", ctx.conversationId(), data);
@@ -131,11 +131,16 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         }
     }
 
-    private ConversationContext buildContext(long chatId, Integer threadId) {
-        if (threadId != null && threadId > 0) {
-            return ConversationContext.topic(chatId, threadId);
+    private ConversationContext buildContext(Message msg) {
+        Integer threadId = msg.getMessageThreadId();
+        boolean isTopic = Boolean.TRUE.equals(msg.getIsTopicMessage());
+        // In regular (non-forum) groups, replies produce a non-null messageThreadId too —
+        // echoing it back makes the bot's response render as a reply. Only treat real forum
+        // topics as topics; otherwise route as a plain chat message.
+        if (isTopic && threadId != null && threadId > 0) {
+            return ConversationContext.topic(msg.getChatId(), threadId);
         }
-        return ConversationContext.dm(chatId);
+        return ConversationContext.dm(msg.getChatId());
     }
 
     private boolean isAllowed(ConversationContext ctx) {
