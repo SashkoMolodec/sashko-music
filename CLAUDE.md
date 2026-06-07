@@ -124,7 +124,7 @@ Production impl: `JpaChatStateStore` (Postgres + Jackson). Test impl: `InMemoryC
 **ContextHolder pattern** — every per-chat state holder routes through `ChatStateStore` with one stable `flow_key`:
 - `dj_tag` → `DjTagContextHolder` (track + waitingForComment flag)
 - `search` → `SearchContextService` (SearchContext + List\<ReleaseMetadata\> per conversation)
-- *(in-memory still; planned)* `download` → `DownloadContextHolder`
+- `dl_ctx` → `DownloadContextHolder` (chosenReleaseId + per-release OptionReport list)
 
 When introducing a new holder, follow the pattern: declare a private `FLOW_KEY` constant, inject `ChatStateStore`, no in-process `Map<Long, T>`.
 

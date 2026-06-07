@@ -22,7 +22,7 @@ public class BandcampDownloadClient implements MusicSourcePort {
     private final BandcampSearchClient searchClient;
     private final DownloadMonitorService monitorService;
     private final ActiveDownloadRegistry downloadRegistry;
-    private final BandcampCommandExecutor commandExecutor;
+    private final com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor;
 
     private final ConcurrentHashMap<String, Process> activeProcesses = new ConcurrentHashMap<>();
 
@@ -35,7 +35,7 @@ public class BandcampDownloadClient implements MusicSourcePort {
     public BandcampDownloadClient(BandcampSearchClient searchClient,
                           DownloadMonitorService monitorService,
                           ActiveDownloadRegistry downloadRegistry,
-                          BandcampCommandExecutor commandExecutor) {
+                          com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor) {
         this.searchClient = searchClient;
         this.monitorService = monitorService;
         this.downloadRegistry = downloadRegistry;
@@ -92,7 +92,7 @@ public class BandcampDownloadClient implements MusicSourcePort {
                 monitorService.stopMonitoring(releaseId);
             });
 
-            Process process = commandExecutor.execute(
+            Process process = commandExecutor.execute("bandcamp-dl",
                     bandcampDlPath,
                     url,
                     "--base-dir", outputPath,

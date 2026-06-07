@@ -7,6 +7,7 @@ import com.sashkomusic.downloadagent.domain.exception.MusicDownloadException;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 import com.sashkomusic.mainagent.download.DownloadOption;
 import com.sashkomusic.downloadagent.infrastructure.client.qobuz.dto.QobuzSearchResult;
+import com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,7 @@ public class QobuzClient implements MusicSourcePort {
     private static final String API_BASE = "https://www.qobuz.com/api.json/0.2";
 
     private final RestClient restClient;
-    private final QobuzCommandExecutor commandExecutor;
+    private final ProcessCommandExecutor commandExecutor;
     private final DownloadMonitorService monitorService;
     private final ActiveDownloadRegistry downloadRegistry;
 
@@ -50,7 +51,7 @@ public class QobuzClient implements MusicSourcePort {
     private volatile String authToken;
 
     public QobuzClient(RestClient.Builder restClientBuilder,
-                       QobuzCommandExecutor commandExecutor,
+                       ProcessCommandExecutor commandExecutor,
                        DownloadMonitorService monitorService,
                        ActiveDownloadRegistry downloadRegistry) {
         this.restClient = restClientBuilder
@@ -231,7 +232,7 @@ public class QobuzClient implements MusicSourcePort {
             });
 
             String ripQuality = toRipQuality(quality);
-            Process process = commandExecutor.execute(
+            Process process = commandExecutor.execute("qobuz-dl",
                     cliPath, "-ndb", "--no-progress", "-f", downloadPath, "-q", ripQuality, "url", albumUrl
             );
 

@@ -23,7 +23,7 @@ public class AppleMusicClient implements MusicSourcePort {
     private final ITunesSearchClient searchClient;
     private final DownloadMonitorService monitorService;
     private final ActiveDownloadRegistry downloadRegistry;
-    private final AppleMusicCommandExecutor commandExecutor;
+    private final com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor;
 
     private final ConcurrentHashMap<String, Process> activeProcesses = new ConcurrentHashMap<>();
 
@@ -39,7 +39,7 @@ public class AppleMusicClient implements MusicSourcePort {
     public AppleMusicClient(ITunesSearchClient searchClient,
                             DownloadMonitorService monitorService,
                             ActiveDownloadRegistry downloadRegistry,
-                            AppleMusicCommandExecutor commandExecutor) {
+                            com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor) {
         this.searchClient = searchClient;
         this.monitorService = monitorService;
         this.downloadRegistry = downloadRegistry;
@@ -100,7 +100,7 @@ public class AppleMusicClient implements MusicSourcePort {
                 monitorService.stopMonitoring(releaseId);
             });
 
-            Process process = commandExecutor.execute(
+            Process process = commandExecutor.execute("gamdl",
                     gamdlPath,
                     url,
                     "--cookies-path", cookiesPath,

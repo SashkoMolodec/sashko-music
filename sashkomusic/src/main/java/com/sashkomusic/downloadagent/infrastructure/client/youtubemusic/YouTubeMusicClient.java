@@ -26,7 +26,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
     private static final String VIDEO_BASE = "https://music.youtube.com/watch?v=";
 
     private final RestClient scraperClient;
-    private final YouTubeMusicCommandExecutor commandExecutor;
+    private final com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor;
     private final DownloadMonitorService monitorService;
     private final ActiveDownloadRegistry downloadRegistry;
     private final ConcurrentHashMap<String, Process> activeProcesses = new ConcurrentHashMap<>();
@@ -45,7 +45,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
 
     public YouTubeMusicClient(RestClient.Builder builder,
                               @Value("${sm.scraper.url}") String scraperUrl,
-                              YouTubeMusicCommandExecutor commandExecutor,
+                              com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor commandExecutor,
                               DownloadMonitorService monitorService,
                               ActiveDownloadRegistry downloadRegistry) {
         this.scraperClient = builder.baseUrl(scraperUrl).build();
@@ -126,7 +126,7 @@ public class YouTubeMusicClient implements MusicSourcePort {
             });
 
             List<String> cmd = buildCommand(url, isSingle);
-            Process process = commandExecutor.execute(cmd.toArray(new String[0]));
+            Process process = commandExecutor.execute("yt-dlp", cmd.toArray(new String[0]));
             activeProcesses.put(releaseId, process);
             log.info("YouTube Music download completed for releaseId={}", releaseId);
             return isSingle ? videoId : playlistId;
