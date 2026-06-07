@@ -80,7 +80,15 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
         if (defaultChatId == null || defaultChatId == 0) return;
-        sendMessage(defaultChatId, "я знову тутка 👀");
+        try {
+            SendMessage.SendMessageBuilder<?, ?> b = SendMessage.builder()
+                    .chatId(defaultChatId)
+                    .text("я знову тутка 👀")
+                    .replyMarkup(DEFAULT_REPLY_KEYBOARD);
+            client.execute(b.build());
+        } catch (TelegramApiException e) {
+            log.error("❌ Failed to send startup keyboard to [{}]: {}", defaultChatId, e.getMessage());
+        }
     }
 
     @Override
@@ -99,15 +107,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         try {
             if (update.hasMessage() && update.getMessage().hasText()) {
                 Message msg = update.getMessage();
-                ConversationContext ctx = buildContext(msg);
+                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
                 if (!isAllowed(ctx)) return;
 
                 var text = msg.getText();
-                log.info("📩 Text from [{}]: {} | replyToMsgId={} threadId={} isTopic={}",
-                        ctx.conversationId(), text,
-                        msg.getReplyToMessage() != null ? msg.getReplyToMessage().getMessageId() : null,
-                        msg.getMessageThreadId(),
-                        msg.getIsTopicMessage());
+                log.info("📩 Text from [{}]: {}", ctx.conversationId(), text);
 
                 orchestrator.handleUserRequest(ctx, text)
                         .forEach(res -> sendResponse(ctx, res));
@@ -116,7 +120,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 var callback = update.getCallbackQuery();
                 var data = callback.getData();
                 Message msg = (Message) callback.getMessage();
-                ConversationContext ctx = buildContext(msg);
+                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
                 if (!isAllowed(ctx)) return;
 
                 log.info("👆 Click from [{}]: {}", ctx.conversationId(), data);
@@ -135,16 +139,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         }
     }
 
-    private ConversationContext buildContext(Message msg) {
-        Integer threadId = msg.getMessageThreadId();
-        boolean isTopic = Boolean.TRUE.equals(msg.getIsTopicMessage());
-        // In regular (non-forum) groups, replies produce a non-null messageThreadId too —
-        // echoing it back makes the bot's response render as a reply. Only treat real forum
-        // topics as topics; otherwise route as a plain chat message.
-        if (isTopic && threadId != null && threadId > 0) {
-            return ConversationContext.topic(msg.getChatId(), threadId);
+    private ConversationContext buildContext(long chatId, Integer threadId) {
+        if (threadId != null && threadId > 0) {
+            return ConversationContext.topic(chatId, threadId);
         }
-        return ConversationContext.dm(msg.getChatId());
+        return ConversationContext.dm(chatId);
     }
 
     private boolean isAllowed(ConversationContext ctx) {
@@ -156,7 +155,10 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
     public void sendResponse(ConversationContext ctx, BotResponse response) {
         var keyboardMarkup = createKeyboard(response.buttons(), response.buttonRows());
-        ReplyKeyboard outgoingMarkup = keyboardMarkup != null ? keyboardMarkup : DEFAULT_REPLY_KEYBOARD;
+        // Don't auto-attach DEFAULT_REPLY_KEYBOARD to every message — Telegram clients
+        // treat a tap on a keyboard "stuck" to the latest bot message as a reply to it.
+        // The reply keyboard is sent once at startup (isPersistent keeps it visible).
+        ReplyKeyboard outgoingMarkup = keyboardMarkup;
         String formattedText = response.preformatted()
                 ? response.text()
                 : TelegramHtmlFormatter.format(response.text());
