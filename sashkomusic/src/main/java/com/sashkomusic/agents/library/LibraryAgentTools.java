@@ -184,6 +184,7 @@ public class LibraryAgentTools {
             Use for: "створи смартлист X — house 2024 з рейтингом 4+", "make smartlist <name> with <rules>".
             Triggers a confirmation card with a 5-track preview and ✅/❌ buttons.
             Supported rules: year/comment/label/genre 'contains' a substring, rating range 1..5,
+            sublibrary 'is' or 'contains' (values: working, vault),
             or 'is' exact match (with null meaning the tag is absent — e.g. "rating is null" = unrated tracks).
             Conditions are joined with AND.
             """)
