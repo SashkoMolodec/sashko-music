@@ -92,7 +92,7 @@ public class TelegramDownloadLogStreamer {
 
         ConversationContext ctx = ConversationContext.topic(defaultChatId, logsTopicId);
         for (String chunk : splitChunks(body, MAX_BATCH_CHARS)) {
-            chatBot.sendMessage(ctx, "🎯 " + conversationId + "\n" + chunk);
+            chatBot.sendMessage(ctx, chunk);
         }
     }
 
