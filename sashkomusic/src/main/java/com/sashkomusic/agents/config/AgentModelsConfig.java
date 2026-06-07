@@ -35,15 +35,6 @@ public class AgentModelsConfig {
         return new PostgresChatMemoryStore(jdbcTemplate);
     }
 
-    @Bean("mainMemoryProvider")
-    public ChatMemoryProvider mainMemoryProvider(ChatMemoryStore store) {
-        return convId -> MessageWindowChatMemory.builder()
-                .maxMessages(32)
-                .id(convId)
-                .chatMemoryStore(store)
-                .build();
-    }
-
     @Bean("discoveryMemoryProvider")
     public ChatMemoryProvider discoveryMemoryProvider(ChatMemoryStore store) {
         return convId -> MessageWindowChatMemory.builder()

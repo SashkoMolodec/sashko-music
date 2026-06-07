@@ -2,14 +2,13 @@ package com.sashkomusic.mainagent.bot;
 
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.agents.config.AgentTraceListener;
-import com.sashkomusic.agents.config.ChatLogMemoryProvider;
+import com.sashkomusic.agents.config.MainChatMemoryProvider;
 import com.sashkomusic.agents.contract.DiscoverRequest;
 import com.sashkomusic.agents.contract.LibraryRequest;
 import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.main.MainAgent;
 import com.sashkomusic.libraryagent.config.SublibraryMigrationRunner;
-import com.sashkomusic.mainagent.bot.state.ChatLogService;
 import com.sashkomusic.mainagent.download.DownloadContextHolder;
 import com.sashkomusic.mainagent.library.DjTagContextHolder;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
@@ -18,9 +17,6 @@ import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +38,6 @@ public class UserInteractionOrchestrator {
     private final MainAgent mainAgent;
     private final ChatResponseAccumulator responseAccumulator;
     private final CallbackDispatcher callbackDispatcher;
-    private final ChatLogService chatLogService;
     private final DiscoveryAgentService discoveryAgentService;
     private final LibraryAgentService libraryAgentService;
     private final List<OngoingFlow> ongoingFlows;
@@ -56,11 +51,9 @@ public class UserInteractionOrchestrator {
     private final LastReleaseContextHolder lastReleaseContextHolder;
     private final SublibraryMigrationRunner sublibraryMigrationRunner;
     private final ChatMemoryStore chatMemoryStore;
-    private final ChatLogMemoryProvider chatLogMemoryProvider;
+    private final MainChatMemoryProvider mainMemoryProvider;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
-        chatLogService.log(ctx.conversationId(), "user", rawInput, "telegram");
-
         if (rawInput.trim().equalsIgnoreCase("стоп")) {
             return clearAllCaches(ctx);
         }
@@ -153,11 +146,8 @@ public class UserInteractionOrchestrator {
         List<BotResponse> all = new ArrayList<>(drained);
         boolean hasCard = drained.stream().anyMatch(r -> r.buttons() != null || r.buttonRows() != null);
         if (!hasCard && !result.summary().isBlank()) all.add(BotResponse.text(result.summary()));
-        String logText = all.stream().map(BotResponse::text).filter(Objects::nonNull)
-                .collect(Collectors.joining("\n"));
-        if (!logText.isBlank()) chatLogService.log(ctx.conversationId(), "assistant", logText, "library");
         if (!result.summary().isBlank()) {
-            appendToMainMemory(ctx.conversationId(), "/library " + query, result.summary());
+            mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/library " + query, result.summary());
         }
         return all;
     }
@@ -171,28 +161,14 @@ public class UserInteractionOrchestrator {
         if (result.summary() != null && !result.summary().isBlank()) all.add(BotResponse.aiText(result.summary()));
         String summary = result.summary() != null ? result.summary() : "";
         if (!summary.isBlank()) {
-            chatLogService.log(ctx.conversationId(), "assistant", summary, "discovery");
-            appendToMainMemory(ctx.conversationId(), "/discovery " + query, summary);
+            mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/discovery " + query, summary);
         }
         return all;
     }
 
-    private void appendToMainMemory(String conversationId, String userText, String assistantText) {
-        try {
-            List<ChatMessage> messages = new ArrayList<>(chatMemoryStore.getMessages(conversationId));
-            messages.add(UserMessage.from(userText));
-            messages.add(AiMessage.from(assistantText));
-            chatMemoryStore.updateMessages(conversationId, messages);
-        } catch (Exception e) {
-            log.warn("Failed to append to main memory for {}: {}", conversationId, e.getMessage());
-        }
-    }
-
     private List<BotResponse> clearContext(ConversationContext ctx) {
         log.info("Clearing context for conversation {}", ctx.conversationId());
-        chatLogService.deleteConversation(ctx.conversationId());
-        chatLogMemoryProvider.clear(ctx.conversationId());
-        chatMemoryStore.deleteMessages(ctx.conversationId());
+        mainMemoryProvider.clear(ctx.conversationId());
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");
         return List.of(BotResponse.text("🧹 контекст чату очищено"));
@@ -204,8 +180,7 @@ public class UserInteractionOrchestrator {
         downloadContextHolder.clearAllSessions();
         djTagContextHolder.clearAllContexts();
         lastReleaseContextHolder.clear(ctx.conversationId());
-        chatLogMemoryProvider.clear(ctx.conversationId());
-        chatMemoryStore.deleteMessages(ctx.conversationId());
+        mainMemoryProvider.clear(ctx.conversationId());
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":d");
         chatMemoryStore.deleteMessages(ctx.conversationId() + ":lib");
         return List.of(BotResponse.text("🧹 усі кеші очищено"));
