@@ -102,6 +102,7 @@ public class NavidromeClient {
                 .queryParam("c", config.getClientName())
                 .queryParam("f", "json");
 
+        builder.queryParam("fullScan", "true");
         if (folderPath != null && !folderPath.isEmpty()) {
             builder.queryParam("target", config.getLibraryId() + ":" + folderPath);
         }

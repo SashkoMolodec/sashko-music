@@ -143,7 +143,6 @@ services:
       - ND_SCANSCHEDULE=1h
       - ND_LOGLEVEL=info
       - ND_AUTOIMPORTPLAYLISTS=true
-      - ND_PLAYLISTSPATH=/music/smartlists
     volumes:
       - ${LIBRARY_ROOT_PATH}:/music:ro
       - navidrome_data:/data
