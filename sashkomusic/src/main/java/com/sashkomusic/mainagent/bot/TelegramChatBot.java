@@ -80,15 +80,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
         if (defaultChatId == null || defaultChatId == 0) return;
-        try {
-            SendMessage.SendMessageBuilder<?, ?> b = SendMessage.builder()
-                    .chatId(defaultChatId)
-                    .text("я знову тутка 👀")
-                    .replyMarkup(DEFAULT_REPLY_KEYBOARD);
-            client.execute(b.build());
-        } catch (TelegramApiException e) {
-            log.error("❌ Failed to send startup keyboard to [{}]: {}", defaultChatId, e.getMessage());
-        }
+        sendMessage(defaultChatId, "я знову тутка 👀");
     }
 
     @Override
@@ -155,10 +147,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
     public void sendResponse(ConversationContext ctx, BotResponse response) {
         var keyboardMarkup = createKeyboard(response.buttons(), response.buttonRows());
-        // Don't auto-attach DEFAULT_REPLY_KEYBOARD to every message — Telegram clients
-        // treat a tap on a keyboard "stuck" to the latest bot message as a reply to it.
-        // The reply keyboard is sent once at startup (isPersistent keeps it visible).
-        ReplyKeyboard outgoingMarkup = keyboardMarkup;
+        ReplyKeyboard outgoingMarkup = keyboardMarkup != null ? keyboardMarkup : DEFAULT_REPLY_KEYBOARD;
         String formattedText = response.preformatted()
                 ? response.text()
                 : TelegramHtmlFormatter.format(response.text());
