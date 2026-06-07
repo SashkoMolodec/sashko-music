@@ -6,17 +6,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 public class SearchContextService {
 
     private static final String FLOW_KEY = "search";
-
-    // In-memory cache for O(1) release lookups by ID.
-    // Rebuilt lazily from ChatStateStore after JVM restart.
-    private final Map<String, ReleaseMetadata> releaseMetadataCache = new ConcurrentHashMap<>();
 
     private final ChatStateStore stateStore;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
@@ -27,27 +22,19 @@ public class SearchContextService {
         this.searchEngines = searchEngines;
     }
 
-    public ReleaseMetadata getReleaseMetadata(String releaseId) {
-        return releaseMetadataCache.get(releaseId);
-    }
-
     public ReleaseMetadata getReleaseMetadata(String releaseId, String conversationId) {
-        ReleaseMetadata cached = releaseMetadataCache.get(releaseId);
-        if (cached != null) return cached;
-        loadContext(conversationId);
-        return releaseMetadataCache.get(releaseId);
-    }
-
-    public void saveReleaseMetadata(ReleaseMetadata metadata) {
-        releaseMetadataCache.put(metadata.id(), metadata);
+        return stateStore.get(conversationId, FLOW_KEY, SearchState.class)
+                .stream()
+                .flatMap(state -> state.releases().stream())
+                .filter(r -> releaseId.equals(r.id()))
+                .findFirst()
+                .orElse(null);
     }
 
     public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
                                   MetadataSearchRequest request, List<ReleaseMetadata> results) {
         LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
         results.forEach(r -> merged.put(r.id(), r));
-
-        merged.values().forEach(r -> releaseMetadataCache.put(r.id(), r));
         List<ReleaseMetadata> mergedReleases = new ArrayList<>(merged.values());
         List<String> releaseIds = mergedReleases.stream().map(ReleaseMetadata::id).toList();
         SearchContext context = new SearchContext(source, request, rawInput, releaseIds, 0);
@@ -61,12 +48,7 @@ public class SearchContextService {
     }
 
     public List<ReleaseMetadata> getSearchResults(String conversationId) {
-        SearchContext context = loadContext(conversationId)
-                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId));
-        return context.releaseIds().stream()
-                .map(releaseMetadataCache::get)
-                .filter(Objects::nonNull)
-                .toList();
+        return loadState(conversationId).releases();
     }
 
     public MetadataSearchRequest getSearchRequest(String conversationId) {
@@ -88,33 +70,27 @@ public class SearchContextService {
     }
 
     public ReleaseMetadata getMetadataWithTracks(String releaseId, String conversationId) {
-        ReleaseMetadata metadata = getReleaseMetadata(releaseId);
+        ReleaseMetadata metadata = getReleaseMetadata(releaseId, conversationId);
         if (metadata == null) {
-            log.warn("No metadata found for releaseId={}", releaseId);
+            log.warn("No metadata found for releaseId={} in conversation={}", releaseId, conversationId);
             return null;
         }
 
         if (metadata.trackTitles() != null && !metadata.trackTitles().isEmpty()) {
-            log.debug("Tracks already loaded for releaseId={}", releaseId);
             return metadata;
         }
 
         log.info("Fetching tracks for releaseId={}, source={}", releaseId, metadata.source());
-
         try {
-            SearchEngineService engine = searchEngines.get(metadata.source());
-
-            List<TrackMetadata> tracks = engine.getTracks(releaseId);
-
-            if (tracks != null && !tracks.isEmpty()) {
-                ReleaseMetadata enriched = metadata.withTracks(tracks);
-                saveReleaseMetadata(enriched);
-                log.info("Successfully fetched {} tracks for releaseId={}", tracks.size(), releaseId);
-                return enriched;
-            } else {
+            List<TrackMetadata> tracks = searchEngines.get(metadata.source()).getTracks(metadata);
+            if (tracks == null || tracks.isEmpty()) {
                 log.warn("No tracks returned from {} for releaseId={}", metadata.source(), releaseId);
                 return metadata;
             }
+            ReleaseMetadata enriched = metadata.withTracks(tracks);
+            replaceReleaseInState(conversationId, enriched);
+            log.info("Fetched {} tracks for releaseId={}", tracks.size(), releaseId);
+            return enriched;
         } catch (Exception e) {
             log.error("Failed to fetch tracks for releaseId={}: {}", releaseId, e.getMessage(), e);
             return metadata;
@@ -123,9 +99,9 @@ public class SearchContextService {
 
     public void updateCurrentPage(String conversationId, int page) {
         stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+            SearchContext old = state.context();
             SearchContext updated = new SearchContext(
-                    state.context().source(), state.context().request(),
-                    state.context().rawInput(), state.context().releaseIds(), page);
+                    old.source(), old.request(), old.rawInput(), old.releaseIds(), page);
             stateStore.put(conversationId, FLOW_KEY, new SearchState(updated, state.releases()));
         });
     }
@@ -146,18 +122,25 @@ public class SearchContextService {
     }
 
     public void clearAllCaches() {
-        int releasesCount = releaseMetadataCache.size();
-        releaseMetadataCache.clear();
         int cleared = stateStore.clearAll(FLOW_KEY);
-        log.info("Cleared search state: {} releases cached, {} conversations in store", releasesCount, cleared);
+        log.info("Cleared search state: {} conversations", cleared);
     }
 
-    // Loads SearchContext from store, rebuilds release cache as a side-effect.
     private Optional<SearchContext> loadContext(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::context);
+    }
+
+    private SearchState loadState(String conversationId) {
         return stateStore.get(conversationId, FLOW_KEY, SearchState.class)
-                .map(state -> {
-                    state.releases().forEach(r -> releaseMetadataCache.putIfAbsent(r.id(), r));
-                    return state.context();
-                });
+                .orElseThrow(() -> new SearchSessionExpiredException("Search session not found for conversation: " + conversationId));
+    }
+
+    private void replaceReleaseInState(String conversationId, ReleaseMetadata replacement) {
+        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+            List<ReleaseMetadata> updated = state.releases().stream()
+                    .map(r -> r.id().equals(replacement.id()) ? replacement : r)
+                    .toList();
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), updated));
+        });
     }
 }

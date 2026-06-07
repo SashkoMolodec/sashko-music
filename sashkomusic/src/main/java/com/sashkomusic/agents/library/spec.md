@@ -25,7 +25,7 @@ public interface LibraryAgent {
 }
 ```
 
-Built in `LibraryAgentConfig` with `haikuChatModel` + `libraryMemoryProvider` (16-message window).
+Built in `LibraryAgentConfig` with `haikuChatModel` + `libraryMemoryProvider` (16-message window, backed by `PostgresChatMemoryStore` → `conversation_messages` table under key `<conversationId>:lib`).
 
 `LibraryAgentService.handle(LibraryRequest)` calls `libraryAgent.chat(conversationId + ":lib", naturalCommand)`
 and wraps the reply into `LibraryResult.ok(summary)`. Same contract — transports unchanged.
@@ -39,7 +39,9 @@ record LibraryRequest(String conversationId, String naturalCommand)
 record LibraryResult(boolean success, String summary)
 ```
 
-`summary` — short Ukrainian status string surfaced back to MainAgent (or logged to `chat_log` by orchestrator for slash path).
+`summary` — short Ukrainian status string surfaced back to MainAgent. For slash path (`/library <query>`),
+`UserInteractionOrchestrator` also calls `MainChatMemoryProvider.appendUserAndAi(conversationId, "/library " + query, summary)`
+so MainAgent sees the activity in its persistent memory (`conversation_messages` under `<conversationId>`).
 
 ---
 
@@ -54,6 +56,13 @@ record LibraryResult(boolean success, String summary)
 | `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → pushes confirmation card (RM_OK/RM_NO buttons) into accumulator |
 | `listSublibraries()` | "які vaults", "куди можна перенести" | Returns config list `library.sublibraries` |
 
+### Processing / reprocessing (release-level)
+
+| Tool | Trigger | Action |
+|------|---------|--------|
+| `processFolder(folderHint)` | "обробити папку X", "process Y", "опрацюй цей даунлоад" | `ProcessFolderFlowService.process` — empty hint = most recent download |
+| `reprocessRelease(target, skipRetag, force)` | "переобробити X", "перетегни все", "reprocess all" | Builds `/reprocess` command, delegates to `ReprocessReleasesFlowService.handle` |
+
 ### DJ tagging (track-level)
 
 Require active `/np` track in `DjTagContextHolder`.
@@ -64,8 +73,6 @@ Require active `/np` track in `DjTagContextHolder`.
 | `setEnergy(level)` | "energy N", "енергія N" | `DjTagFlowService.setDjEnergy` |
 | `setFunction(name)` | "intro / tool / banger / closer" + UA aliases | `DjTagFlowService.setDjFunction` |
 | `addComment(text)` | "comment <text>", "коментар <text>" | `DjTagFlowService.addComment` |
-
-> **Note:** `processFolder` і `reprocessRelease` видалені з LibraryAgent tools. Функціонал process/reprocess залишається в libraryagent FlowServices але не доступний через slash-команду або LLM tool — запускається внутрішньо.
 
 ---
 
@@ -117,7 +124,6 @@ On disk: `lib/<sublibrary>/<artist>/<album>/…`. Navidrome multi-library and Tr
 - Filesystem writes outside relocation / trash (those belong to `processFolder` services)
 - Direct discovery — searches that hit external APIs go to `DiscoveryAgent`
 - Slash command parsing (`/np`, `/remove-release`, `/migrate-sublibs`) — handled by `UserInteractionOrchestrator`
-- Process / reprocess LLM tools — функціонал існує в FlowServices але не виставлений як `@Tool`
 
 ---
 

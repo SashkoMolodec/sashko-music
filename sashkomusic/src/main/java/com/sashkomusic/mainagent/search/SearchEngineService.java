@@ -14,6 +14,11 @@ public interface SearchEngineService {
 
     List<TrackMetadata> getTracks(String releaseId);
 
+    /** Default delegates to id-based fetch — overridden by engines that need richer context (e.g. Bandcamp needs masterId URL). */
+    default List<TrackMetadata> getTracks(ReleaseMetadata release) {
+        return getTracks(release.id());
+    }
+
     String getName();
 
     SearchEngine getSource();

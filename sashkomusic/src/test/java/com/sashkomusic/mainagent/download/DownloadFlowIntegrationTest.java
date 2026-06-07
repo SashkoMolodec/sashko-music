@@ -56,11 +56,13 @@ class DownloadFlowIntegrationTest {
     void seed() {
         searchContext.clearAllCaches();
         downloadContext.clearAllSessions();
-        searchContext.saveReleaseMetadata(new ReleaseMetadata(
+        ReleaseMetadata release = new ReleaseMetadata(
                 RELEASE_ID, null, SearchEngine.MUSICBRAINZ,
                 "Burial", "Untrue", 100,
                 List.of("2007"), List.of("Album"), 13, 13, 1,
-                List.of(), null, List.of(), null));
+                List.of(), null, List.of(), null);
+        searchContext.saveSearchContext(CTX.conversationId(), SearchEngine.MUSICBRAINZ, "burial untrue",
+                null, List.of(release));
     }
 
     @Test

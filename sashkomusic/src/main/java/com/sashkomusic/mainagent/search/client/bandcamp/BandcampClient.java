@@ -1,7 +1,6 @@
 package com.sashkomusic.mainagent.search.client.bandcamp;
 
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
-import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
@@ -11,7 +10,6 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -25,13 +23,10 @@ public class BandcampClient implements SearchEngineService {
 
     private final RestClient scraperClient;
     private final RestClient bandcampClient;
-    private final SearchContextService contextHolder;
 
     public BandcampClient(
             RestClient.Builder builder,
-            @Lazy SearchContextService contextHolder,
             @Value("${sm.scraper.url}") String scraperUrl) {
-        this.contextHolder = contextHolder;
         this.scraperClient = builder.baseUrl(scraperUrl).build();
         this.bandcampClient = builder
                 .baseUrl("https://bandcamp.com")
@@ -118,27 +113,30 @@ public class BandcampClient implements SearchEngineService {
         return List.of();
     }
 
-    @CircuitBreaker(name = "bandcampClient", fallbackMethod = "getTracksFallback")
-    @Retry(name = "bandcampClient")
     @Override
     public List<TrackMetadata> getTracks(String releaseId) {
-        log.info("Fetching tracklist from Bandcamp for release ID: {}", releaseId);
+        // Bandcamp needs the album URL (stored in masterId), not just the id — use getTracks(ReleaseMetadata).
+        log.warn("BandcampClient.getTracks(String) called without metadata; cannot resolve album URL for id={}", releaseId);
+        return List.of();
+    }
 
-        ReleaseMetadata metadata = contextHolder.getReleaseMetadata(releaseId);
-        if (metadata == null || metadata.masterId() == null) {
-            log.warn("No metadata found for release ID: {}", releaseId);
+    @CircuitBreaker(name = "bandcampClient", fallbackMethod = "getTracksByMetadataFallback")
+    @Retry(name = "bandcampClient")
+    @Override
+    public List<TrackMetadata> getTracks(ReleaseMetadata release) {
+        log.info("Fetching tracklist from Bandcamp for release ID: {}", release.id());
+        if (release.masterId() == null) {
+            log.warn("Bandcamp release has no masterId (URL) — cannot fetch tracks for id={}", release.id());
             return List.of();
         }
-
-        ReleaseMetadata withTracks = getReleaseByUrl(metadata.masterId());
+        ReleaseMetadata withTracks = getReleaseByUrl(release.masterId());
         if (withTracks == null || withTracks.tracks() == null) return List.of();
-
-        log.info("Found {} tracks for release {}", withTracks.tracks().size(), releaseId);
+        log.info("Found {} tracks for release {}", withTracks.tracks().size(), release.id());
         return withTracks.tracks();
     }
 
-    public List<TrackMetadata> getTracksFallback(String releaseId, Exception e) {
-        log.warn("Bandcamp getTracks fallback triggered for release ID '{}': {}", releaseId, e.getMessage());
+    public List<TrackMetadata> getTracksByMetadataFallback(ReleaseMetadata release, Exception e) {
+        log.warn("Bandcamp getTracks fallback for release '{}': {}", release.id(), e.getMessage());
         return List.of();
     }
 

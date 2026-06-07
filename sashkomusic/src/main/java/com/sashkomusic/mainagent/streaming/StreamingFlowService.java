@@ -36,7 +36,7 @@ public class StreamingFlowService {
         String releaseId = callbackData.substring("STREAM:".length());
         return releaseId.isEmpty()
                 ? getPlatformLinksForSearch(ctx)
-                : getPlatformLinks(releaseId);
+                : getPlatformLinks(ctx.conversationId(), releaseId);
     }
 
     public Map<String, String> getPlatformLinksForSearch(ConversationContext ctx) {
@@ -44,10 +44,10 @@ public class StreamingFlowService {
         return buildPlatformSearchLinks(searchRequest.artist(), searchRequest.getTitle());
     }
 
-    public Map<String, String> getPlatformLinks(String releaseId) {
-        ReleaseMetadata metadata = searchContextService.getReleaseMetadata(releaseId);
+    public Map<String, String> getPlatformLinks(String conversationId, String releaseId) {
+        ReleaseMetadata metadata = searchContextService.getReleaseMetadata(releaseId, conversationId);
         if (metadata == null) {
-            log.warn("No metadata found for releaseId={}", releaseId);
+            log.warn("No metadata found for releaseId={} in conversation={}", releaseId, conversationId);
             return Map.of("▶️", "URL:https://youtube.com");
         }
         return buildPlatformSearchLinks(metadata.artist(), metadata.title());

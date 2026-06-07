@@ -2,9 +2,11 @@ package com.sashkomusic.agents.main;
 
 import com.sashkomusic.agents.bridge.ProgressNotifier;
 import com.sashkomusic.agents.contract.DiscoverRequest;
+import com.sashkomusic.agents.contract.DownloadRequest;
 import com.sashkomusic.agents.contract.LibraryRequest;
 import com.sashkomusic.agents.contract.LibraryResult;
 import com.sashkomusic.agents.discovery.DiscoveryAgentService;
+import com.sashkomusic.agents.download.DownloadAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import dev.langchain4j.agent.tool.P;
@@ -19,6 +21,7 @@ public class MainAgentTools {
 
     private final DiscoveryAgentService discoveryAgent;
     private final LibraryAgentService libraryAgent;
+    private final DownloadAgentService downloadAgent;
     private final ProgressNotifier progressNotifier;
 
     @Tool("Delegate any music discovery or research request to DiscoveryAgent — searching for releases, digging deeper, asking about artists, genres, labels, history. Use for anything curiosity/exploration related.")
@@ -33,7 +36,17 @@ public class MainAgentTools {
     public String manageLibrary(
             @P("the user's natural-language library command, verbatim") String command,
             @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "📚 бібліотека...");
         LibraryResult result = libraryAgent.handle(new LibraryRequest(conversationId, command));
         return result.summary();
+    }
+
+    @Tool("Start downloading a release the user is asking for by artist/album text (e.g. 'скачай Roberto Carlos 1976'). Do NOT use for button-driven downloads — those go through CallbackDispatcher.")
+    public String downloadMusic(
+            @P("artist name, or empty if unknown") String artist,
+            @P("album / release title, or empty if unknown") String album,
+            @ToolMemoryId String conversationId) {
+        progressNotifier.notify(ConversationContext.from(conversationId), "⬇️ качаю...");
+        return downloadAgent.handle(DownloadRequest.byQuery(conversationId, artist, album)).summary();
     }
 }

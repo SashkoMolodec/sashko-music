@@ -170,7 +170,6 @@ public class MusicDownloadFlowService {
 
         contextService.saveSearchContext(ctx.conversationId(), searchResult.engine(), query,
                 searchResult.searchRequest(), searchResult.releases());
-        contextService.saveReleaseMetadata(selectedRelease);
 
         List<BotResponse> responses = new ArrayList<>();
         responses.add(releaseSearchFlowService.buildReleaseDownloadCard(selectedRelease, searchResult.engine()));

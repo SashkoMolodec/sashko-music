@@ -286,7 +286,6 @@ public class ProcessFolderFlowService {
         searchContextService.saveSearchContext(ctx.conversationId(), primarySource, folderName, searchRequest, all);
 
         List<String> releaseIds = all.stream()
-                .peek(searchContextService::saveReleaseMetadata)
                 .map(ReleaseMetadata::id)
                 .toList();
 

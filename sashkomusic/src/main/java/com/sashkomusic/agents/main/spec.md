@@ -31,15 +31,15 @@ public interface MainAgent {
 
 | Параметр | Значення |
 |----------|----------|
-| Модель | `claude-sonnet-4-5` (override: `agents.main.model-name`) |
+| Модель | `claude-sonnet-4-6` (override: `agents.main.model-name`) |
 | maxTokens | 2048 |
 | Memory window | 32 messages |
-| Memory provider | `ChatLogBackedChatMemory` (backed by `chat_log` table) |
+| Memory provider | `MainChatMemoryProvider` (backed by `PostgresChatMemoryStore` → `conversation_messages` table) |
 | Prompt caching | `cacheSystemMessages=true`, `cacheTools=true` |
 
-`ChatLogBackedChatMemory` завантажує останні N рядків з `chat_log` при кожному виклику — тому MainAgent бачить повідомлення всіх сесій (`/library`, `/discovery`, free-text). Фінальна `AiMessage` зберігається в `chat_log` з `source='main'`.
+`MainChatMemoryProvider` кешує `MessageWindowChatMemory` per conversationId, так що in-memory window і persistent store залишаються синхронізованими. Cross-agent context: `UserInteractionOrchestrator` викликає `mainMemoryProvider.appendUserAndAi(...)` після кожного `/discovery` чи `/library`, дописуючи чистий `UserMessage` + `AiMessage(summary)` в основну MainAgent memory.
 
-Sub-агенти мають **окремі** memory IDs (`conversationId + ":d"`, `conversationId + ":lib"`) — histories не перемішуються.
+Sub-агенти юзають той самий `PostgresChatMemoryStore` під **окремими** ключами (`conversationId + ":d"`, `conversationId + ":lib"`) — це гарантує що `tool_use`/`tool_result` ланцюжки агентів не перемішуються (Claude API вимагає цілісних пар), але cross-agent context передається через чисті summary-повідомлення в MainAgent memory.
 
 ---
 
@@ -48,7 +48,8 @@ Sub-агенти мають **окремі** memory IDs (`conversationId + ":d"`
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
 | `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів | `DiscoveryAgentService` → LLM path (Haiku) |
-| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
 
@@ -76,16 +77,16 @@ drain(conversationId) → drained cards  +  aiText(summary)  →  Telegram
 | `/discovery <query>` | `DiscoveryAgentService.handle()` | Haiku тільки |
 | `/np` | `NowPlayingFlowService.nowPlaying()` | ні |
 | `/newtopic` | `NewTopicFlowService.handle()` | ні |
-| `/clearctx` | `chatLogService.deleteConversation()` + `chatMemoryStore.deleteMessages()` | ні |
+| `/clearctx` | `mainMemoryProvider.clear()` + `chatMemoryStore.deleteMessages(":d"/":lib")` | ні |
 | `/remove-release` | `RemoveReleaseFlowService.handleCommand()` | ні |
 | `стоп` | `clearAllCaches()` | ні |
 
-Відповіді slash-команд логуються в `chat_log` оркестратором (user message + assistant response), тому MainAgent бачить їх контекст при наступному free-text запиті.
+Після `/discovery` і `/library` оркестратор викликає `mainMemoryProvider.appendUserAndAi(...)` що дописує summary в основну MainAgent memory (`conversation_messages` під `<conversationId>`). Тому MainAgent бачить активність slash-команд при наступному free-text запиті, а `/newtopic` може взяти цей контекст для seed нового топіка та генерації назви.
 
 ---
 
 ## Hard rules
-1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в `chat_log`).
+1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в memory window).
 2. Не вигадувати параметри — тільки те що сказав юзер.
 3. Не описувати release картки в тексті — вони вже в accumulator.
 4. Тільки MainAgent говорить до юзера. Sub-агенти → records/pushAll.
