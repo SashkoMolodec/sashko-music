@@ -53,17 +53,35 @@ class SmartlistCreationFlowServiceTest {
         when(smartlistService.describe(dsl)).thenReturn("genre contains \"house\" AND rating 4…5");
         when(smartlistService.previewTracks(any(), anyInt())).thenReturn(List.of(track("track A", "Artist")));
 
-        List<BotResponse> responses = sut.startCreate(ctx, "house 4plus", "house tracks rating 4+");
+        SmartlistCreationFlowService.StartResult result =
+                sut.startCreate(ctx, "house 4plus", "house tracks rating 4+");
 
+        assertThat(result.drafted()).isTrue();
+        assertThat(result.agentSummary()).contains("показав картку", "house 4plus");
         assertThat(sut.hasDraft(ctx)).isTrue();
         Optional<SmartlistDraft> stored = stateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class);
         assertThat(stored).isPresent();
         assertThat(stored.get().name()).isEqualTo("house 4plus");
-        assertThat(responses).hasSize(1);
-        BotResponse card = responses.get(0);
+        assertThat(result.responses()).hasSize(1);
+        BotResponse card = result.responses().get(0);
         assertThat(card.text()).contains("house 4plus", "genre contains", "Artist", "track A");
         assertThat(card.buttons()).containsKeys("✅ створити", "❌ скасувати");
         assertThat(card.buttons().values()).contains("SM:OK", "SM:NO");
+    }
+
+    @Test
+    void startCreate_returns_failure_summary_when_extractor_output_unparseable() {
+        when(extractor.extractJson(anyString(), anyString())).thenReturn("garbage");
+        when(smartlistService.parse("garbage")).thenThrow(new IllegalStateException("Failed to parse smartlist DSL"));
+
+        SmartlistCreationFlowService.StartResult result =
+                sut.startCreate(ctx, "x", "some rule");
+
+        assertThat(result.drafted()).isFalse();
+        assertThat(result.agentSummary()).startsWith("не створено");
+        assertThat(result.responses()).singleElement()
+                .satisfies(r -> assertThat(r.text()).contains("не зміг розібрати"));
+        assertThat(sut.hasDraft(ctx)).isFalse();
     }
 
     @Test

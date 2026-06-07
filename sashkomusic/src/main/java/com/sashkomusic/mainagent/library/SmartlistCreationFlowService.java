@@ -33,17 +33,28 @@ public class SmartlistCreationFlowService {
     private final ChatStateStore chatStateStore;
     private final ObjectMapper objectMapper;
 
-    public List<BotResponse> startCreate(ConversationContext ctx, String name, String naturalDescription) {
+    /**
+     * Outcome of a smartlist creation attempt. {@code responses} go to the chat;
+     * {@code agentSummary} is what the LLM tool sees as its return value — must
+     * truthfully reflect success / failure so the model does not narrate over an error.
+     */
+    public record StartResult(boolean drafted, List<BotResponse> responses, String agentSummary) {}
+
+    public StartResult startCreate(ConversationContext ctx, String name, String naturalDescription) {
         if (name == null || name.isBlank()) {
-            return List.of(BotResponse.text("❌ потрібна назва смартлиста"));
+            return new StartResult(false, List.of(BotResponse.text("❌ потрібна назва смартлиста")),
+                    "не створено: пуста назва смартлиста");
         }
         SmartlistDsl dsl = extract(naturalDescription, null);
         if (dsl == null || dsl.conditions().isEmpty()) {
-            return List.of(BotResponse.text("❌ не зміг розібрати умови — спробуй сформулювати інакше"));
+            return new StartResult(false,
+                    List.of(BotResponse.text("❌ не зміг розібрати умови — спробуй сформулювати інакше")),
+                    "не створено: не вдалось розібрати правила смартлиста — попроси юзера переформулювати");
         }
         SmartlistDraft draft = new SmartlistDraft(name.trim(), dsl);
         chatStateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, draft);
-        return buildPreviewCard(draft);
+        return new StartResult(true, buildPreviewCard(draft),
+                "показав картку підтвердження смартлиста '" + draft.name() + "'");
     }
 
     public boolean hasDraft(ConversationContext ctx) {

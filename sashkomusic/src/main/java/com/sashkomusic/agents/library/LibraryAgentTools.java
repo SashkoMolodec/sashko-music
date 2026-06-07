@@ -164,9 +164,10 @@ public class LibraryAgentTools {
             @P("natural-language description of the membership rules") String naturalDescription,
             @ToolMemoryId String conversationId) {
         String mainId = mainConversationId(conversationId);
-        accumulator.pushAll(mainId,
-                smartlistCreationFlowService.startCreate(ConversationContext.from(mainId), name, naturalDescription));
-        return "показав картку підтвердження смартлиста '" + name + "'";
+        SmartlistCreationFlowService.StartResult result =
+                smartlistCreationFlowService.startCreate(ConversationContext.from(mainId), name, naturalDescription);
+        accumulator.pushAll(mainId, result.responses());
+        return result.agentSummary();
     }
 
     @Tool("List all smart playlists with track counts and DSL rule. Use for: 'які в мене смартлисти', 'list smartlists'.")

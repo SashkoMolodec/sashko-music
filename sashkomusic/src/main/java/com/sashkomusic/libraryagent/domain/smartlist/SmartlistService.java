@@ -105,10 +105,33 @@ public class SmartlistService {
     }
 
     public SmartlistDsl parse(String json) {
+        String stripped = stripJsonFences(json);
         try {
-            return objectMapper.readValue(json, SmartlistDsl.class);
+            return objectMapper.readValue(stripped, SmartlistDsl.class);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to parse smartlist DSL: " + json, e);
+            throw new IllegalStateException("Failed to parse smartlist DSL: " + stripped, e);
         }
+    }
+
+    /**
+     * Strip Markdown code fences (```json ... ```) that LLMs sometimes wrap around
+     * JSON despite a "no fences" prompt. Idempotent for already-clean JSON.
+     */
+    private String stripJsonFences(String raw) {
+        if (raw == null) return "";
+        String t = raw.trim();
+        if (t.startsWith("```")) {
+            int nl = t.indexOf('\n');
+            if (nl >= 0) {
+                t = t.substring(nl + 1);
+            } else {
+                t = t.substring(3);
+            }
+            if (t.endsWith("```")) {
+                t = t.substring(0, t.length() - 3);
+            }
+            t = t.trim();
+        }
+        return t;
     }
 }
