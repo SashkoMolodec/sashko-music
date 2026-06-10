@@ -70,7 +70,11 @@ public class MusicDownloadFlowService {
 
         var flowHandler = downloadFlowHandlers.get(dto.source());
         var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.conversationId());
-        var reports = analysisResult.reports();
+        var reports = DownloadOptionsCardFormatter.trimToFit(analysisResult.reports(), analysisResult.aiSummary());
+        if (reports.size() < analysisResult.reports().size()) {
+            log.warn("Trimmed download options from {} to {} to fit Telegram message limit",
+                    analysisResult.reports().size(), reports.size());
+        }
         downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), reports);
 
         reports.forEach(r -> log.info("{}", r));

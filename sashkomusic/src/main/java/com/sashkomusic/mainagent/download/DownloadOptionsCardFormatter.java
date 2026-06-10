@@ -1,7 +1,9 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.mainagent.download.DownloadFlowHandler.OptionReport;
 import com.sashkomusic.mainagent.download.DownloadOption;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -12,6 +14,23 @@ public class DownloadOptionsCardFormatter {
     private static final Set<String> AUDIO_EXTENSIONS = Set.of(
             "flac", "mp3", "wav", "m4a", "aac", "alac", "aiff", "ogg", "wma", "ape"
     );
+
+    private static final int TELEGRAM_MAX_LENGTH = 4000;
+
+    /**
+     * Drops worst reports (from the tail of a suitability-sorted list) until the formatted text fits
+     * within Telegram's message limit. Returns the trimmed list; original is not mutated.
+     */
+    public static List<OptionReport> trimToFit(List<OptionReport> reports, String aiSummary) {
+        if (format(reports, aiSummary).length() <= TELEGRAM_MAX_LENGTH) {
+            return reports;
+        }
+        List<OptionReport> trimmed = new ArrayList<>(reports);
+        while (trimmed.size() > 1 && format(trimmed, aiSummary).length() > TELEGRAM_MAX_LENGTH) {
+            trimmed.removeLast();
+        }
+        return trimmed;
+    }
 
     public static String format(List<DownloadFlowHandler.OptionReport> reports, String aiSummary) {
         if (reports.isEmpty()) {
