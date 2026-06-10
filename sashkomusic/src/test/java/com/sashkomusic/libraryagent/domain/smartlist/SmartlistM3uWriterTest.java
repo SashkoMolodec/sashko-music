@@ -41,7 +41,7 @@ class SmartlistM3uWriterTest {
         Path result = writer.write("my list", List.of(t));
 
         assertThat(result).exists();
-        assertThat(result.getFileName().toString()).isEqualTo("my list.m3u8");
+        assertThat(result.getFileName().toString()).isEqualTo("my list.m3u");
         String content = Files.readString(result, StandardCharsets.UTF_8);
         assertThat(content).startsWith("#EXTM3U");
         assertThat(content).contains("#EXTINF:180,Artist Name - Song Title");
@@ -52,17 +52,17 @@ class SmartlistM3uWriterTest {
     @Test
     void rename_moves_file() throws Exception {
         writer.write("old", List.of());
-        assertThat(tempDir.resolve("smartlists/old.m3u8")).exists();
+        assertThat(tempDir.resolve("smartlists/old.m3u")).exists();
 
         assertThat(writer.rename("old", "new")).isTrue();
-        assertThat(tempDir.resolve("smartlists/old.m3u8")).doesNotExist();
-        assertThat(tempDir.resolve("smartlists/new.m3u8")).exists();
+        assertThat(tempDir.resolve("smartlists/old.m3u")).doesNotExist();
+        assertThat(tempDir.resolve("smartlists/new.m3u")).exists();
     }
 
     @Test
     void delete_removes_file() throws Exception {
         writer.write("doomed", List.of());
-        Path file = tempDir.resolve("smartlists/doomed.m3u8");
+        Path file = tempDir.resolve("smartlists/doomed.m3u");
         assertThat(file).exists();
 
         assertThat(writer.delete("doomed")).isTrue();
@@ -73,7 +73,7 @@ class SmartlistM3uWriterTest {
     @Test
     void sanitizes_unsafe_chars_in_name() throws Exception {
         Path result = writer.write("foo/bar:baz", List.of());
-        assertThat(result.getFileName().toString()).isEqualTo("foo_bar_baz.m3u8");
+        assertThat(result.getFileName().toString()).isEqualTo("foo_bar_baz.m3u");
     }
 
     private Track track(String title, int duration, String localPath, String artistName) {

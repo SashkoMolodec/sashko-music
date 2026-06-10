@@ -29,8 +29,8 @@ public class SmartlistM3uWriter {
         Path dir = directory();
         try {
             Files.createDirectories(dir);
-            Path target = dir.resolve(sanitize(smartlistName) + ".m3u8");
-            Path tmp = dir.resolve("." + sanitize(smartlistName) + ".m3u8.tmp");
+            Path target = dir.resolve(sanitize(smartlistName) + ".m3u");
+            Path tmp = dir.resolve("." + sanitize(smartlistName) + ".m3u.tmp");
 
             try (BufferedWriter w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
                 w.write("#EXTM3U");
@@ -58,7 +58,7 @@ public class SmartlistM3uWriter {
     }
 
     public boolean delete(String smartlistName) {
-        Path target = directory().resolve(sanitize(smartlistName) + ".m3u8");
+        Path target = directory().resolve(sanitize(smartlistName) + ".m3u");
         try {
             return Files.deleteIfExists(target);
         } catch (IOException e) {
@@ -68,8 +68,8 @@ public class SmartlistM3uWriter {
     }
 
     public boolean rename(String oldName, String newName) {
-        Path from = directory().resolve(sanitize(oldName) + ".m3u8");
-        Path to = directory().resolve(sanitize(newName) + ".m3u8");
+        Path from = directory().resolve(sanitize(oldName) + ".m3u");
+        Path to = directory().resolve(sanitize(newName) + ".m3u");
         if (!Files.exists(from)) return false;
         try {
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
