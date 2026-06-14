@@ -92,7 +92,14 @@ public class ProcessFolderFlowService {
             BotResponse header = BotResponse.text("📄 %d файлів, знайдено метадані:".formatted(audioFiles.size()));
 
             if (results.isEmpty()) {
-                return List.of(header, BotResponse.text("❌ нема шось метаданих"));
+                contextHolder.save(ctx.conversationId(), folder.path().toString(), audioFiles, List.of());
+                return List.of(header, BotResponse.text("""
+                        ❌ нема шось метаданих
+
+                        уточни пошук:
+                        • +Виконавець - Альбом
+                        • +рік або жанр
+                        • або скинь посилання на реліз"""));
             }
 
             saveSearchContext(ctx, folder.name(), searchRequest, results, folder.path(), audioFiles);
