@@ -24,7 +24,9 @@ RUN apt-get update && \
         libffi-dev && \
     pip3 install --break-system-packages Pillow streamrip "gamdl==2.8" bandcamp-downloader yt-dlp && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
+        sed -i "s/(?=eyJh)(.*?)(?=\")/(?=eyJ)(.*?)(?=\")/g" {} \;
 
 COPY --from=builder /app/sashkomusic/build/libs/*.jar app.jar
 COPY entrypoint.sh /app/entrypoint.sh
