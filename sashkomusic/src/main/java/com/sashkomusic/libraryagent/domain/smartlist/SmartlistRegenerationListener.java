@@ -1,6 +1,7 @@
 package com.sashkomusic.libraryagent.domain.smartlist;
 
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
+import com.sashkomusic.events.ReprocessReleaseCompleteEvent;
 import com.sashkomusic.events.SmartlistsRegeneratedEvent;
 import com.sashkomusic.events.TagChangesNotificationEvent;
 import com.sashkomusic.events.TrackAnalysisCompleteEvent;
@@ -41,6 +42,12 @@ public class SmartlistRegenerationListener {
     @Async("asyncExecutor")
     @EventListener
     public void onLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
+        regenerate();
+    }
+
+    @Async("asyncExecutor")
+    @EventListener
+    public void onReprocessComplete(ReprocessReleaseCompleteEvent event) {
         regenerate();
     }
 
