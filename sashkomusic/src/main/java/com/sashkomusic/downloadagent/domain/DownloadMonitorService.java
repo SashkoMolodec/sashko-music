@@ -34,6 +34,7 @@ public class DownloadMonitorService {
             "part", "tmp", "temp", "download", "crdownload", "partial"
     );
 
+    private static final Duration FOLDER_CREATION_TIMEOUT = Duration.ofHours(6);
     private static final Duration NO_FILES_TIMEOUT = Duration.ofMinutes(2);
     private static final Duration STALL_TIMEOUT = Duration.ofMinutes(5);
 
@@ -95,6 +96,15 @@ public class DownloadMonitorService {
 
                 Path downloadDir = findAlbumFolder(basePath, artist, title).orElse(null);
                 if (downloadDir == null) {
+                    if (task.isFolderCreationTimedOut()) {
+                        log.warn("Folder creation timed out after 6h: taskId={}, artist={}, title={}",
+                                taskId, artist, title);
+                        errorProducer.sendError(DownloadErrorDto.of(
+                                task.conversationId(),
+                                "не вдалося знайти папку завантаження за 6 годин: «" + artist + " — " + title + "»"
+                        ));
+                        return true;
+                    }
                     log.info("Album folder not yet created for: {} - {}", artist, title);
                     return false;
                 }
@@ -305,6 +315,10 @@ public class DownloadMonitorService {
 
         public void resetStableChecks() {
             stableChecks = 0;
+        }
+
+        public boolean isFolderCreationTimedOut() {
+            return Duration.between(startedAt, Instant.now()).compareTo(FOLDER_CREATION_TIMEOUT) > 0;
         }
 
         public boolean isTimedOut() {
