@@ -22,7 +22,7 @@ RUN apt-get update && \
         libjpeg-dev \
         zlib1g-dev \
         libffi-dev && \
-    pip3 install --break-system-packages Pillow streamrip gamdl bandcamp-downloader yt-dlp && \
+    pip3 install --break-system-packages Pillow streamrip "gamdl==2.6.5" bandcamp-downloader yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
