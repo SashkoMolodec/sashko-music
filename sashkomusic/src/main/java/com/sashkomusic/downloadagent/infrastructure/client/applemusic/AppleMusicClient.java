@@ -106,7 +106,7 @@ public class AppleMusicClient implements MusicSourcePort {
                     "--cookies-path", cookiesPath,
                     "--output-path", outputPath,
                     "--language", "uk",
-                    "--codec-song", "aac-legacy"
+                    "--song-codec", "aac-legacy"
             );
 
             activeProcesses.put(releaseId, process);
