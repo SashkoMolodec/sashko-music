@@ -50,6 +50,10 @@ public class ProcessCommandExecutor {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("[download]") && (line.contains("ETA") || line.contains("frag "))) {
+                        log.debug("[{}] {}", logTag, line);
+                        continue;
+                    }
                     log.info("[{}] {}", logTag, line);
                     if (conversationId != null && !line.isBlank()) {
                         eventPublisher.publishEvent(new DownloadLogLineEvent(conversationId, logTag, line));
