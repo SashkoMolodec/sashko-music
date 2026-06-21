@@ -111,6 +111,12 @@ public class AppleMusicClient implements MusicSourcePort {
 
             activeProcesses.put(releaseId, process);
 
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                activeProcesses.remove(releaseId);
+                throw new MusicDownloadException("gamdl завершився з кодом " + exitCode + " для " + url);
+            }
+
             log.info("Apple Music download completed");
 
             String batchId = option.technicalMetadata().get("albumId");
