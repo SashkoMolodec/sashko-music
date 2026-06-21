@@ -7,7 +7,7 @@ COPY sashkomusic ./sashkomusic
 
 RUN gradle :sashkomusic:bootJar --no-daemon
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-noble
 
 WORKDIR /app
 
