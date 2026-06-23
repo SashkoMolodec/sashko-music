@@ -22,7 +22,10 @@ RUN apt-get update && \
         libjpeg-dev \
         zlib1g-dev \
         libffi-dev && \
-    pip3 install --break-system-packages Pillow "streamrip>=2.0,<3" "gamdl==2.8" bandcamp-downloader yt-dlp && \
+    pip3 install --break-system-packages Pillow "gamdl==2.8" bandcamp-downloader yt-dlp && \
+    python3 -m venv /opt/streamrip-venv && \
+    /opt/streamrip-venv/bin/pip install "streamrip>=2.0,<3" && \
+    ln -s /opt/streamrip-venv/bin/rip /usr/local/bin/rip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
