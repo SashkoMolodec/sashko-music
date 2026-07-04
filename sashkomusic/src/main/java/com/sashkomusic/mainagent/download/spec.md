@@ -108,6 +108,69 @@ String formatDownloadConfirmation(DownloadOption option);
 
 ---
 
+## Soulseek search — детально
+
+Soulseek — єдиний P2P-движок, що потребує активного пошуку і аналізу варіантів. Решта (Qobuz, Apple, Bandcamp, YTM) — API, один результат, без LLM.
+
+### Фаза 1 — пошук файлів (`SlskdClient.search()`, downloadagent)
+
+```
+query = artist + " " + release
+POST /api/v0/searches { searchText, searchTimeout=20s, responseLimit=70, filterResponses=true, minimumResponseFileCount=1 }
+  → polling GET /api/v0/searches/{id} кожні 3s до isComplete=true або 20s timeout
+       └─ кожна зміна fileCount → DownloadLogLineEvent (прогрес у логи-канал Telegram)
+  → після complete: 10s stabilization delay (якщо fileCount > 0)
+GET /api/v0/searches/{id}/responses → List<SlskdSearchEntryResponse>
+```
+
+**Фільтри (у `toDomain()`):**
+1. Є аудіо-файли (`files` not empty)
+2. Нема заблокованих (`lockedFileCount == 0`)
+3. Доступний для завантаження (`hasFreeUploadSlot == true`)
+
+**Групування (`splitByAlbumFolder`):** файли одного peer групуються по батьківській папці шляху → кожна папка = окремий `DownloadOption`. Один peer може дати кілька опцій (кілька альбомів).
+
+**Ліміт:** safety cap 200 папок після всіх фільтрів (`.limit(200)` на stream). `responseLimit` у запиті до slskd — 150 пірів.
+
+**Fallback:** якщо 0 результатів → `NoSearchResultsException` → Resilience4j retry. Якщо retry вичерпані → circuit breaker → `searchFallback()` повертає `List.of()`.
+
+### Фаза 2 — аналіз варіантів (`SoulseekDownloadFlowHandler.analyzeAll()`, mainagent)
+
+```
+SearchContextService.getMetadataWithTracks(releaseId, conversationId)
+  → ReleaseMetadata { artist, title, minTracks, trackTitles[] }   // ground truth з MusicBrainz
+
+для кожного DownloadOption:
+  resolveSuitabilityLevel(opt, expected)
+    ├─ isLossless: >90% аудіо-файлів мають розширення flac/wav/aiff/alac
+    ├─ diff = audioFilesCount - expected.minTracks()
+    └─ PERFECT   : lossless && diff == 0
+       GOOD      : lossless && diff > 0  (бонус-треки)
+       WARNING   : |diff| ≤ 2  або  !lossless
+       BAD       : !lossless && diff > 2
+
+сортування: PERFECT → GOOD → WARNING → BAD
+.limit(10)  ← ріжемо тут, після sort — Haiku бачить топ-10 по якості
+
+DownloadBatchAnalyzer.analyze(artist, album, tracklist, optionsText)   // Haiku LLM
+  → 2-3 речення укр., plain text, без markdown
+  → відмічає: бонус-треки, неповні, remaster, vinyl rips
+  → ігнорує стандартні/повні видання — пише тільки про відмінності
+  → завершує рекомендацією ("беріть опцію 1 або 2")
+```
+
+`DownloadBatchAnalyzer` отримує **всі 10 опцій одним викликом** — не по одній. `buildOptionsText()` конкатенує їх у єдиний текст (`Option 1:\n...\nOption 2:\n...`), Haiku пише один загальний summary. Це єдиний LLM-виклик у всьому download-потоці. Всі інші движки детерміновані.
+
+### Де відображається результат
+
+`DownloadOptionsCardFormatter` → якщо `files` не порожні (Soulseek):
+- `"1️⃣ **displayName** (suitability)"` + кількість файлів + список перших 7
+- `aiSummary` від `DownloadBatchAnalyzer` — `"💡 _summary_"` в кінці картки
+
+`SoulseekDownloadFlowHandler.buildSearchResultsResponse()` не додає ALT-кнопок (Soulseek — вже останній резерв).
+
+---
+
 ## DownloadContextHolder (стан сесії)
 
 Персистується через `ChatStateStore` (flow_key: `"dl_ctx"`). Переживає рестарт JVM — кнопки DLOPT на старих картках залишаються робочими.

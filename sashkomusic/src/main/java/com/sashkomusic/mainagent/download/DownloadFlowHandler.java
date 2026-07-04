@@ -14,6 +14,10 @@ public interface DownloadFlowHandler {
 
     String formatDownloadConfirmation(DownloadOption option);
 
+    default boolean appendDefaultCancelRow() {
+        return true;
+    }
+
     record OptionReport(
             DownloadOption option,
             Suitability suitability

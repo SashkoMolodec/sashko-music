@@ -81,7 +81,7 @@ public class MusicDownloadFlowService {
 
         String text = DownloadOptionsCardFormatter.format(reports, analysisResult.aiSummary());
         BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source());
-        return List.of(mergeWithSelectionButtons(sourceCard, reports));
+        return List.of(mergeWithSelectionButtons(sourceCard, reports, flowHandler.appendDefaultCancelRow()));
     }
 
     public List<BotResponse> handleDownloadOptionCallback(ConversationContext ctx, String data) {
@@ -118,7 +118,7 @@ public class MusicDownloadFlowService {
         return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));
     }
 
-    private BotResponse mergeWithSelectionButtons(BotResponse sourceCard, List<DownloadFlowHandler.OptionReport> reports) {
+    private BotResponse mergeWithSelectionButtons(BotResponse sourceCard, List<DownloadFlowHandler.OptionReport> reports, boolean appendCancelRow) {
         List<List<BotResponse.ButtonDto>> allRows = new ArrayList<>();
 
         // Convert flat source-switch buttons to a single row
@@ -142,7 +142,7 @@ public class MusicDownloadFlowService {
             }
         }
         if (!row.isEmpty()) allRows.add(List.copyOf(row));
-        allRows.add(List.of(new BotResponse.ButtonDto("❌", "DLOPT:cancel")));
+        if (appendCancelRow) allRows.add(List.of(new BotResponse.ButtonDto("❌", "DLOPT:cancel")));
 
         return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false);
     }

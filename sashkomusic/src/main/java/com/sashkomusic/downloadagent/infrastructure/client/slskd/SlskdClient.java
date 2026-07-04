@@ -32,7 +32,7 @@ import java.util.stream.Stream;
 @Slf4j
 public class SlskdClient implements MusicSourcePort {
 
-    private static final long POLL_TIMEOUT_MS = 20_000;
+    private static final long POLL_TIMEOUT_MS = 40_000;
     private static final long POLL_INTERVAL_MS = 3_000;
     private static final long STABILIZATION_DELAY_MS = 10_000;
 
@@ -66,7 +66,7 @@ public class SlskdClient implements MusicSourcePort {
     @CircuitBreaker(name = "slskdClient", fallbackMethod = "searchFallback")
     @Retry(name = "slskdClient")
     public List<DownloadOption> search(String artist, String release, String conversationId) {
-        var query = artist + " " + release;
+        var query = (artist + " " + release).strip();
         log.info("🔄 Soulseek search attempt for: {}", query);
         emit(conversationId, "🔍 search: " + query);
 
@@ -101,7 +101,7 @@ public class SlskdClient implements MusicSourcePort {
         Map<String, Object> searchRequest = Map.of(
                 "searchText", query,
                 "searchTimeout", (int) POLL_TIMEOUT_MS,
-                "responseLimit", 70,
+                "responseLimit", 150,
                 "filterResponses", true,
                 "minimumResponseFileCount", 1,
                 "minimumPeerUploadSpeed", 0
@@ -212,7 +212,7 @@ public class SlskdClient implements MusicSourcePort {
                 .filter(r -> r.lockedFileCount() == 0)
                 .filter(SlskdSearchEntryResponse::canDownload)
                 .flatMap(this::splitByAlbumFolder)
-                .limit(10)
+                .limit(200)
                 .toList();
     }
 

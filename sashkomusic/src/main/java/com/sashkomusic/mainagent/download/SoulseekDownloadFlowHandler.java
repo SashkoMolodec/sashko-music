@@ -32,6 +32,7 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
         var reports = options.stream()
                 .map(opt -> new OptionReport(opt, resolveSuitabilityLevel(opt, enrichedMetadata)))
                 .sorted(Comparator.comparing(OptionReport::suitability))
+                .limit(10)
                 .toList();
 
         var sortedOptions = reports.stream()
@@ -53,7 +54,18 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
 
     @Override
     public BotResponse buildSearchResultsResponse(String formattedText, String releaseId, DownloadEngine currentSource) {
-        return BotResponse.text(formattedText);
+        return BotResponse.withMultiRowButtons(formattedText, List.of(
+                List.of(
+                        new BotResponse.ButtonDto("🔍", "SLSK_CUSTOM:" + releaseId),
+                        new BotResponse.ButtonDto("⛏️", "SEARCH_ALT:" + releaseId + ":SOULSEEK"),
+                        new BotResponse.ButtonDto("❌", "DLOPT:cancel")
+                )
+        ));
+    }
+
+    @Override
+    public boolean appendDefaultCancelRow() {
+        return false;
     }
 
     @Override
@@ -85,8 +97,14 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
     }
 
     private Suitability resolveSuitabilityLevel(DownloadOption option, ReleaseMetadata expected) {
+        int expectedTrackCount = resolveExpectedTrackCount(expected);
+        if (expectedTrackCount == 0) {
+            return Suitability.WARNING;
+        }
+
         boolean isLossless = isLossless(option);
-        long diff = calculateTrackCountDiff(option, expected);
+        long audioFilesCount = option.files().stream().filter(f -> isAudio(f.filename())).count();
+        long diff = audioFilesCount - expectedTrackCount;
 
         if (isLossless && diff == 0) {
             return Suitability.PERFECT;
@@ -99,6 +117,13 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
         }
     }
 
+    private int resolveExpectedTrackCount(ReleaseMetadata expected) {
+        if (expected.tracks() != null && !expected.tracks().isEmpty()) {
+            return expected.tracks().size();
+        }
+        return expected.minTracks();
+    }
+
     private boolean isLossless(DownloadOption option) {
         long audioCount = option.files().stream().filter(f -> isAudio(f.filename())).count();
         if (audioCount == 0) return false;
@@ -108,13 +133,6 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                 .count();
 
         return (double) losslessCount / audioCount > 0.9;
-    }
-
-    private long calculateTrackCountDiff(DownloadOption option, ReleaseMetadata expected) {
-        long audioFilesCount = option.files().stream()
-                .filter(f -> isAudio(f.filename()))
-                .count();
-        return audioFilesCount - expected.minTracks();
     }
 
     private boolean isHighQualityFile(String name) {
