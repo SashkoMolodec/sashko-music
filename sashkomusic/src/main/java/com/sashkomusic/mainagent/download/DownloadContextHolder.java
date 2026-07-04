@@ -15,12 +15,16 @@ import java.util.List;
 public class DownloadContextHolder {
 
     private static final String FLOW_KEY = "dl_ctx";
+    static final int PAGE_SIZE = 10;
 
     private final ChatStateStore stateStore;
 
-    public void saveDownloadOptions(String conversationId, String releaseId, List<DownloadFlowHandler.OptionReport> optionReports) {
-        log.debug("Saving download options for conversation: {}, releaseId: {}", conversationId, releaseId);
-        stateStore.put(conversationId, FLOW_KEY, new DownloadContext(releaseId, optionReports));
+    public void saveDownloadOptions(String conversationId, String releaseId,
+                                    List<DownloadFlowHandler.OptionReport> currentPage,
+                                    List<DownloadFlowHandler.OptionReport> allReports,
+                                    DownloadEngine source) {
+        log.debug("Saving download options for conversation: {}, releaseId: {}, total: {}", conversationId, releaseId, allReports.size());
+        stateStore.put(conversationId, FLOW_KEY, new DownloadContext(releaseId, currentPage, allReports, 0, source));
     }
 
     public List<DownloadFlowHandler.OptionReport> getDownloadOptions(String conversationId) {
@@ -29,9 +33,45 @@ public class DownloadContextHolder {
                 .orElse(List.of());
     }
 
+    public boolean hasNextPage(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(ctx -> (ctx.currentPage() + 1) * PAGE_SIZE < ctx.allReports().size())
+                .orElse(false);
+    }
+
+    public int getTotalCount(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(ctx -> ctx.allReports().size())
+                .orElse(0);
+    }
+
+    public int getCurrentPage(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(DownloadContext::currentPage)
+                .orElse(0);
+    }
+
+    public List<DownloadFlowHandler.OptionReport> advancePage(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class).map(ctx -> {
+            int nextPage = ctx.currentPage() + 1;
+            int from = nextPage * PAGE_SIZE;
+            int to = Math.min(from + PAGE_SIZE, ctx.allReports().size());
+            List<DownloadFlowHandler.OptionReport> next = ctx.allReports().subList(from, to);
+            stateStore.put(conversationId, FLOW_KEY,
+                    new DownloadContext(ctx.chosenReleaseId(), next, ctx.allReports(), nextPage, ctx.source()));
+            return next;
+        }).orElse(List.of());
+    }
+
     public String getChosenRelease(String conversationId) {
         return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
                 .map(DownloadContext::chosenReleaseId)
+                .orElse(null);
+    }
+
+    public DownloadEngine getSource(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
+                .map(DownloadContext::source)
                 .orElse(null);
     }
 
@@ -52,6 +92,9 @@ public class DownloadContextHolder {
 
     public record DownloadContext(
             String chosenReleaseId,
-            List<DownloadFlowHandler.OptionReport> optionReports
+            List<DownloadFlowHandler.OptionReport> optionReports,
+            List<DownloadFlowHandler.OptionReport> allReports,
+            int currentPage,
+            DownloadEngine source
     ) {}
 }

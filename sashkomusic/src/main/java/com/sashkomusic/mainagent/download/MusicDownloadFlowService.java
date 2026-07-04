@@ -70,18 +70,24 @@ public class MusicDownloadFlowService {
 
         var flowHandler = downloadFlowHandlers.get(dto.source());
         var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.conversationId());
-        var reports = DownloadOptionsCardFormatter.trimToFit(analysisResult.reports(), analysisResult.aiSummary());
-        if (reports.size() < analysisResult.reports().size()) {
-            log.warn("Trimmed download options from {} to {} to fit Telegram message limit",
-                    analysisResult.reports().size(), reports.size());
-        }
-        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), reports);
 
-        reports.forEach(r -> log.info("{}", r));
+        // All reports sorted; take first page for display
+        var allReports = analysisResult.reports();
+        var firstPage = DownloadOptionsCardFormatter.trimToFit(
+                allReports.stream().limit(DownloadContextHolder.PAGE_SIZE).toList(),
+                analysisResult.aiSummary());
 
-        String text = DownloadOptionsCardFormatter.format(reports, analysisResult.aiSummary());
+        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), firstPage, allReports, dto.source());
+        firstPage.forEach(r -> log.info("{}", r));
+
+        String text = DownloadOptionsCardFormatter.format(firstPage, analysisResult.aiSummary());
         BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source());
-        return List.of(mergeWithSelectionButtons(sourceCard, reports, flowHandler.appendDefaultCancelRow()));
+        BotResponse merged = mergeWithSelectionButtons(sourceCard, firstPage, flowHandler.appendDefaultCancelRow());
+
+        if (downloadContextHolder.hasNextPage(dto.conversationId())) {
+            merged = appendNextPageButton(merged, dto.releaseId(), 0, allReports.size());
+        }
+        return List.of(merged);
     }
 
     public List<BotResponse> handleDownloadOptionCallback(ConversationContext ctx, String data) {
@@ -145,6 +151,38 @@ public class MusicDownloadFlowService {
         if (appendCancelRow) allRows.add(List.of(new BotResponse.ButtonDto("❌", "DLOPT:cancel")));
 
         return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false);
+    }
+
+    public List<BotResponse> handleNextPage(ConversationContext ctx, String data) {
+        String releaseId = data.substring("DLNEXT:".length());
+        var nextReports = downloadContextHolder.advancePage(ctx.conversationId());
+        if (nextReports.isEmpty()) {
+            return List.of(BotResponse.text("більше варіантів нема"));
+        }
+
+        int page = downloadContextHolder.getCurrentPage(ctx.conversationId());
+        int total = downloadContextHolder.getTotalCount(ctx.conversationId());
+        DownloadEngine source = downloadContextHolder.getSource(ctx.conversationId());
+        var flowHandler = downloadFlowHandlers.get(source != null ? source : DownloadEngine.SOULSEEK);
+
+        String text = DownloadOptionsCardFormatter.format(nextReports, "");
+        BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, releaseId, source);
+        BotResponse merged = mergeWithSelectionButtons(sourceCard, nextReports, flowHandler.appendDefaultCancelRow());
+
+        if (downloadContextHolder.hasNextPage(ctx.conversationId())) {
+            merged = appendNextPageButton(merged, releaseId, page, total);
+        }
+        return List.of(merged);
+    }
+
+    private BotResponse appendNextPageButton(BotResponse response, String releaseId, int currentPage, int total) {
+        List<List<BotResponse.ButtonDto>> rows = new ArrayList<>();
+        if (response.buttonRows() != null) rows.addAll(response.buttonRows());
+        int shown = (currentPage + 1) * DownloadContextHolder.PAGE_SIZE;
+        rows.add(List.of(new BotResponse.ButtonDto(
+                "➡️ ще %d".formatted(Math.min(DownloadContextHolder.PAGE_SIZE, total - shown)),
+                "DLNEXT:" + releaseId)));
+        return new BotResponse(response.text(), response.imageUrl(), null, rows, null, false);
     }
 
     private static String indexIcon(int i) {

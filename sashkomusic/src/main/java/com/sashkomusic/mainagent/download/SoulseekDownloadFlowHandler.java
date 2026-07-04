@@ -32,7 +32,7 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
         final var enrichedMetadata = contextService.getMetadataWithTracks(releaseId, conversationId);
         int expectedTrackCount = enrichedMetadata != null ? resolveExpectedTrackCount(enrichedMetadata) : 0;
         log.info("Expected track count from metadata: {}", expectedTrackCount);
-        var reports = options.stream()
+        var allReports = options.stream()
                 .map(opt -> new OptionReport(opt, resolveSuitabilityLevel(opt, enrichedMetadata)))
                 .sorted(Comparator.comparing(OptionReport::suitability)
                         .thenComparingInt(r -> {
@@ -40,19 +40,15 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                             long audio = r.option().files().stream().filter(f -> isAudio(f.filename())).count();
                             return (int) Math.abs(audio - expectedTrackCount);
                         }))
-                .limit(10)
                 .toList();
 
-        var sortedOptions = reports.stream()
-                .map(OptionReport::option)
-                .toList();
-
-        StringBuilder optionsText = buildOptionsText(sortedOptions);
+        var firstPage = allReports.stream().limit(DownloadContextHolder.PAGE_SIZE).toList();
 
         if (enrichedMetadata == null) {
-            return new AnalysisResult(reports, "");
+            return new AnalysisResult(allReports, "");
         }
 
+        StringBuilder optionsText = buildOptionsText(firstPage.stream().map(OptionReport::option).toList());
         String tracklist = String.join("\n", enrichedMetadata.trackTitles());
 
         String aiSummary = downloadBatchAnalyzer.analyze(
@@ -62,7 +58,7 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                 optionsText.toString()
         );
 
-        return new AnalysisResult(reports, aiSummary);
+        return new AnalysisResult(allReports, aiSummary);
     }
 
     @Override

@@ -39,6 +39,7 @@ public class CallbackDispatcher {
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
         handlers.put("DLOPT:", (ctx, data, msgId) -> download.handleDownloadOptionCallback(ctx, data));
+        handlers.put("DLNEXT:", (ctx, data, msgId) -> download.handleNextPage(ctx, data));
         handlers.put("SEARCH_ALT:", (ctx, data, msgId) -> download.handleSearchAlternative(ctx, data));
         handlers.put("SLSK_CUSTOM:", (ctx, data, msgId) -> soulseekCustomSearch.handleCallback(ctx, data));
         handlers.put("DL:", (ctx, data, msgId) -> download.handleDownload(ctx, data));
