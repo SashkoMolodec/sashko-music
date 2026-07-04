@@ -13,6 +13,7 @@ import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdSearch
 import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdSearchEventResponse;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -20,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +36,17 @@ public class SlskdClient implements MusicSourcePort {
 
     private static final long POLL_TIMEOUT_MS = 40_000;
     private static final long POLL_INTERVAL_MS = 3_000;
-    private static final long STABILIZATION_DELAY_MS = 10_000;
+    private static final int RESULTS_MAX_ATTEMPTS = 120; // 120 * 5s = 10 min
+    private static final long RESULTS_POLL_INTERVAL_MS = 5_000;
+
+    private final io.github.resilience4j.retry.Retry searchResultsRetry = io.github.resilience4j.retry.Retry.of(
+            "slskdSearchResults",
+            RetryConfig.custom()
+                    .maxAttempts(RESULTS_MAX_ATTEMPTS)
+                    .waitDuration(Duration.ofMillis(RESULTS_POLL_INTERVAL_MS))
+                    .retryExceptions(EmptyResponsesException.class)
+                    .build()
+    );
 
     private final RestClient client;
     private final String apiKey;
@@ -72,9 +84,8 @@ public class SlskdClient implements MusicSourcePort {
 
         var searchId = initiateSearchRequest(query);
         int fileCount = waitForSearchToComplete(searchId, conversationId);
-        waitToStabilize(fileCount);
 
-        List<DownloadOption> results = getSearchResults(searchId);
+        List<DownloadOption> results = getSearchResultsWithRetry(searchId, fileCount, conversationId);
 
         if (results.isEmpty()) {
             log.warn("❌ No results found for query: {}, throwing exception to trigger retry", query);
@@ -166,20 +177,7 @@ public class SlskdClient implements MusicSourcePort {
         return finalCount;
     }
 
-    private static void waitToStabilize(int fileCount) {
-        if (fileCount > 0) {
-            try {
-                log.debug("Waiting {}ms for results to stabilize...", STABILIZATION_DELAY_MS);
-                Thread.sleep(STABILIZATION_DELAY_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        } else {
-            log.info("No files found, skipping stabilization wait");
-        }
-    }
-
-    private SlskdSearchEventResponse getSearchStatus(UUID searchId) {
+private SlskdSearchEventResponse getSearchStatus(UUID searchId) {
         return client.get()
                 .uri("/api/v0/searches/{id}", searchId)
                 .header("X-API-KEY", apiKey)
@@ -187,13 +185,52 @@ public class SlskdClient implements MusicSourcePort {
                 .body(SlskdSearchEventResponse.class);
     }
 
-    private List<DownloadOption> getSearchResults(UUID searchId) {
+    private List<DownloadOption> getSearchResultsWithRetry(UUID searchId, int fileCount, String conversationId) {
+        if (fileCount == 0) {
+            try {
+                return fetchAndClassify(searchId, conversationId);
+            } catch (EmptyResponsesException e) {
+                return List.of();
+            }
+        }
+
+        try {
+            return searchResultsRetry.executeCallable(() -> fetchAndClassify(searchId, conversationId));
+        } catch (EmptyResponsesException e) {
+            log.warn("Responses still empty after 10-min retry window for searchId={}", searchId);
+            emit(conversationId, "⏱ 10 хв чекання — так і не прийшло жодних responses");
+            return List.of();
+        } catch (Exception e) {
+            log.error("Unexpected error while polling search results for {}: {}", searchId, e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    private List<DownloadOption> fetchAndClassify(UUID searchId, String conversationId) {
         List<SlskdSearchEntryResponse> responses = client.get()
                 .uri("/api/v0/searches/{id}/responses", searchId.toString())
                 .header("X-API-KEY", apiKey)
                 .retrieve()
                 .body(new ParameterizedTypeReference<>() {
                 });
+
+        if (responses == null || responses.isEmpty()) {
+            log.warn("Empty raw responses for searchId={}, will retry", searchId);
+            emit(conversationId, "⏳ ще нема responses, чекаю...");
+            throw new EmptyResponsesException("no responses yet for " + searchId);
+        }
+
+        long canDl = responses.stream()
+                .filter(r -> r.files() != null && !r.files().isEmpty())
+                .filter(r -> r.lockedFileCount() == 0)
+                .filter(SlskdSearchEntryResponse::canDownload)
+                .count();
+
+        if (canDl == 0) {
+            log.warn("Got {} responses but 0 canDownload for searchId={}, aborting retries", responses.size(), searchId);
+            emit(conversationId, "❌ %d responses є, але жодне не піддається завантаженню".formatted(responses.size()));
+            return List.of();
+        }
 
         return toDomain(responses);
     }

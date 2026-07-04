@@ -12,6 +12,7 @@ import com.sashkomusic.events.ChatContextClearedEvent;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
+import com.sashkomusic.mainagent.download.DirectSoulseekSearchFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,6 +39,7 @@ public class UserInteractionOrchestrator {
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
     private final NewTopicFlowService newTopicFlowService;
+    private final DirectSoulseekSearchFlowService directSoulseekSearchFlowService;
     private final MainChatMemoryProvider mainMemoryProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final TelegramLogsChannel logsChannel;
@@ -134,6 +136,9 @@ public class UserInteractionOrchestrator {
         }
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
             return nowPlayingFlowService.nowPlaying(ctx);
+        }
+        if (rawInput.toLowerCase().startsWith("копай ")) {
+            return directSoulseekSearchFlowService.search(ctx, rawInput.substring("копай ".length()));
         }
         return Collections.emptyList();
     }

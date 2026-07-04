@@ -7,16 +7,17 @@ import com.sashkomusic.mainagent.download.DownloadOption;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
 
     private final DownloadBatchAnalyzer downloadBatchAnalyzer;
@@ -29,9 +30,16 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
         }
 
         final var enrichedMetadata = contextService.getMetadataWithTracks(releaseId, conversationId);
+        int expectedTrackCount = enrichedMetadata != null ? resolveExpectedTrackCount(enrichedMetadata) : 0;
+        log.info("Expected track count from metadata: {}", expectedTrackCount);
         var reports = options.stream()
                 .map(opt -> new OptionReport(opt, resolveSuitabilityLevel(opt, enrichedMetadata)))
-                .sorted(Comparator.comparing(OptionReport::suitability))
+                .sorted(Comparator.comparing(OptionReport::suitability)
+                        .thenComparingInt(r -> {
+                            if (expectedTrackCount == 0) return 0;
+                            long audio = r.option().files().stream().filter(f -> isAudio(f.filename())).count();
+                            return (int) Math.abs(audio - expectedTrackCount);
+                        }))
                 .limit(10)
                 .toList();
 
@@ -40,6 +48,11 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                 .toList();
 
         StringBuilder optionsText = buildOptionsText(sortedOptions);
+
+        if (enrichedMetadata == null) {
+            return new AnalysisResult(reports, "");
+        }
+
         String tracklist = String.join("\n", enrichedMetadata.trackTitles());
 
         String aiSummary = downloadBatchAnalyzer.analyze(
@@ -97,7 +110,7 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
     }
 
     private Suitability resolveSuitabilityLevel(DownloadOption option, ReleaseMetadata expected) {
-        int expectedTrackCount = resolveExpectedTrackCount(expected);
+        int expectedTrackCount = expected != null ? resolveExpectedTrackCount(expected) : 0;
         if (expectedTrackCount == 0) {
             return Suitability.WARNING;
         }
