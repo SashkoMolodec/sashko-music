@@ -259,8 +259,21 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .replyMarkup(keyboardMarkup)
                         .build());
             } catch (TelegramApiException ex) {
-                log.error("❌ Failed to edit message {} in [{}]: {}",
+                log.warn("Failed to edit caption for message {} in [{}]: {}. Falling back to text edit.",
                         messageId, ctx.conversationId(), ex.getMessage());
+                try {
+                    client.execute(EditMessageText.builder()
+                            .chatId(ctx.chatId())
+                            .messageId(messageId)
+                            .text(formattedText)
+                            .parseMode("HTML")
+                            .disableWebPagePreview(true)
+                            .replyMarkup(keyboardMarkup)
+                            .build());
+                } catch (TelegramApiException ex2) {
+                    log.error("❌ Failed to edit message {} in [{}]: {}",
+                            messageId, ctx.conversationId(), ex2.getMessage());
+                }
             }
         }
     }
