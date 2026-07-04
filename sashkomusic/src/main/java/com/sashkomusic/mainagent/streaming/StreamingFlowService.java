@@ -23,10 +23,38 @@ public class StreamingFlowService {
     public List<BotResponse> handleStreamingPlatforms(ConversationContext ctx, String callbackData) {
         try {
             var platforms = handleStreamingCallback(ctx, callbackData);
-            return List.of(BotResponse.withButtons("🤝 послухай туво", platforms));
+            String releaseId = callbackData.substring("STREAM:".length());
+            List<BotResponse> responses = new java.util.ArrayList<>();
+
+            if (!releaseId.isEmpty()) {
+                String tracklist = buildTracklistText(ctx.conversationId(), releaseId);
+                if (!tracklist.isBlank()) {
+                    responses.add(BotResponse.text(tracklist));
+                }
+            }
+
+            responses.add(BotResponse.withButtons("🤝 послухай туво", platforms));
+            return responses;
         } catch (Exception e) {
             log.error("Error getting streaming platforms: {}", e.getMessage(), e);
             return List.of(BotResponse.text("Не вдалося знайти стрімінгові платформи 😔"));
+        }
+    }
+
+    private String buildTracklistText(String conversationId, String releaseId) {
+        try {
+            var metadata = searchContextService.getMetadataWithTracks(releaseId, conversationId);
+            if (metadata == null || metadata.tracks() == null || metadata.tracks().isEmpty()) return "";
+
+            var sb = new StringBuilder();
+            sb.append("_").append(metadata.artist()).append(" — ").append(metadata.title()).append("_\n");
+            for (var track : metadata.tracks()) {
+                sb.append(track.number()).append(". ").append(track.title().toLowerCase()).append("\n");
+            }
+            return sb.toString().stripTrailing();
+        } catch (Exception e) {
+            log.warn("Could not fetch tracklist for releaseId={}: {}", releaseId, e.getMessage());
+            return "";
         }
     }
 
