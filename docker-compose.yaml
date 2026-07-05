@@ -23,7 +23,7 @@ services:
     ports:
       - "5030:5030"
       - "5031:5031"
-      - "443:443"
+      - "50000:50000"
     volumes:
       - slskd_app:/app/data
       - ./slskd/config/slskd.yml:/app/slskd.yml:ro
