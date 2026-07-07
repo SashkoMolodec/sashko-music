@@ -28,6 +28,7 @@ public class NewTopicFlowService {
     private final ConversationTopicStore topicStore;
     private final TopicNameGenerator topicNameGenerator;
     private final ChatMemoryStore chatMemoryStore;
+    private final ForumTopicIconService forumTopicIconService;
 
     /** @param topicName already extracted from the command, empty string means auto-generate */
     public List<BotResponse> handle(ConversationContext ctx, String topicName) {
@@ -36,8 +37,12 @@ public class NewTopicFlowService {
         }
 
         try {
-            ForumTopic created = telegramClient.execute(
-                    new CreateForumTopic(String.valueOf(ctx.chatId()), topicName));
+            String iconId = forumTopicIconService.pickIconId(topicName).orElse(null);
+            ForumTopic created = telegramClient.execute(CreateForumTopic.builder()
+                    .chatId(String.valueOf(ctx.chatId()))
+                    .name(topicName)
+                    .iconCustomEmojiId(iconId)
+                    .build());
             int newTopicId = created.getMessageThreadId();
 
             topicStore.save(ctx.chatId(), newTopicId, topicName);

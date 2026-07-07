@@ -1,6 +1,7 @@
 package com.sashkomusic.config;
 
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
+import com.sashkomusic.mainagent.bot.newtopic.TopicEmojiPicker;
 import com.sashkomusic.mainagent.bot.newtopic.TopicNameGenerator;
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
 import com.sashkomusic.mainagent.process.MetadataSuggester;
@@ -42,6 +43,11 @@ public class AiExtractorsConfig {
     @Bean
     public TopicNameGenerator topicNameGenerator(@Qualifier("haikuChatModel") ChatModel haiku) {
         return AiServices.builder(TopicNameGenerator.class).chatModel(haiku).build();
+    }
+
+    @Bean
+    public TopicEmojiPicker topicEmojiPicker(@Qualifier("haikuChatModel") ChatModel haiku) {
+        return AiServices.builder(TopicEmojiPicker.class).chatModel(haiku).build();
     }
 
     @Bean
