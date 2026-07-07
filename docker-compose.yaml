@@ -62,6 +62,7 @@ services:
       - ICECAST_TIMEOUT_MS=${ICECAST_TIMEOUT_MS:-5000}
       - SLSKD_API_KEY=${SLSKD_API_KEY}
       - SLSKD_BASE_URL=http://slskd:5030
+      - SLSKD_SOULSEEK_USERNAME=${SLSKD_SOULSEEK_USERNAME:}
       - SLSKD_DOWNLOAD_PATH=${SLSKD_DOWNLOAD_PATH}
       - QOBUZ_EMAIL=${QOBUZ_EMAIL}
       - QOBUZ_PASSWORD=${QOBUZ_PASSWORD}
@@ -122,6 +123,11 @@ services:
       dockerfile: Dockerfile
       platforms:
         - linux/amd64
+      cache_from:
+        - localhost/sm-audio-analyzer:latest
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+    image: localhost/sm-audio-analyzer:latest
     container_name: sm_audio_analyzer
     environment:
       - ANALYSIS_RESULTS_PATH=${ANALYSIS_RESULTS_PATH}

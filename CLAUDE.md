@@ -157,6 +157,7 @@ libraryagent         →  TrackUpdateResultEvent             →  mainagent
 libraryagent         →  TagChangesNotificationEvent        →  mainagent (TagChangesNotificationListener → TelegramLogsChannel)
 libraryagent         →  SmartlistsRegeneratedEvent         →  mainagent (SmartlistLogListener → TelegramLogsChannel)
 libraryagent         →  SmartlistsChangedEvent             →  mainagent (NavidromeSmartlistScanListener → NavidromeClient.triggerScan(smartlists/))
+downloadagent        →  SlskdPrivateMessageReceivedEvent   →  mainagent (SlskdPrivateMessageNotificationListener → TelegramChatBot main chat)
 mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider
 mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheService, DownloadContextHolder, DjTagContextHolder, LastReleaseContextHolder, SmartlistCreationFlowService
 ```
