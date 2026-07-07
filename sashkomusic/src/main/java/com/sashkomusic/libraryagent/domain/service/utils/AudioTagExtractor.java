@@ -41,6 +41,18 @@ public class AudioTagExtractor {
                 extractCustomTags((AbstractID3v2Tag) tag, tags);
             }
 
+            // For MP3, FieldKey.RATING maps to POPM which jaudiotagger doesn't round-trip
+            // reliably. Fall back to TXXX:RATING WMP which is written consistently.
+            String txxx = tags.get("TXXX:RATING WMP");
+            if (txxx != null && !txxx.isBlank()) {
+                if (!tags.containsKey("RATING") || "0".equals(tags.get("RATING"))) {
+                    tags.put("RATING", txxx);
+                }
+                if (!tags.containsKey("RATING WMP") || "0".equals(tags.get("RATING WMP"))) {
+                    tags.put("RATING WMP", txxx);
+                }
+            }
+
             log.debug("Extracted {} tags from: {}", tags.size(), audioFile.getFileName());
 
         } catch (Exception e) {
