@@ -45,7 +45,23 @@ public class TrackService {
     }
 
     public Optional<TrackDto> findByArtistAndTitleOptional(String artist, String title) {
-        return trackRepository.findByArtistAndTitle(artist, title).stream().findFirst().map(this::toDto);
+        Optional<Track> found = trackRepository.findByArtistAndTitle(artist, title).stream().findFirst();
+        if (found.isPresent()) return found.map(this::toDto);
+
+        // Multi-artist string (e.g. "Medway • Friends") — try each individual name
+        List<String> parts = Arrays.stream(artist.split("[•,&/]|feat\\.|ft\\."))
+                .map(String::strip)
+                .filter(s -> !s.isBlank())
+                .toList();
+
+        if (parts.size() > 1) {
+            for (String part : parts) {
+                found = trackRepository.findByArtistAndTitle(part, title).stream().findFirst();
+                if (found.isPresent()) return found.map(this::toDto);
+            }
+        }
+
+        return Optional.empty();
     }
 
     private TrackDto toDto(Track track) {
