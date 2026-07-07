@@ -47,7 +47,7 @@ public interface TrackTagRepository extends JpaRepository<TrackTag, Long> {
     @Query(nativeQuery = true, value = """
         INSERT INTO track_tags (track_id, tag_name, tag_value, last_synced_at)
         VALUES (:trackId, :tagName, :tagValue, NOW())
-        ON CONFLICT ON CONSTRAINT uktracktag
+        ON CONFLICT ON CONSTRAINT uk_track_tag
         DO UPDATE SET tag_value = EXCLUDED.tag_value, last_synced_at = EXCLUDED.last_synced_at
         """)
     void upsertTag(@Param("trackId") Long trackId,
