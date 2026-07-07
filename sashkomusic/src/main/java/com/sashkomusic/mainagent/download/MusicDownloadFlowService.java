@@ -31,6 +31,7 @@ public class MusicDownloadFlowService {
     private final DownloadContextHolder downloadContextHolder;
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers;
+    private final SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview;
 
     public List<BotResponse> handleDownload(ConversationContext ctx, String data) {
         if (data.startsWith("DL:")) {
@@ -117,9 +118,13 @@ public class MusicDownloadFlowService {
         String releaseId = downloadContextHolder.getChosenRelease(ctx.conversationId());
         log.info("User chose option #{}: {} from {}", index, option.id(), option.displayName());
 
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
         downloadContextHolder.clearSession(ctx.conversationId());
 
+        if (option.source() == DownloadEngine.SOULSEEK) {
+            return soulseekDirectoryPreview.fetchAndShowPreview(ctx, releaseId, option);
+        }
+
+        downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
         var flowHandler = downloadFlowHandlers.get(option.source());
         return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));
     }

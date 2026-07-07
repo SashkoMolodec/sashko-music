@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.bot;
 
 import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import com.sashkomusic.mainagent.download.SoulseekCustomSearchFlowService;
+import com.sashkomusic.mainagent.download.SoulseekDirectoryPreviewFlowService;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
@@ -27,6 +28,7 @@ public class CallbackDispatcher {
     public CallbackDispatcher(ReleaseSearchFlowService search,
                               MusicDownloadFlowService download,
                               SoulseekCustomSearchFlowService soulseekCustomSearch,
+                              SoulseekDirectoryPreviewFlowService soulseekDirPreview,
                               ProcessFolderFlowService processFolder,
                               StreamingFlowService streaming,
                               NowPlayingFlowService nowPlaying,
@@ -42,6 +44,8 @@ public class CallbackDispatcher {
         handlers.put("DLNEXT:", (ctx, data, msgId) -> download.handleNextPage(ctx, data));
         handlers.put("SEARCH_ALT:", (ctx, data, msgId) -> download.handleSearchAlternative(ctx, data));
         handlers.put("SLSK_CUSTOM:", (ctx, data, msgId) -> soulseekCustomSearch.handleCallback(ctx, data));
+        handlers.put("SLSK_DIR_OK", (ctx, data, msgId) -> soulseekDirPreview.handleConfirm(ctx));
+        handlers.put("SLSK_DIR_NO", (ctx, data, msgId) -> soulseekDirPreview.handleCancel(ctx));
         handlers.put("DL:", (ctx, data, msgId) -> download.handleDownload(ctx, data));
         handlers.put("STREAM:", (ctx, data, msgId) -> streaming.handleStreamingPlatforms(ctx, data));
         handlers.put("RATE:", (ctx, data, msgId) -> nowPlaying.handleRate(ctx, data));

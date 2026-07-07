@@ -39,6 +39,7 @@ import static org.mockito.Mockito.when;
 @Import({CallbackDispatcher.class, MusicDownloadFlowService.class,
         SearchFilesTaskProducer.class, DownloadTaskProducer.class,
         SearchContextService.class, DownloadContextHolder.class,
+        SoulseekDirectoryConfirmContextHolder.class,
         DownloadFlowIntegrationTest.TestConfig.class})
 class DownloadFlowIntegrationTest {
 
@@ -119,6 +120,15 @@ class DownloadFlowIntegrationTest {
         }
         @Bean com.sashkomusic.mainagent.library.SmartlistCreationFlowService smartlistCreationFlowService() {
             return mock(com.sashkomusic.mainagent.library.SmartlistCreationFlowService.class);
+        }
+        @Bean SoulseekCustomSearchFlowService soulseekCustomSearchFlowService() {
+            return mock(SoulseekCustomSearchFlowService.class);
+        }
+        @Bean SoulseekDirectoryPreviewFlowService soulseekDirectoryPreviewFlowService() {
+            return mock(SoulseekDirectoryPreviewFlowService.class);
+        }
+        @Bean com.sashkomusic.downloadagent.domain.SoulseekDirectoryService soulseekDirectoryService() {
+            return mock(com.sashkomusic.downloadagent.domain.SoulseekDirectoryService.class);
         }
     }
 }

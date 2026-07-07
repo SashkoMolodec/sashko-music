@@ -8,6 +8,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import com.sashkomusic.downloadagent.domain.exception.MusicDownloadException;
 import com.sashkomusic.mainagent.download.DownloadEngine;
 import com.sashkomusic.mainagent.download.DownloadOption;
+import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdDirectoryDto;
 import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdDownloadResponse;
 import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdSearchEntryResponse;
 import com.sashkomusic.downloadagent.infrastructure.client.slskd.dto.SlskdSearchEventResponse;
@@ -427,5 +428,16 @@ private SlskdSearchEventResponse getSearchStatus(UUID searchId) {
     public void handleDownloadCompletion(String conversationId, String releaseId, DownloadOption option, String downloadPath) {
         // Soulseek uses webhooks - no monitoring needed
         log.info("Soulseek download will be completed via webhook");
+    }
+
+    public List<SlskdDirectoryDto> fetchDirectory(String username, String directory) {
+        Map<String, String> body = Map.of("directory", directory);
+        return client.post()
+                .uri("/api/v0/users/{username}/directory", username)
+                .header("X-API-KEY", apiKey)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(new org.springframework.core.ParameterizedTypeReference<>() {});
     }
 }
