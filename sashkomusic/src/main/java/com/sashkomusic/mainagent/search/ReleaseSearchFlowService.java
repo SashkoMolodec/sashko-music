@@ -3,6 +3,7 @@ package com.sashkomusic.mainagent.search;
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
+import com.sashkomusic.mainagent.shared.model.DateRange;
 import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
 import com.sashkomusic.mainagent.search.SearchEngine;
 import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -28,6 +30,19 @@ public class ReleaseSearchFlowService {
     private final Map<SearchEngine, SearchEngineService> searchEngines;
     private final SearchContextService contextService;
     private final FileIdCacheService fileIdCacheService;
+    private final MetadataUrlFetcher metadataUrlFetcher;
+
+    public List<BotResponse> showByUrl(ConversationContext ctx, String url) {
+        Optional<ReleaseMetadata> result = metadataUrlFetcher.fetch(url);
+        if (result.isEmpty()) {
+            return List.of(BotResponse.text("😔 не вдалось знайти реліз за цим посиланням."));
+        }
+        ReleaseMetadata release = result.get();
+        MetadataSearchRequest request = new MetadataSearchRequest(
+                null, release.artist(), release.title(), "", DateRange.empty(), "", "", "", "", "", "", "");
+        contextService.saveSearchContext(ctx.conversationId(), release.source(), url, request, List.of(release));
+        return buildPageResponse(ctx, 0);
+    }
 
     public List<BotResponse> searchDefault(ConversationContext ctx, String rawInput) {
         var searchRequest = searchRequestExtractor.extract(rawInput);

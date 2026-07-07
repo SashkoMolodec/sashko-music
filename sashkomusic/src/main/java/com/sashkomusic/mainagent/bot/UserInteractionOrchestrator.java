@@ -13,6 +13,8 @@ import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import com.sashkomusic.mainagent.download.DirectSoulseekSearchFlowService;
+import com.sashkomusic.mainagent.search.MetadataUrlFetcher;
+import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,6 +45,8 @@ public class UserInteractionOrchestrator {
     private final MainChatMemoryProvider mainMemoryProvider;
     private final ApplicationEventPublisher eventPublisher;
     private final TelegramLogsChannel logsChannel;
+    private final MetadataUrlFetcher metadataUrlFetcher;
+    private final ReleaseSearchFlowService releaseSearchFlowService;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
         try {
@@ -118,6 +122,10 @@ public class UserInteractionOrchestrator {
     }
 
     private List<BotResponse> processUserCommands(ConversationContext ctx, String rawInput) {
+        if (metadataUrlFetcher.isUrl(rawInput.trim())) {
+            return releaseSearchFlowService.showByUrl(ctx, rawInput.trim());
+        }
+
         // Strip Telegram's @botname suffix from slash commands (e.g. /newtopic@sashkomusic_test_bot)
         if (rawInput.startsWith("/")) {
             rawInput = rawInput.replaceFirst("^(/\\S+?)@\\S+", "$1");

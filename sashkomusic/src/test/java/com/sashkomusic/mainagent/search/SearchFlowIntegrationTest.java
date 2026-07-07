@@ -132,6 +132,8 @@ class SearchFlowIntegrationTest {
             return m;
         }
 
+        @Bean MetadataUrlFetcher metadataUrlFetcher() { return mock(MetadataUrlFetcher.class); }
+
         @Bean
         Map<SearchEngine, SearchEngineService> searchEngines(List<SearchEngineService> services) {
             return services.stream().collect(Collectors.toMap(
