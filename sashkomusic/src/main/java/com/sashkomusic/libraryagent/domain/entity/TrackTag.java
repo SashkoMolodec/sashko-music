@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "track_tags",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"track_id", "tag_name"}))
+        uniqueConstraints = @UniqueConstraint(name = "uk_track_tag", columnNames = {"track_id", "tag_name"}))
 @Getter
 @Setter
 public class TrackTag {
