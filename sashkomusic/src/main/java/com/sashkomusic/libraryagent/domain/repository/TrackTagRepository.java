@@ -3,6 +3,7 @@ package com.sashkomusic.libraryagent.domain.repository;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.entity.TrackTag;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -41,4 +42,15 @@ public interface TrackTagRepository extends JpaRepository<TrackTag, Long> {
 
     @Query("SELECT t FROM TrackTag t WHERE t.track.id IN :trackIds")
     List<TrackTag> findAllByTrackIds(@Param("trackIds") List<Long> trackIds);
+
+    @Modifying
+    @Query(nativeQuery = true, value = """
+        INSERT INTO track_tags (track_id, tag_name, tag_value, last_synced_at)
+        VALUES (:trackId, :tagName, :tagValue, NOW())
+        ON CONFLICT ON CONSTRAINT uktracktag
+        DO UPDATE SET tag_value = EXCLUDED.tag_value, last_synced_at = EXCLUDED.last_synced_at
+        """)
+    void upsertTag(@Param("trackId") Long trackId,
+                   @Param("tagName") String tagName,
+                   @Param("tagValue") String tagValue);
 }

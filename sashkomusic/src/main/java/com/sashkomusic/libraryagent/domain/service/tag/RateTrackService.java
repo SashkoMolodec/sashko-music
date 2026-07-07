@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent.domain.service.tag;
 
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
+import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.libraryagent.domain.service.utils.AudioTagExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.nio.file.Paths;
 public class RateTrackService {
 
     private final TrackRepository trackRepository;
+    private final TrackTagRepository trackTagRepository;
     private final AudioTagExtractor audioTagExtractor;
     private final DjTagWriter djTagWriter;
 
@@ -31,14 +33,14 @@ public class RateTrackService {
             return new RateResult(false, "рейтинг має бути від 1 до 5");
         }
 
-        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
+        Track track = trackRepository.findById(trackId).orElse(null);
         if (track == null) {
             return new RateResult(false, "трек не знайдено");
         }
 
         int ratingWmp = convertStarsToWmpRating(rating);
-        track.setTag("RATING", String.valueOf(ratingWmp));
-        track.setTag("RATING WMP", String.valueOf(ratingWmp));
+        trackTagRepository.upsertTag(trackId, "RATING", String.valueOf(ratingWmp));
+        trackTagRepository.upsertTag(trackId, "RATING WMP", String.valueOf(ratingWmp));
 
         Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
         boolean fileWritten = false;
@@ -52,7 +54,6 @@ public class RateTrackService {
                     trackId, track.getLocalPath());
         }
 
-        trackRepository.save(track);
         log.info("Rated track: id={}, rating={}, fileWritten={}", trackId, rating, fileWritten);
         return new RateResult(true, "✅ рейтинг " + rating + "★");
     }
