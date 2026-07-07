@@ -1,7 +1,9 @@
 package com.sashkomusic.libraryagent.domain.repository;
 
 import com.sashkomusic.libraryagent.domain.entity.Track;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -25,4 +27,8 @@ public interface TrackRepository extends JpaRepository<Track, Long>, TrackReposi
     List<Track> findByArtistAndTitle(@Param("artist") String artist, @Param("title") String title);
 
     List<Track> findByReleaseIdOrderByTrackNumberAsc(Long releaseId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Track t WHERE t.id = :id")
+    Optional<Track> findByIdWithLock(@Param("id") Long id);
 }

@@ -31,7 +31,7 @@ public class RateTrackService {
             return new RateResult(false, "рейтинг має бути від 1 до 5");
         }
 
-        Track track = trackRepository.findById(trackId).orElse(null);
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
         if (track == null) {
             return new RateResult(false, "трек не знайдено");
         }
@@ -61,7 +61,7 @@ public class RateTrackService {
     public RateResult setEnergy(Long trackId, String energy) {
         log.info("Setting energy for track id={} to {}", trackId, energy);
 
-        Track track = trackRepository.findById(trackId).orElse(null);
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
         if (track == null) {
             return new RateResult(false, "трек не знайдено");
         }
@@ -88,7 +88,7 @@ public class RateTrackService {
     public RateResult setFunction(Long trackId, String function) {
         log.info("Setting function for track id={} to {}", trackId, function);
 
-        Track track = trackRepository.findById(trackId).orElse(null);
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
         if (track == null) {
             return new RateResult(false, "трек не знайдено");
         }
@@ -115,7 +115,7 @@ public class RateTrackService {
     public RateResult addComment(Long trackId, String comment) {
         log.info("Adding comment for track id={}: {}", trackId, comment);
 
-        Track track = trackRepository.findById(trackId).orElse(null);
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
         if (track == null) {
             return new RateResult(false, "трек не знайдено");
         }

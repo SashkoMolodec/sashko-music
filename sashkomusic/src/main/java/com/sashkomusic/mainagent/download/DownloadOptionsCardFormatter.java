@@ -77,6 +77,20 @@ public class DownloadOptionsCardFormatter {
         return sb.toString();
     }
 
+    public static String formatSingle(DownloadOption option) {
+        StringBuilder sb = new StringBuilder();
+        String format = detectFormat(option);
+        int fileCount = option.files().size();
+        sb.append("1️⃣ **[%s]** • %d ф. • %d MB\n".formatted(format, fileCount, option.totalSize()));
+        option.files().stream()
+                .limit(7)
+                .forEach(f -> sb.append("   📄 `%s`\n".formatted(f.displayName())));
+        if (fileCount > 7) {
+            sb.append("   ... _та ще %d файлів_\n".formatted(fileCount - 7));
+        }
+        return sb.toString();
+    }
+
     private static String detectFormat(DownloadOption opt) {
         return opt.files().stream()
                 .map(f -> getExtension(f.filename()))

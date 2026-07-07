@@ -3,14 +3,13 @@ package com.sashkomusic.mainagent.download;
 import com.sashkomusic.downloadagent.domain.SoulseekDirectoryService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
+import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -34,21 +33,7 @@ public class SoulseekDirectoryPreviewFlowService {
 
         confirmHolder.save(ctx.conversationId(), releaseId, expanded);
 
-        String fileList = expanded.files().stream()
-                .map(f -> f.displayName())
-                .collect(Collectors.joining("\n"));
-
-        long audioCount = expanded.files().stream()
-                .filter(f -> isAudio(f.filename()))
-                .count();
-
-        String text = "📁 *%s*\n👤 %s\n\n%s\n\n_%d аудіо, %d MB_".formatted(
-                escapeMarkdown(original.displayName()),
-                escapeMarkdown(original.technicalMetadata().getOrDefault("username", "?")),
-                fileList,
-                audioCount,
-                expanded.totalSize()
-        );
+        String text = "📁 повна директорія:\n\n" + DownloadOptionsCardFormatter.formatSingle(expanded);
 
         return List.of(BotResponse.withMultiRowButtons(text, List.of(
                 List.of(
@@ -80,18 +65,5 @@ public class SoulseekDirectoryPreviewFlowService {
     public List<BotResponse> handleCancel(ConversationContext ctx) {
         confirmHolder.clear(ctx.conversationId());
         return List.of(BotResponse.text("❌ скасовано"));
-    }
-
-    private boolean isAudio(String filename) {
-        if (filename == null) return false;
-        String lower = filename.toLowerCase();
-        return lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".wav")
-                || lower.endsWith(".m4a") || lower.endsWith(".aac") || lower.endsWith(".ogg")
-                || lower.endsWith(".alac") || lower.endsWith(".aiff");
-    }
-
-    private String escapeMarkdown(String text) {
-        if (text == null) return "";
-        return text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[");
     }
 }
