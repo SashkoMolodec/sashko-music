@@ -10,48 +10,68 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SmartlistRegenerationListener {
 
+    private static final long DEBOUNCE_MS = 3 * 60 * 1_000L;
+
     private final SmartlistService smartlistService;
     private final ApplicationEventPublisher eventPublisher;
+    private final TaskScheduler taskScheduler;
+
+    private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 
     @Async("asyncExecutor")
     @EventListener
     public void onTrackUpdate(TrackUpdateResultEvent event) {
-        regenerate();
+        scheduleDebounced();
     }
 
-    @Async("asyncExecutor")
     @EventListener
+    @Async("asyncExecutor")
     public void onTagChanges(TagChangesNotificationEvent event) {
-        regenerate();
+        regenerateNow();
     }
 
-    @Async("asyncExecutor")
     @EventListener
+    @Async("asyncExecutor")
     public void onTrackAnalysisComplete(TrackAnalysisCompleteEvent event) {
-        regenerate();
+        regenerateNow();
     }
 
-    @Async("asyncExecutor")
     @EventListener
+    @Async("asyncExecutor")
     public void onLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
-        regenerate();
+        regenerateNow();
     }
 
-    @Async("asyncExecutor")
     @EventListener
+    @Async("asyncExecutor")
     public void onReprocessComplete(ReprocessReleaseCompleteEvent event) {
-        regenerate();
+        regenerateNow();
     }
 
-    private void regenerate() {
+    private void scheduleDebounced() {
+        ScheduledFuture<?> prev = pending.getAndSet(
+                taskScheduler.schedule(this::regenerateNow, Instant.now().plusMillis(DEBOUNCE_MS))
+        );
+        if (prev != null) {
+            prev.cancel(false);
+        }
+        log.debug("Smartlist regeneration debounced — will run in {} ms", DEBOUNCE_MS);
+    }
+
+    private void regenerateNow() {
         try {
             SmartlistService.RegenerationResult result = smartlistService.regenerateAll();
             if (result.total() > 0) {
