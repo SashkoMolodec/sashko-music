@@ -18,6 +18,7 @@ public class SoulseekDirectoryPreviewFlowService {
 
     private final SoulseekDirectoryService directoryService;
     private final SoulseekDirectoryConfirmContextHolder confirmHolder;
+    private final DownloadContextHolder downloadContextHolder;
     private final DownloadTaskProducer downloadTaskProducer;
 
     public List<BotResponse> fetchAndShowPreview(ConversationContext ctx, String releaseId, DownloadOption original) {
@@ -51,6 +52,7 @@ public class SoulseekDirectoryPreviewFlowService {
 
         var confirm = pending.get();
         confirmHolder.clear(ctx.conversationId());
+        downloadContextHolder.clearSession(ctx.conversationId());
 
         downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), confirm.releaseId(), confirm.expandedOption()));
         log.info("Confirmed Soulseek directory download: releaseId={}, files={}", confirm.releaseId(), confirm.expandedOption().files().size());

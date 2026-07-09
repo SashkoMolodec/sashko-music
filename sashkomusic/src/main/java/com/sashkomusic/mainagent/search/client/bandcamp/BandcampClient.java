@@ -156,6 +156,10 @@ public class BandcampClient implements SearchEngineService {
 
         String artist = clean((String) response.getOrDefault("artist", "Unknown Artist"));
         String title = clean((String) response.getOrDefault("title", "Unknown Title"));
+
+        if ("Unknown Artist".equalsIgnoreCase(artist) || "Unknown Title".equalsIgnoreCase(title)) {
+            throw new RuntimeException("Scraper returned empty metadata for: " + url);
+        }
         String year = (String) response.getOrDefault("year", "");
         String imageUrl = (String) response.getOrDefault("imageUrl", "");
         String type = (String) response.getOrDefault("type", "Album");

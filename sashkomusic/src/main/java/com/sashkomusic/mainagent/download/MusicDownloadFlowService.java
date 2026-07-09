@@ -118,12 +118,11 @@ public class MusicDownloadFlowService {
         String releaseId = downloadContextHolder.getChosenRelease(ctx.conversationId());
         log.info("User chose option #{}: {} from {}", index, option.id(), option.displayName());
 
-        downloadContextHolder.clearSession(ctx.conversationId());
-
         if (option.source() == DownloadEngine.SOULSEEK) {
             return soulseekDirectoryPreview.fetchAndShowPreview(ctx, releaseId, option);
         }
 
+        downloadContextHolder.clearSession(ctx.conversationId());
         downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
         var flowHandler = downloadFlowHandlers.get(option.source());
         return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));

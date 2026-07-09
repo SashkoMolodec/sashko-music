@@ -222,10 +222,27 @@ async def get_release_metadata(url: str) -> dict | None:
 
 def _parse_release_page(soup, url: str) -> dict:
     artist = "Unknown Artist"
-    meta_site = soup.select_one("meta[property='og:site_name']")
-    if meta_site and meta_site.get("content"):
-        artist = meta_site["content"]
-    else:
+    title = "Unknown Title"
+
+    # og:title is the most reliable source: "Title, by Artist | Bandcamp"
+    meta_og_title = soup.select_one("meta[property='og:title']")
+    if meta_og_title and meta_og_title.get("content"):
+        og_content = meta_og_title["content"]
+        if ", by " in og_content:
+            parts = og_content.split(", by ", 1)
+            title = parts[0].strip()
+            artist = re.sub(r"\s*\|.*$", "", parts[1]).strip()
+        elif " | " in og_content:
+            title = og_content.split(" | ")[0].strip()
+
+    # DOM fallbacks for title
+    if title == "Unknown Title":
+        h2 = soup.select_one("h2.trackTitle")
+        if h2 and h2.get_text(strip=True):
+            title = h2.get_text(strip=True)
+
+    # DOM fallbacks for artist
+    if artist == "Unknown Artist":
         span = soup.select_one("span[itemprop='byArtist']")
         if span:
             artist = span.get_text(strip=True)
@@ -233,15 +250,6 @@ def _parse_release_page(soup, url: str) -> dict:
             link = soup.select_one("p#band-name-location span.title")
             if link:
                 artist = link.get_text(strip=True)
-
-    title = "Unknown Title"
-    h2 = soup.select_one("h2.trackTitle")
-    if h2 and h2.get_text(strip=True):
-        title = h2.get_text(strip=True)
-    else:
-        meta_title = soup.select_one("meta[property='og:title']")
-        if meta_title and meta_title.get("content"):
-            title = meta_title["content"].split(", by ")[0]
 
     year = ""
     meta_date = soup.select_one("meta[itemprop='datePublished']")
