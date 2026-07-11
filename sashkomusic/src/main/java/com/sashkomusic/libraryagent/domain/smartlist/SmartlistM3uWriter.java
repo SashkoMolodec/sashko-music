@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.text.Normalizer;
 import java.util.List;
 
 @Slf4j
@@ -26,12 +25,17 @@ public class SmartlistM3uWriter {
 
     private final LibraryConfig libraryConfig;
 
-    public Path write(String smartlistName, List<Track> tracks) {
+    public record WriteResult(Path m3uPath, int writtenCount, int skippedCount) {}
+
+    public WriteResult write(String smartlistName, List<Track> tracks) {
         Path dir = directory();
         try {
             Files.createDirectories(dir);
             Path target = dir.resolve(sanitize(smartlistName) + ".m3u");
             Path tmp = dir.resolve("." + sanitize(smartlistName) + ".m3u.tmp");
+
+            int written = 0;
+            int skipped = 0;
 
             try (BufferedWriter w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
                 w.write("#EXTM3U");
@@ -39,20 +43,34 @@ public class SmartlistM3uWriter {
                 Path libraryRoot = libraryRoot();
                 for (Track t : tracks) {
                     String localPath = t.getLocalPath();
-                    if (localPath == null || localPath.isBlank()) continue;
+                    if (localPath == null || localPath.isBlank()) {
+                        skipped++;
+                        continue;
+                    }
+                    Path trackPath = Paths.get(localPath);
+                    if (!Files.exists(trackPath)) {
+                        log.warn("Smartlist '{}': stale localPath skipped — file not on disk: {}", smartlistName, localPath);
+                        skipped++;
+                        continue;
+                    }
                     int duration = t.getDuration() == null ? -1 : t.getDuration();
                     String artist = t.getArtists().stream().findFirst().map(Artist::getName).orElse("");
                     String title = t.getTitle() == null ? "" : t.getTitle();
                     w.write("#EXTINF:" + duration + "," + artist + " - " + title);
                     w.newLine();
-                    w.write(toRelative(libraryRoot, Paths.get(localPath)));
+                    w.write(toRelative(libraryRoot, trackPath));
                     w.newLine();
+                    written++;
                 }
             }
 
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            log.info("Wrote smartlist M3U: {} ({} tracks)", target, tracks.size());
-            return target;
+            if (skipped > 0) {
+                log.warn("Smartlist '{}' written with {} tracks ({} skipped — stale localPath in DB)", smartlistName, written, skipped);
+            } else {
+                log.info("Wrote smartlist M3U: {} ({} tracks)", target, written);
+            }
+            return new WriteResult(target, written, skipped);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to write smartlist M3U for '" + smartlistName + "'", e);
         }
@@ -95,13 +113,9 @@ public class SmartlistM3uWriter {
 
     private String toRelative(Path root, Path track) {
         try {
-            String relative = root.resolve(DIR_NAME).relativize(track).toString();
-            // Navidrome (Linux/Docker) indexes paths in NFD (macOS HFS+ decomposed form).
-            // localPath in our DB may be stored as NFC; normalizing here ensures M3U paths
-            // match what Navidrome has in its library, so playlist entries resolve correctly.
-            return Normalizer.normalize(relative, Normalizer.Form.NFD);
+            return root.resolve(DIR_NAME).relativize(track).toString();
         } catch (IllegalArgumentException e) {
-            return Normalizer.normalize(track.toString(), Normalizer.Form.NFD);
+            return track.toString();
         }
     }
 

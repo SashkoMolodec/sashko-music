@@ -38,11 +38,11 @@ public class SmartlistService {
         sl.setDsl(serialise(dsl));
         repository.save(sl);
         List<Track> tracks = evaluator.evaluate(dsl);
-        m3uWriter.write(name, tracks);
+        SmartlistM3uWriter.WriteResult result = m3uWriter.write(name, tracks);
         sl.setLastGeneratedAt(Instant.now());
-        log.info("Smartlist created: '{}' — {} tracks", name, tracks.size());
+        log.info("Smartlist created: '{}' — {}/{} tracks written", name, result.writtenCount(), tracks.size());
         eventPublisher.publishEvent(new SmartlistsChangedEvent());
-        return new SmartlistSummary(sl.getId(), name, tracks.size(), evaluator.describe(dsl));
+        return new SmartlistSummary(sl.getId(), name, result.writtenCount(), evaluator.describe(dsl));
     }
 
     @Transactional
@@ -94,8 +94,12 @@ public class SmartlistService {
             try {
                 SmartlistDsl dsl = parse(sl.getDsl());
                 List<Track> tracks = evaluator.evaluate(dsl);
-                m3uWriter.write(sl.getName(), tracks);
+                SmartlistM3uWriter.WriteResult result = m3uWriter.write(sl.getName(), tracks);
                 sl.setLastGeneratedAt(Instant.now());
+                if (result.skippedCount() > 0) {
+                    log.warn("Smartlist '{}' regenerated: {}/{} tracks ({}  skipped — stale localPath)",
+                            sl.getName(), result.writtenCount(), tracks.size(), result.skippedCount());
+                }
                 ok++;
             } catch (Exception e) {
                 log.warn("Failed to regenerate smartlist '{}': {}", sl.getName(), e.getMessage());

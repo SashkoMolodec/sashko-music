@@ -38,15 +38,34 @@ class SmartlistM3uWriterTest {
         Files.createFile(mp3);
 
         Track t = track("Song Title", 180, mp3.toString(), "Artist Name");
-        Path result = writer.write("my list", List.of(t));
+        var result = writer.write("my list", List.of(t));
 
-        assertThat(result).exists();
-        assertThat(result.getFileName().toString()).isEqualTo("my list.m3u");
-        String content = Files.readString(result, StandardCharsets.UTF_8);
+        assertThat(result.m3uPath()).exists();
+        assertThat(result.m3uPath().getFileName().toString()).isEqualTo("my list.m3u");
+        assertThat(result.writtenCount()).isEqualTo(1);
+        assertThat(result.skippedCount()).isEqualTo(0);
+        String content = Files.readString(result.m3uPath(), StandardCharsets.UTF_8);
         assertThat(content).startsWith("#EXTM3U");
         assertThat(content).contains("#EXTINF:180,Artist Name - Song Title");
-        // relative to smartlists/ directory
         assertThat(content).contains("../working/Artist/Album/01. song.mp3");
+    }
+
+    @Test
+    void skips_tracks_with_stale_local_path() throws Exception {
+        Path mp3 = tempDir.resolve("working/Artist/Album/01. song.mp3");
+        Files.createDirectories(mp3.getParent());
+        Files.createFile(mp3);
+
+        Track good = track("Good Track", 180, mp3.toString(), "Artist");
+        Track stale = track("Missing Track", 200, tempDir.resolve("ghost/missing.mp3").toString(), "Ghost");
+
+        var result = writer.write("test", List.of(good, stale));
+
+        assertThat(result.writtenCount()).isEqualTo(1);
+        assertThat(result.skippedCount()).isEqualTo(1);
+        String content = Files.readString(result.m3uPath(), StandardCharsets.UTF_8);
+        assertThat(content).contains("Good Track");
+        assertThat(content).doesNotContain("Missing Track");
     }
 
     @Test
@@ -72,8 +91,8 @@ class SmartlistM3uWriterTest {
 
     @Test
     void sanitizes_unsafe_chars_in_name() throws Exception {
-        Path result = writer.write("foo/bar:baz", List.of());
-        assertThat(result.getFileName().toString()).isEqualTo("foo_bar_baz.m3u");
+        var result = writer.write("foo/bar:baz", List.of());
+        assertThat(result.m3uPath().getFileName().toString()).isEqualTo("foo_bar_baz.m3u");
     }
 
     private Track track(String title, int duration, String localPath, String artistName) {
