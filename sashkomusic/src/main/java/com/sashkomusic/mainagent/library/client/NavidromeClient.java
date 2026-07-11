@@ -218,6 +218,100 @@ public class NavidromeClient {
         return builder.build().toUri();
     }
 
+    @CircuitBreaker(name = "navidromeClient", fallbackMethod = "findPlaylistIdByNameFallback")
+    @Retry(name = "navidromeClient")
+    public String findPlaylistIdByName(String name) {
+        try {
+            URI uri = buildGetPlaylistsUri();
+
+            log.info("Searching for Navidrome playlist by name: {}", name);
+
+            NavidromePlaylistsResponse response = restClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .body(NavidromePlaylistsResponse.class);
+
+            if (response != null &&
+                    response.subsonicResponse() != null &&
+                    response.subsonicResponse().playlists() != null &&
+                    response.subsonicResponse().playlists().playlist() != null) {
+
+                return response.subsonicResponse().playlists().playlist().stream()
+                        .filter(p -> name.equals(p.name()))
+                        .map(NavidromePlaylistsResponse.Playlist::id)
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.error("Failed to fetch playlists from Navidrome: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    private String findPlaylistIdByNameFallback(String name, Exception e) {
+        log.warn("Navidrome findPlaylistIdByName fallback triggered for '{}': {}", name, e.getMessage());
+        return null;
+    }
+
+    @CircuitBreaker(name = "navidromeClient", fallbackMethod = "deletePlaylistFallback")
+    @Retry(name = "navidromeClient")
+    public void deletePlaylist(String playlistId) {
+        try {
+            URI uri = buildDeletePlaylistUri(playlistId);
+
+            log.info("Deleting Navidrome playlist id: {}", playlistId);
+
+            restClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info("✓ Successfully deleted Navidrome playlist id: {}", playlistId);
+        } catch (Exception e) {
+            log.error("Failed to delete Navidrome playlist {}: {}", playlistId, e.getMessage());
+            throw e;
+        }
+    }
+
+    private void deletePlaylistFallback(String playlistId, Exception e) {
+        log.warn("Navidrome deletePlaylist fallback triggered for id {}: {}", playlistId, e.getMessage());
+    }
+
+    private URI buildGetPlaylistsUri() {
+        return UriComponentsBuilder
+                .fromUriString(config.getBaseUrl())
+                .path("/rest/getPlaylists")
+                .queryParam("u", config.getUsername())
+                .queryParam("p", config.getPassword())
+                .queryParam("v", config.getApiVersion())
+                .queryParam("c", config.getClientName())
+                .queryParam("f", "json")
+                .build().toUri();
+    }
+
+    private URI buildDeletePlaylistUri(String playlistId) {
+        return UriComponentsBuilder
+                .fromUriString(config.getBaseUrl())
+                .path("/rest/deletePlaylist")
+                .queryParam("id", playlistId)
+                .queryParam("u", config.getUsername())
+                .queryParam("p", config.getPassword())
+                .queryParam("v", config.getApiVersion())
+                .queryParam("c", config.getClientName())
+                .queryParam("f", "json")
+                .build().toUri();
+    }
+
+    public record NavidromePlaylistsResponse(
+            @JsonProperty("subsonic-response") SubsonicResponse subsonicResponse
+    ) {
+        public record SubsonicResponse(Playlists playlists) {}
+        public record Playlists(List<Playlist> playlist) {}
+        public record Playlist(String id, String name) {}
+    }
+
     public record NavidromeNowPlayingResponse(
             @JsonProperty("subsonic-response") SubsonicResponse subsonicResponse
     ) {

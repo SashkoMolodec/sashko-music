@@ -156,6 +156,7 @@ mainagent            →  SetFunctionTaskEvent               →  libraryagent
 libraryagent         →  TrackUpdateResultEvent             →  mainagent
 libraryagent         →  TagChangesNotificationEvent        →  mainagent (TagChangesNotificationListener → TelegramLogsChannel)
 libraryagent         →  SmartlistsRegeneratedEvent         →  mainagent (SmartlistLogListener → TelegramLogsChannel)
+libraryagent         →  SmartlistDeletedEvent              →  mainagent (NavidromePlaylistDeleteListener → NavidromeClient.findPlaylistIdByName + deletePlaylist)
 libraryagent         →  SmartlistsChangedEvent             →  mainagent (NavidromeSmartlistScanListener → NavidromeClient.triggerScan(smartlists/))
 downloadagent        →  SlskdPrivateMessageReceivedEvent   →  mainagent (SlskdPrivateMessageNotificationListener → TelegramChatBot main chat)
 mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider

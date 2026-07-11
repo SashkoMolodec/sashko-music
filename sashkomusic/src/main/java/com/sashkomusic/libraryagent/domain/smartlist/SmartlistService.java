@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent.domain.smartlist;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sashkomusic.events.SmartlistDeletedEvent;
 import com.sashkomusic.events.SmartlistsChangedEvent;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +67,7 @@ public class SmartlistService {
         if (opt.isEmpty()) return false;
         repository.delete(opt.get());
         m3uWriter.delete(name);
+        eventPublisher.publishEvent(new SmartlistDeletedEvent(name));
         eventPublisher.publishEvent(new SmartlistsChangedEvent());
         return true;
     }
