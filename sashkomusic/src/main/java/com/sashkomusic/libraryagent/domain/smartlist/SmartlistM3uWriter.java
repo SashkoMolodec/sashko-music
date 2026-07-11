@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.text.Normalizer;
 import java.util.List;
 
 @Slf4j
@@ -113,9 +114,14 @@ public class SmartlistM3uWriter {
 
     private String toRelative(Path root, Path track) {
         try {
-            return root.resolve(DIR_NAME).relativize(track).toString();
+            String relative = root.resolve(DIR_NAME).relativize(track).toString();
+            // Navidrome on Linux stores paths in NFD (decomposed Unicode) as received from
+            // the filesystem. localPath in our DB may be NFC. Normalizing to NFD here ensures
+            // M3U path bytes match what Navidrome has indexed, so tracks with non-ASCII
+            // characters (accents, ñ, etc.) resolve correctly in Navidrome playlists.
+            return Normalizer.normalize(relative, Normalizer.Form.NFD);
         } catch (IllegalArgumentException e) {
-            return track.toString();
+            return Normalizer.normalize(track.toString(), Normalizer.Form.NFD);
         }
     }
 
