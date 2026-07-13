@@ -10,6 +10,7 @@ import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.main.MainAgent;
 import com.sashkomusic.events.ChatContextClearedEvent;
 import com.sashkomusic.events.ChatHardResetEvent;
+import com.sashkomusic.mainagent.library.MarkersFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
@@ -42,6 +43,7 @@ public class UserInteractionOrchestrator {
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
     private final NowPlayingAlbumFlowService nowPlayingAlbumFlowService;
+    private final MarkersFlowService markersFlowService;
     private final NewTopicFlowService newTopicFlowService;
     private final DirectSoulseekSearchFlowService directSoulseekSearchFlowService;
     private final MainChatMemoryProvider mainMemoryProvider;
@@ -146,6 +148,9 @@ public class UserInteractionOrchestrator {
         }
         if (rawInput.startsWith("/np-album")) {
             return nowPlayingAlbumFlowService.nowPlayingAlbum(ctx);
+        }
+        if (rawInput.startsWith("/markers")) {
+            return markersFlowService.showMarkers(ctx);
         }
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
             return nowPlayingFlowService.nowPlaying(ctx);

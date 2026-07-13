@@ -6,6 +6,7 @@ import com.sashkomusic.mainagent.download.SoulseekDirectoryPreviewFlowService;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
+import com.sashkomusic.mainagent.library.MarkersFlowService;
 import com.sashkomusic.mainagent.library.SmartlistLabelFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
@@ -40,7 +41,8 @@ public class CallbackDispatcher {
                               PendingProcessCallbackHandler pendingProcess,
                               SmartlistCreationFlowService smartlistCreation,
                               NowPlayingAlbumFlowService npAlbum,
-                              SmartlistLabelFlowService smartlistLabel) {
+                              SmartlistLabelFlowService smartlistLabel,
+                              MarkersFlowService markersFlow) {
         handlers.put("CARD:", search::handleCardCallback);
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
@@ -68,6 +70,7 @@ public class CallbackDispatcher {
         handlers.put("ALB_INFO:", (ctx, data, msgId) -> npAlbum.handleInfo(ctx, Long.parseLong(data.substring("ALB_INFO:".length()))));
         handlers.put("ALB_COMMENT:", (ctx, data, msgId) -> npAlbum.handleComment(ctx, Long.parseLong(data.substring("ALB_COMMENT:".length()))));
         handlers.put("ALB_RM:", (ctx, data, msgId) -> npAlbum.handleDelete(ctx, Long.parseLong(data.substring("ALB_RM:".length()))));
+        handlers.put("MARKERS_ADD", (ctx, data, msgId) -> markersFlow.promptCreate(ctx));
         handlers.put("LBL_LIST:", (ctx, data, msgId) -> smartlistLabel.showListFromCallback(ctx, data.substring("LBL_LIST:".length())));
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));
         handlers.put("LBL_SEL:", (ctx, data, msgId) -> smartlistLabel.select(ctx, Integer.parseInt(data.substring("LBL_SEL:".length()))));

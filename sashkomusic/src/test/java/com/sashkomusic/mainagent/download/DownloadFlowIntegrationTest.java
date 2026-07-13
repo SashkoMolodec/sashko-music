@@ -127,6 +127,9 @@ class DownloadFlowIntegrationTest {
         @Bean com.sashkomusic.mainagent.library.SmartlistLabelFlowService smartlistLabelFlowService() {
             return mock(com.sashkomusic.mainagent.library.SmartlistLabelFlowService.class);
         }
+        @Bean com.sashkomusic.mainagent.library.MarkersFlowService markersFlowService() {
+            return mock(com.sashkomusic.mainagent.library.MarkersFlowService.class);
+        }
         @Bean SoulseekCustomSearchFlowService soulseekCustomSearchFlowService() {
             return mock(SoulseekCustomSearchFlowService.class);
         }

@@ -34,7 +34,7 @@ public class SmartlistLabelContextHolder {
         clear(event.conversationId());
     }
 
-    public record LabelContext(String mode, Long targetId, List<Long> smartlistIds, int page) {
+    public record LabelContext(String mode, Long targetId, List<Long> markerIds, int page) {
         public static final String MODE_TRACK = "T";
         public static final String MODE_ALBUM = "A";
     }

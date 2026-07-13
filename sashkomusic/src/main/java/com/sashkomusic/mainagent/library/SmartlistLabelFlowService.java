@@ -1,9 +1,9 @@
 package com.sashkomusic.mainagent.library;
 
+import com.sashkomusic.libraryagent.domain.entity.Marker;
 import com.sashkomusic.libraryagent.domain.entity.Track;
+import com.sashkomusic.libraryagent.domain.repository.MarkerRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
-import com.sashkomusic.libraryagent.domain.smartlist.Smartlist;
-import com.sashkomusic.libraryagent.domain.smartlist.SmartlistRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.SmartlistLabelContextHolder.LabelContext;
@@ -25,7 +25,7 @@ public class SmartlistLabelFlowService {
     private static final int PAGE_SIZE = 10;
     private static final int ROW_SIZE = 5;
 
-    private final SmartlistRepository smartlistRepository;
+    private final MarkerRepository markerRepository;
     private final TrackRepository trackRepository;
     private final AddCommentTaskProducer addCommentTaskProducer;
     private final SmartlistLabelContextHolder holder;
@@ -38,11 +38,11 @@ public class SmartlistLabelFlowService {
 
     @Transactional(readOnly = true)
     public List<BotResponse> showList(ConversationContext ctx, String mode, Long targetId) {
-        List<Smartlist> all = smartlistRepository.findAll();
+        List<Marker> all = markerRepository.findAll();
         if (all.isEmpty()) {
-            return List.of(BotResponse.text("смартлистів ще немає."));
+            return List.of(BotResponse.text("міток ще немає — створи через /labels"));
         }
-        List<Long> ids = all.stream().map(Smartlist::getId).toList();
+        List<Long> ids = all.stream().map(Marker::getId).toList();
         holder.set(ctx.conversationId(), new LabelContext(mode, targetId, ids, 0));
         return buildPage(all, 0);
     }
@@ -51,10 +51,10 @@ public class SmartlistLabelFlowService {
     public List<BotResponse> goToPage(ConversationContext ctx, int page) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
-            return List.of(BotResponse.text("контекст не знайдено — тисни ➕ мітка знову."));
+            return List.of(BotResponse.text("контекст не знайдено — тисни 🏷 знову."));
         }
-        List<Smartlist> all = smartlistRepository.findAllById(lctx.smartlistIds());
-        holder.set(ctx.conversationId(), new LabelContext(lctx.mode(), lctx.targetId(), lctx.smartlistIds(), page));
+        List<Marker> all = markerRepository.findAllById(lctx.markerIds());
+        holder.set(ctx.conversationId(), new LabelContext(lctx.mode(), lctx.targetId(), lctx.markerIds(), page));
         return buildPage(all, page);
     }
 
@@ -62,20 +62,19 @@ public class SmartlistLabelFlowService {
     public List<BotResponse> select(ConversationContext ctx, int globalIndex) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
-            return List.of(BotResponse.text("контекст не знайдено — тисни ➕ мітка знову."));
+            return List.of(BotResponse.text("контекст не знайдено — тисни 🏷 знову."));
         }
-        if (globalIndex < 0 || globalIndex >= lctx.smartlistIds().size()) {
+        if (globalIndex < 0 || globalIndex >= lctx.markerIds().size()) {
             return List.of(BotResponse.text("невірний індекс."));
         }
         holder.clear(ctx.conversationId());
 
-        Long smartlistId = lctx.smartlistIds().get(globalIndex);
-        Smartlist smartlist = smartlistRepository.findById(smartlistId).orElse(null);
-        if (smartlist == null) {
-            return List.of(BotResponse.text("смартлист не знайдено."));
+        Marker marker = markerRepository.findById(lctx.markerIds().get(globalIndex)).orElse(null);
+        if (marker == null) {
+            return List.of(BotResponse.text("мітку не знайдено."));
         }
 
-        String label = "(" + smartlist.getName() + ")";
+        String label = "(" + marker.getName() + ")";
 
         if (LabelContext.MODE_TRACK.equals(lctx.mode())) {
             addCommentTaskProducer.send(new AddCommentTaskDto(lctx.targetId(), label, ctx.conversationId()));
@@ -89,12 +88,12 @@ public class SmartlistLabelFlowService {
         }
     }
 
-    private List<BotResponse> buildPage(List<Smartlist> all, int page) {
+    private List<BotResponse> buildPage(List<Marker> all, int page) {
         int from = page * PAGE_SIZE;
         int to = Math.min(from + PAGE_SIZE, all.size());
-        List<Smartlist> pageItems = all.subList(from, to);
+        List<Marker> pageItems = all.subList(from, to);
 
-        StringBuilder sb = new StringBuilder("оберіть мітку:\n\n");
+        StringBuilder sb = new StringBuilder("😎 обери мітку:\n\n");
         List<BotResponse.ButtonDto> numButtons = new ArrayList<>();
         for (int i = 0; i < pageItems.size(); i++) {
             int globalIndex = from + i;
