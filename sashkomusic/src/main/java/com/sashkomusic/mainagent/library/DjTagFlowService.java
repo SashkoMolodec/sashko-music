@@ -134,8 +134,10 @@ public class DjTagFlowService {
         }
 
         try {
+            Long trackId = Long.parseLong(parts[1]);
             djTagContextHolder.activateCommentMode(ctx.conversationId());
-            return List.of(BotResponse.text("✍️ шось туту во пиши:"));
+            var labelBtn = List.of(BotResponse.ButtonDto.callback("🏷", "LBL_LIST:T:" + trackId));
+            return List.of(BotResponse.withMultiRowButtons("✍️ шось туту во пиши:", List.of(labelBtn)));
         } catch (NumberFormatException e) {
             log.error("Failed to parse comment activation callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));

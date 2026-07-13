@@ -4,7 +4,9 @@ import com.sashkomusic.mainagent.download.MusicDownloadFlowService;
 import com.sashkomusic.mainagent.download.SoulseekCustomSearchFlowService;
 import com.sashkomusic.mainagent.download.SoulseekDirectoryPreviewFlowService;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
+import com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
+import com.sashkomusic.mainagent.library.SmartlistLabelFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.library.SublibraryAssignmentHandler;
@@ -36,7 +38,9 @@ public class CallbackDispatcher {
                               RemoveReleaseFlowService removeRelease,
                               SublibraryAssignmentHandler sublibAssignment,
                               PendingProcessCallbackHandler pendingProcess,
-                              SmartlistCreationFlowService smartlistCreation) {
+                              SmartlistCreationFlowService smartlistCreation,
+                              NowPlayingAlbumFlowService npAlbum,
+                              SmartlistLabelFlowService smartlistLabel) {
         handlers.put("CARD:", search::handleCardCallback);
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
@@ -61,6 +65,12 @@ public class CallbackDispatcher {
         handlers.put("PROC_NO:", (ctx, data, msgId) -> pendingProcess.handleCancel(ctx, data));
         handlers.put("SM:OK", (ctx, data, msgId) -> smartlistCreation.handleConfirm(ctx, data));
         handlers.put("SM:NO", (ctx, data, msgId) -> smartlistCreation.handleCancel(ctx, data));
+        handlers.put("ALB_INFO:", (ctx, data, msgId) -> npAlbum.handleInfo(ctx, Long.parseLong(data.substring("ALB_INFO:".length()))));
+        handlers.put("ALB_COMMENT:", (ctx, data, msgId) -> npAlbum.handleComment(ctx, Long.parseLong(data.substring("ALB_COMMENT:".length()))));
+        handlers.put("ALB_RM:", (ctx, data, msgId) -> npAlbum.handleDelete(ctx, Long.parseLong(data.substring("ALB_RM:".length()))));
+        handlers.put("LBL_LIST:", (ctx, data, msgId) -> smartlistLabel.showListFromCallback(ctx, data.substring("LBL_LIST:".length())));
+        handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));
+        handlers.put("LBL_SEL:", (ctx, data, msgId) -> smartlistLabel.select(ctx, Integer.parseInt(data.substring("LBL_SEL:".length()))));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {

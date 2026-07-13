@@ -33,6 +33,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import org.slf4j.MDC;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.Objects;
 public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
     private static final int MAX_TEXT_LENGTH = 4096;
     private static final String FILE_ID_PREFIX = "FILE_ID:";
+    private static final String LOCAL_FILE_PREFIX = "LOCAL_FILE:";
     private static final ReplyKeyboardMarkup DEFAULT_REPLY_KEYBOARD = buildDefaultReplyKeyboard();
 
     private static ReplyKeyboardMarkup buildDefaultReplyKeyboard() {
@@ -160,9 +162,10 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
         if (hasImage) {
             try {
+                InputFile photo = buildInputFile(response.imageUrl());
                 SendPhoto.SendPhotoBuilder<?, ?> photoBuilder = SendPhoto.builder()
                         .chatId(ctx.chatId())
-                        .photo(new InputFile(response.imageUrl()))
+                        .photo(photo)
                         .caption(formattedText)
                         .parseMode("HTML")
                         .replyMarkup(outgoingMarkup);
@@ -276,6 +279,13 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 }
             }
         }
+    }
+
+    private InputFile buildInputFile(String imageUrl) {
+        if (imageUrl.startsWith(LOCAL_FILE_PREFIX)) {
+            return new InputFile(new File(imageUrl.substring(LOCAL_FILE_PREFIX.length())));
+        }
+        return new InputFile(imageUrl);
     }
 
     private void cachePhotoFileId(ConversationContext ctx, String imageUrl, Message message) {

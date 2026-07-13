@@ -10,6 +10,7 @@ import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.main.MainAgent;
 import com.sashkomusic.events.ChatContextClearedEvent;
 import com.sashkomusic.events.ChatHardResetEvent;
+import com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
 import com.sashkomusic.mainagent.download.DirectSoulseekSearchFlowService;
@@ -40,6 +41,7 @@ public class UserInteractionOrchestrator {
     private final LibraryAgentService libraryAgentService;
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
+    private final NowPlayingAlbumFlowService nowPlayingAlbumFlowService;
     private final NewTopicFlowService newTopicFlowService;
     private final DirectSoulseekSearchFlowService directSoulseekSearchFlowService;
     private final MainChatMemoryProvider mainMemoryProvider;
@@ -141,6 +143,9 @@ public class UserInteractionOrchestrator {
         }
         if (rawInput.startsWith("/newtopic")) {
             return newTopicFlowService.handle(ctx, rawInput.substring("/newtopic".length()).trim());
+        }
+        if (rawInput.startsWith("/np-album")) {
+            return nowPlayingAlbumFlowService.nowPlayingAlbum(ctx);
         }
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
             return nowPlayingFlowService.nowPlaying(ctx);
