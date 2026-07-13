@@ -46,7 +46,7 @@ public class SmartlistRegenerationListener {
     @EventListener
     @Async("asyncExecutor")
     public void onTrackAnalysisComplete(TrackAnalysisCompleteEvent event) {
-        regenerateNow();
+        scheduleDebounced();
     }
 
     @EventListener
