@@ -30,13 +30,11 @@ public class SmartlistLabelFlowService {
     private final AddCommentTaskProducer addCommentTaskProducer;
     private final SmartlistLabelContextHolder holder;
 
-    @Transactional(readOnly = true)
     public List<BotResponse> showListFromCallback(ConversationContext ctx, String data) {
         String[] p = data.split(":", 2);
         return showList(ctx, p[0], Long.parseLong(p[1]));
     }
 
-    @Transactional(readOnly = true)
     public List<BotResponse> showList(ConversationContext ctx, String mode, Long targetId) {
         List<Marker> all = markerRepository.findAll();
         if (all.isEmpty()) {
@@ -47,7 +45,6 @@ public class SmartlistLabelFlowService {
         return buildPage(all, 0);
     }
 
-    @Transactional(readOnly = true)
     public List<BotResponse> goToPage(ConversationContext ctx, int page) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
@@ -58,7 +55,7 @@ public class SmartlistLabelFlowService {
         return buildPage(all, page);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> select(ConversationContext ctx, int globalIndex) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
