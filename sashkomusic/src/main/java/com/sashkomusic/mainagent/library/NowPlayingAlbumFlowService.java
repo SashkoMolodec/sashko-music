@@ -194,13 +194,15 @@ public class NowPlayingAlbumFlowService {
 
     private String buildInfoText(Release release, List<Track> tracks, Map<Long, Map<String, String>> tagsByTrackId) {
         String format = tracks.isEmpty() ? "" : getFormat(tracks.get(0).getLocalPath());
-        String sublibraryEmoji = "vault".equals(release.getSublibrary()) ? "📦" : "🎵";
+        String sublibraryEmoji = "vault".equals(release.getSublibrary()) ? "💎" : "✅";
 
         StringBuilder sb = new StringBuilder();
         sb.append(sublibraryEmoji).append(" ").append(release.getSublibrary());
         if (!format.isEmpty()) {
             sb.append("  ·  ").append(format);
         }
+
+        sb.append("\n");
 
         for (Track t : tracks) {
             Map<String, String> tags = tagsByTrackId.getOrDefault(t.getId(), Map.of());
