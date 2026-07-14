@@ -29,6 +29,8 @@ public class SmartlistLabelFlowService {
     private final TrackRepository trackRepository;
     private final AddCommentTaskProducer addCommentTaskProducer;
     private final SmartlistLabelContextHolder holder;
+    private final DjTagContextHolder djTagContextHolder;
+    private final AlbumCommentContextHolder albumCommentContextHolder;
 
     public List<BotResponse> showListFromCallback(ConversationContext ctx, String data) {
         String[] p = data.split(":", 2);
@@ -74,9 +76,11 @@ public class SmartlistLabelFlowService {
         String label = "(" + marker.getName() + ")";
 
         if (LabelContext.MODE_TRACK.equals(lctx.mode())) {
+            djTagContextHolder.deactivateCommentMode(ctx.conversationId());
             addCommentTaskProducer.send(new AddCommentTaskDto(lctx.targetId(), label, ctx.conversationId()));
             return List.of(BotResponse.text("🏷 мітка " + label + " додається до треку"));
         } else {
+            albumCommentContextHolder.clear(ctx.conversationId());
             List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(lctx.targetId());
             for (Track track : tracks) {
                 addCommentTaskProducer.send(new AddCommentTaskDto(track.getId(), label, ctx.conversationId()));

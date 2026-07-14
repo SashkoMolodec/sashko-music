@@ -18,7 +18,7 @@ public class DjTagContextHolder {
     private final ChatStateStore store;
 
     public void setTrackContext(String conversationId, TrackDto track, String navidromeId, boolean waitingForComment) {
-        store.put(conversationId, FLOW_KEY, new DjTagContext(track, navidromeId, waitingForComment));
+        store.put(conversationId, FLOW_KEY, new DjTagContext(track, navidromeId, waitingForComment, false));
         log.debug("Set track context for conversation {}, track {}, waitingForComment={}",
                 conversationId, track.id(), waitingForComment);
     }
@@ -27,10 +27,29 @@ public class DjTagContextHolder {
         DjTagContext existing = getContext(conversationId);
         if (existing != null) {
             store.put(conversationId, FLOW_KEY,
-                    new DjTagContext(existing.track, existing.navidromeId, true));
+                    new DjTagContext(existing.track, existing.navidromeId, true, false));
             log.debug("Activated comment mode for conversation {}, track {}", conversationId, existing.track.id());
         } else {
             log.warn("Cannot activate comment mode for conversation {} - no track context", conversationId);
+        }
+    }
+
+    public void activateReplaceMode(String conversationId) {
+        DjTagContext existing = getContext(conversationId);
+        if (existing != null) {
+            store.put(conversationId, FLOW_KEY,
+                    new DjTagContext(existing.track, existing.navidromeId, true, true));
+            log.debug("Activated replace mode for conversation {}, track {}", conversationId, existing.track.id());
+        } else {
+            log.warn("Cannot activate replace mode for conversation {} - no track context", conversationId);
+        }
+    }
+
+    public void deactivateCommentMode(String conversationId) {
+        DjTagContext existing = getContext(conversationId);
+        if (existing != null && existing.waitingForComment) {
+            store.put(conversationId, FLOW_KEY,
+                    new DjTagContext(existing.track, existing.navidromeId, false, false));
         }
     }
 
@@ -58,7 +77,7 @@ public class DjTagContextHolder {
         clearContext(event.conversationId());
     }
 
-    public record DjTagContext(TrackDto track, String navidromeId, boolean waitingForComment) {
+    public record DjTagContext(TrackDto track, String navidromeId, boolean waitingForComment, boolean replaceMode) {
         public Long trackId() {
             return track.id();
         }

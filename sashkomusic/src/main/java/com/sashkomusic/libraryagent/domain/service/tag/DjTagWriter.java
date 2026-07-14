@@ -41,6 +41,20 @@ public class DjTagWriter {
         return prependToComment(audioFile, commentText, "comment");
     }
 
+    public boolean replaceComment(Path audioFile, String commentText) {
+        try {
+            AudioFile audio = AudioFileIO.read(audioFile.toFile());
+            Tag tag = audio.getTagOrCreateAndSetDefault();
+            tag.setField(FieldKey.COMMENT, commentText);
+            audio.commit();
+            log.info("Replaced COMM tag in {}: {}", audioFile.getFileName(), commentText);
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to replace COMM tag in {}: {}", audioFile, e.getMessage(), e);
+            return false;
+        }
+    }
+
     private boolean prependToComment(Path audioFile, String value, String label) {
         try {
             AudioFile audio = AudioFileIO.read(audioFile.toFile());

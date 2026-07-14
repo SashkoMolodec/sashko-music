@@ -4,9 +4,11 @@ import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.api.dto.TrackDto;
 import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
+import com.sashkomusic.mainagent.library.messaging.ReplaceCommentTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.SetEnergyTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.SetFunctionTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
+import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
 import com.sashkomusic.mainagent.library.messaging.dto.SetEnergyTaskDto;
 import com.sashkomusic.mainagent.library.messaging.dto.SetFunctionTaskDto;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class DjTagFlowService {
     private final SetEnergyTaskProducer setEnergyTaskProducer;
     private final SetFunctionTaskProducer setFunctionTaskProducer;
     private final AddCommentTaskProducer addCommentTaskProducer;
+    private final ReplaceCommentTaskProducer replaceCommentTaskProducer;
     private final DjTagContextHolder djTagContextHolder;
 
     public boolean isWaitingForComment(ConversationContext ctx) {
@@ -37,8 +40,38 @@ public class DjTagFlowService {
             return List.of(BotResponse.text("помилка: контекст втрачено"));
         }
 
-        djTagContextHolder.clearContext(ctx.conversationId());
+        djTagContextHolder.deactivateCommentMode(ctx.conversationId());
         return addComment(ctx, tagCtx.trackId(), commentText);
+    }
+
+    public List<BotResponse> handleReplaceCommentInput(ConversationContext ctx, String commentText) {
+        DjTagContextHolder.DjTagContext tagCtx = djTagContextHolder.getContext(ctx.conversationId());
+        if (tagCtx == null) {
+            return List.of(BotResponse.text("помилка: контекст втрачено"));
+        }
+
+        djTagContextHolder.deactivateCommentMode(ctx.conversationId());
+        replaceCommentTaskProducer.send(new ReplaceCommentTaskDto(tagCtx.trackId(), commentText, ctx.conversationId()));
+        return List.of(BotResponse.text("🗿 крутий"));
+    }
+
+    public List<BotResponse> handleEditCommentTrack(ConversationContext ctx, Long trackId) {
+        DjTagContextHolder.DjTagContext tagCtx = djTagContextHolder.getContext(ctx.conversationId());
+        String currentComment = tagCtx != null ? tagCtx.track().comment() : null;
+
+        djTagContextHolder.activateReplaceMode(ctx.conversationId());
+
+        if (currentComment == null || currentComment.isBlank()) {
+            return List.of(BotResponse.text("коментів ще немає. введи новий:"));
+        }
+        return List.of(
+                BotResponse.text(currentComment),
+                BotResponse.text("скопіюй, підкоригуй і відправ — повністю замінить коментар:")
+        );
+    }
+
+    public DjTagContextHolder.DjTagContext getTagContext(ConversationContext ctx) {
+        return djTagContextHolder.getContext(ctx.conversationId());
     }
 
     public List<BotResponse> expandDjRatePanel(ConversationContext ctx, String data) {
@@ -136,8 +169,11 @@ public class DjTagFlowService {
         try {
             Long trackId = Long.parseLong(parts[1]);
             djTagContextHolder.activateCommentMode(ctx.conversationId());
-            var labelBtn = List.of(BotResponse.ButtonDto.callback("🏷", "LBL_LIST:T:" + trackId));
-            return List.of(BotResponse.withMultiRowButtons("✍️ шось туту во пиши:", List.of(labelBtn)));
+            var buttons = List.of(
+                    BotResponse.ButtonDto.callback("🏷", "LBL_LIST:T:" + trackId),
+                    BotResponse.ButtonDto.callback("✏️", "EDIT_COMMENT:T:" + trackId)
+            );
+            return List.of(BotResponse.withMultiRowButtons("✍️ шось туту во пиши:", List.of(buttons)));
         } catch (NumberFormatException e) {
             log.error("Failed to parse comment activation callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));

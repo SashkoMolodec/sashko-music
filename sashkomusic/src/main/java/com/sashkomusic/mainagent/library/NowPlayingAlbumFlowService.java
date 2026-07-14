@@ -12,16 +12,21 @@ import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.mainagent.library.AlbumCommentContextHolder.AlbumCommentContext;
 import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
+import com.sashkomusic.mainagent.library.messaging.ReplaceCommentTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
+import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SequencedSet;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,6 +43,7 @@ public class NowPlayingAlbumFlowService {
     private final ReleaseRepository releaseRepository;
     private final RemoveReleaseFlowService removeReleaseFlowService;
     private final AddCommentTaskProducer addCommentTaskProducer;
+    private final ReplaceCommentTaskProducer replaceCommentTaskProducer;
     private final AlbumCommentContextHolder commentContextHolder;
 
     @Transactional(readOnly = true)
@@ -90,17 +96,20 @@ public class NowPlayingAlbumFlowService {
 
     public List<BotResponse> handleComment(ConversationContext ctx, Long releaseId) {
         commentContextHolder.set(ctx.conversationId(), releaseId);
-        var labelBtn = List.of(BotResponse.ButtonDto.callback("🏷", "LBL_LIST:A:" + releaseId));
-        return List.of(BotResponse.withMultiRowButtons("введи комент (додасться до всіх треків альбому):", List.of(labelBtn)));
+        var buttons = List.of(
+                BotResponse.ButtonDto.callback("🏷", "LBL_LIST:A:" + releaseId),
+                BotResponse.ButtonDto.callback("✏️", "EDIT_COMMENT:A:" + releaseId)
+        );
+        return List.of(BotResponse.withMultiRowButtons("введи комент (додасться до всіх треків альбому):", List.of(buttons)));
     }
 
     @Transactional(readOnly = true)
     public List<BotResponse> applyComment(ConversationContext ctx, String comment) {
-        Optional<Long> releaseIdOpt = commentContextHolder.get(ctx.conversationId());
-        if (releaseIdOpt.isEmpty()) {
+        Optional<AlbumCommentContext> ctxOpt = commentContextHolder.get(ctx.conversationId());
+        if (ctxOpt.isEmpty()) {
             return List.of(BotResponse.text("немає активного контексту альбому."));
         }
-        Long releaseId = releaseIdOpt.get();
+        Long releaseId = ctxOpt.get().releaseId();
         commentContextHolder.clear(ctx.conversationId());
 
         List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
@@ -108,6 +117,42 @@ public class NowPlayingAlbumFlowService {
             addCommentTaskProducer.send(new AddCommentTaskDto(track.getId(), comment, ctx.conversationId()));
         }
         return List.of(BotResponse.text("✅ комент «%s» додається до %d треків".formatted(comment, tracks.size())));
+    }
+
+    @Transactional(readOnly = true)
+    public List<BotResponse> handleEditCommentAlbum(ConversationContext ctx, Long releaseId) {
+        List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
+        SequencedSet<String> uniqueComments = new LinkedHashSet<>();
+        for (Track t : tracks) {
+            t.getTag("COMM").filter(c -> !c.isBlank()).ifPresent(uniqueComments::add);
+        }
+
+        commentContextHolder.setReplaceMode(ctx.conversationId(), releaseId);
+
+        if (uniqueComments.isEmpty()) {
+            return List.of(BotResponse.text("коментів ще немає. введи новий:"));
+        }
+        String existing = String.join("\n", uniqueComments);
+        return List.of(
+                BotResponse.text(existing),
+                BotResponse.text("скопіюй, підкоригуй і відправ — замінить коментар у всіх треків альбому:")
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<BotResponse> applyReplaceComment(ConversationContext ctx, String comment) {
+        Optional<AlbumCommentContext> ctxOpt = commentContextHolder.get(ctx.conversationId());
+        if (ctxOpt.isEmpty()) {
+            return List.of(BotResponse.text("немає активного контексту альбому."));
+        }
+        Long releaseId = ctxOpt.get().releaseId();
+        commentContextHolder.clear(ctx.conversationId());
+
+        List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
+        for (Track track : tracks) {
+            replaceCommentTaskProducer.send(new ReplaceCommentTaskDto(track.getId(), comment, ctx.conversationId()));
+        }
+        return List.of(BotResponse.text("✅ комент замінюється у %d треків".formatted(tracks.size())));
     }
 
     public List<BotResponse> handleDelete(ConversationContext ctx, Long releaseId) {
@@ -119,12 +164,22 @@ public class NowPlayingAlbumFlowService {
                 .map(Artist::getName)
                 .collect(Collectors.joining(", "));
 
+        StringBuilder meta = new StringBuilder();
+        if (release.getInitialRelease() != null) meta.append(release.getInitialRelease());
+        if (release.getReleaseFormat() != null) {
+            if (!meta.isEmpty()) meta.append(" · ");
+            meta.append(release.getReleaseFormat().name().toLowerCase());
+        }
+        if (release.getReleaseType() != null) {
+            if (!meta.isEmpty()) meta.append(" · ");
+            meta.append(release.getReleaseType().name().toLowerCase());
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("💿 ").append(release.getTitle());
-        if (release.getInitialRelease() != null) {
-            sb.append("  (").append(release.getInitialRelease()).append(")");
-        }
-        sb.append("\n👤 ").append(artists.isEmpty() ? "?" : artists).append("\n\n");
+        sb.append("\n👤 ").append(artists.isEmpty() ? "?" : artists);
+        if (!meta.isEmpty()) sb.append("\n").append(meta);
+        sb.append("\n\n");
 
         for (Track t : tracks) {
             int num = t.getTrackNumber() != null ? t.getTrackNumber() : 0;
@@ -151,7 +206,7 @@ public class NowPlayingAlbumFlowService {
             Map<String, String> tags = tagsByTrackId.getOrDefault(t.getId(), Map.of());
             int num = t.getTrackNumber() != null ? t.getTrackNumber() : 0;
 
-            sb.append("\n\n");
+            sb.append("\n");
             sb.append(num > 0 ? num + ". " : "• ").append(t.getTitle());
             if (t.getDuration() != null) {
                 sb.append("  (").append(formatDuration(t.getDuration())).append(")");
@@ -161,12 +216,12 @@ public class NowPlayingAlbumFlowService {
             String functionEmoji = toFunctionEmoji(tags.get("DJ_FUNCTION"));
             String comment = tags.get("COMM");
 
-            sb.append("\n   ").append(stars);
-            if (!functionEmoji.isEmpty()) {
-                sb.append("  ").append(functionEmoji);
-            }
-            if (comment != null && !comment.isBlank()) {
-                sb.append("  💬 ").append(comment);
+            boolean hasExtra = !stars.isEmpty() || !functionEmoji.isEmpty() || (comment != null && !comment.isBlank());
+            if (hasExtra) {
+                sb.append("\n   ");
+                if (!stars.isEmpty()) sb.append(stars);
+                if (!functionEmoji.isEmpty()) sb.append("  ").append(functionEmoji);
+                if (comment != null && !comment.isBlank()) sb.append("  💬 ").append(comment);
             }
         }
         return sb.toString().stripTrailing().toLowerCase();
@@ -182,14 +237,14 @@ public class NowPlayingAlbumFlowService {
     }
 
     private String toStars(String rating) {
-        if (rating == null) return "☆☆☆☆☆";
+        if (rating == null) return "";
         try {
             int r = Integer.parseInt(rating);
-            if (r == 0) return "☆☆☆☆☆";
+            if (r == 0) return "";
             int stars = r <= 51 ? 1 : r <= 102 ? 2 : r <= 153 ? 3 : r <= 204 ? 4 : 5;
-            return "★".repeat(stars) + "☆".repeat(5 - stars);
+            return "⭐".repeat(stars);
         } catch (NumberFormatException e) {
-            return "☆☆☆☆☆";
+            return "";
         }
     }
 

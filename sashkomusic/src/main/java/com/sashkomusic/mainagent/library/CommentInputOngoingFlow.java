@@ -21,6 +21,10 @@ public class CommentInputOngoingFlow implements OngoingFlow {
 
     @Override
     public List<BotResponse> handle(ConversationContext ctx, String input) {
+        DjTagContextHolder.DjTagContext tagCtx = djTagFlowService.getTagContext(ctx);
+        if (tagCtx != null && tagCtx.replaceMode()) {
+            return djTagFlowService.handleReplaceCommentInput(ctx, input);
+        }
         return djTagFlowService.handleCommentInput(ctx, input);
     }
 }

@@ -19,11 +19,15 @@ public class AlbumCommentContextHolder {
     private final ChatStateStore store;
 
     public void set(String conversationId, Long releaseId) {
-        store.put(conversationId, FLOW_KEY, releaseId);
+        store.put(conversationId, FLOW_KEY, new AlbumCommentContext(releaseId, false));
     }
 
-    public Optional<Long> get(String conversationId) {
-        return store.get(conversationId, FLOW_KEY, Long.class);
+    public void setReplaceMode(String conversationId, Long releaseId) {
+        store.put(conversationId, FLOW_KEY, new AlbumCommentContext(releaseId, true));
+    }
+
+    public Optional<AlbumCommentContext> get(String conversationId) {
+        return store.get(conversationId, FLOW_KEY, AlbumCommentContext.class);
     }
 
     public void clear(String conversationId) {
@@ -34,4 +38,6 @@ public class AlbumCommentContextHolder {
     public void onHardReset(ChatHardResetEvent event) {
         clear(event.conversationId());
     }
+
+    public record AlbumCommentContext(Long releaseId, boolean replaceMode) {}
 }

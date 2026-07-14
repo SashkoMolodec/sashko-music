@@ -133,6 +133,27 @@ public class RateTrackService {
         return new RateResult(true, "✅ коментар додано");
     }
 
+    @Transactional
+    public RateResult replaceComment(Long trackId, String comment) {
+        log.info("Replacing comment for track id={}: {}", trackId, comment);
+
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
+        if (track == null) {
+            return new RateResult(false, "трек не знайдено");
+        }
+
+        track.setTag("COMM", comment);
+
+        Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
+        if (audioFile != null && Files.exists(audioFile)) {
+            djTagWriter.replaceComment(audioFile, comment);
+        }
+
+        trackRepository.save(track);
+        log.info("Successfully replaced comment for track: id={}", trackId);
+        return new RateResult(true, "✅ коментар оновлено");
+    }
+
     private int convertStarsToWmpRating(int stars) {
         return switch (stars) {
             case 1 -> 51;

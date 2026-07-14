@@ -70,6 +70,14 @@ public class CallbackDispatcher {
         handlers.put("ALB_INFO:", (ctx, data, msgId) -> npAlbum.handleInfo(ctx, Long.parseLong(data.substring("ALB_INFO:".length()))));
         handlers.put("ALB_COMMENT:", (ctx, data, msgId) -> npAlbum.handleComment(ctx, Long.parseLong(data.substring("ALB_COMMENT:".length()))));
         handlers.put("ALB_RM:", (ctx, data, msgId) -> npAlbum.handleDelete(ctx, Long.parseLong(data.substring("ALB_RM:".length()))));
+        handlers.put("EDIT_COMMENT:", (ctx, data, msgId) -> {
+            String suffix = data.substring("EDIT_COMMENT:".length());
+            String[] parts = suffix.split(":", 2);
+            long targetId = Long.parseLong(parts[1]);
+            return "T".equals(parts[0])
+                    ? djTag.handleEditCommentTrack(ctx, targetId)
+                    : npAlbum.handleEditCommentAlbum(ctx, targetId);
+        });
         handlers.put("MARKERS_ADD", (ctx, data, msgId) -> markersFlow.promptCreate(ctx));
         handlers.put("LBL_LIST:", (ctx, data, msgId) -> smartlistLabel.showListFromCallback(ctx, data.substring("LBL_LIST:".length())));
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));

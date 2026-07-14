@@ -22,6 +22,10 @@ public class AlbumCommentOngoingFlow implements OngoingFlow {
 
     @Override
     public List<BotResponse> handle(ConversationContext ctx, String input) {
+        AlbumCommentContextHolder.AlbumCommentContext albumCtx = holder.get(ctx.conversationId()).orElse(null);
+        if (albumCtx != null && albumCtx.replaceMode()) {
+            return service.applyReplaceComment(ctx, input);
+        }
         return service.applyComment(ctx, input);
     }
 }

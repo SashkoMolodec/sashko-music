@@ -52,12 +52,10 @@ public class NowPlayingFlowService {
 
         StringBuilder message = new StringBuilder();
 
-        message.append("зараз лабанить ");
-
         if (trackDto.artistName() != null && !trackDto.artistName().isEmpty()) {
-            message.append("_").append(trackDto.artistName()).append(" — ").append(trackDto.title()).append("_");
+            message.append(trackDto.artistName()).append(" — ").append(trackDto.title());
         } else {
-            message.append("_").append(trackDto.title()).append("_");
+            message.append(trackDto.title());
         }
 
         StringBuilder emojiLine = new StringBuilder();
@@ -183,17 +181,11 @@ public class NowPlayingFlowService {
         log.info("Handling Icecast track: {} - {}", trackInfo.artist(), trackInfo.title());
 
         StringBuilder message = new StringBuilder();
-        message.append("зараз лабанить ");
-
         if (trackInfo.artist() != null && !trackInfo.artist().isEmpty() &&
                 !trackInfo.artist().equalsIgnoreCase("Unknown Artist")) {
-            message.append("_")
-                    .append(trackInfo.artist())
-                    .append(" — ")
-                    .append(trackInfo.title())
-                    .append("_");
+            message.append(trackInfo.artist()).append(" — ").append(trackInfo.title());
         } else {
-            message.append("_").append(trackInfo.title()).append("_");
+            message.append(trackInfo.title());
         }
 
         message.append("\n\n🎧 live stream");

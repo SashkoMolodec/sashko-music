@@ -146,7 +146,7 @@ public class UserInteractionOrchestrator {
         if (rawInput.startsWith("/newtopic")) {
             return newTopicFlowService.handle(ctx, rawInput.substring("/newtopic".length()).trim());
         }
-        if (rawInput.startsWith("/np-album")) {
+        if (rawInput.startsWith("/np-album") || rawInput.startsWith("/npalbum")) {
             return nowPlayingAlbumFlowService.nowPlayingAlbum(ctx);
         }
         if (rawInput.startsWith("/markers")) {
