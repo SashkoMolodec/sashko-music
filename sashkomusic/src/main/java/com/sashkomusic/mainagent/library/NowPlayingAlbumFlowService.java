@@ -135,7 +135,7 @@ public class NowPlayingAlbumFlowService {
         String existing = String.join("\n", uniqueComments);
         return List.of(
                 BotResponse.text(existing),
-                BotResponse.text("скопіюй, підкоригуй і відправ — замінить коментар у всіх треків альбому:")
+                BotResponse.text("✍️ скопіюй, підкоригуй")
         );
     }
 

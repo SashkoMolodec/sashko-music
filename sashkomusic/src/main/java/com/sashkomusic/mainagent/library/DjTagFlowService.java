@@ -66,7 +66,7 @@ public class DjTagFlowService {
         }
         return List.of(
                 BotResponse.text(currentComment),
-                BotResponse.text("скопіюй, підкоригуй і відправ — повністю замінить коментар:")
+                BotResponse.text("✍️ скопіюй, підкоригуй")
         );
     }
 
