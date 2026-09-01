@@ -15,7 +15,13 @@ public class SoulseekDirectoryConfirmContextHolder {
     private final ChatStateStore stateStore;
 
     public void save(String conversationId, String releaseId, DownloadOption expandedOption) {
-        stateStore.put(conversationId, FLOW_KEY, new PendingConfirm(releaseId, expandedOption));
+        stateStore.put(conversationId, FLOW_KEY, new PendingConfirm(releaseId, expandedOption, false));
+    }
+
+    public void markSelecting(String conversationId) {
+        get(conversationId).ifPresent(pending ->
+                stateStore.put(conversationId, FLOW_KEY,
+                        new PendingConfirm(pending.releaseId(), pending.expandedOption(), true)));
     }
 
     public Optional<PendingConfirm> get(String conversationId) {
@@ -26,5 +32,5 @@ public class SoulseekDirectoryConfirmContextHolder {
         stateStore.remove(conversationId, FLOW_KEY);
     }
 
-    public record PendingConfirm(String releaseId, DownloadOption expandedOption) {}
+    public record PendingConfirm(String releaseId, DownloadOption expandedOption, boolean selecting) {}
 }

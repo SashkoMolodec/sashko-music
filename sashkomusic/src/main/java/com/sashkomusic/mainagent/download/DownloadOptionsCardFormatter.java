@@ -80,13 +80,10 @@ public class DownloadOptionsCardFormatter {
     public static String formatSingle(DownloadOption option) {
         StringBuilder sb = new StringBuilder();
         String format = detectFormat(option);
-        int fileCount = option.files().size();
-        sb.append("1️⃣ **[%s]** • %d ф. • %d MB\n".formatted(format, fileCount, option.totalSize()));
-        option.files().stream()
-                .limit(7)
-                .forEach(f -> sb.append("   📄 `%s`\n".formatted(f.displayName())));
-        if (fileCount > 7) {
-            sb.append("   ... _та ще %d файлів_\n".formatted(fileCount - 7));
+        List<DownloadOption.FileItem> files = option.files();
+        sb.append("**[%s]** • %d ф. • %d MB\n\n".formatted(format, files.size(), option.totalSize()));
+        for (int i = 0; i < files.size(); i++) {
+            sb.append("`%d.` %s\n".formatted(i + 1, files.get(i).displayName()));
         }
         return sb.toString();
     }
