@@ -83,7 +83,7 @@ public class DownloadOptionsCardFormatter {
         List<DownloadOption.FileItem> files = option.files();
         sb.append("**[%s]** • %d ф. • %d MB\n\n".formatted(format, files.size(), option.totalSize()));
         for (int i = 0; i < files.size(); i++) {
-            sb.append("`%d.` %s\n".formatted(i + 1, files.get(i).displayName()));
+            sb.append("`%d. %s`\n".formatted(i + 1, files.get(i).displayName()));
         }
         return sb.toString();
     }
