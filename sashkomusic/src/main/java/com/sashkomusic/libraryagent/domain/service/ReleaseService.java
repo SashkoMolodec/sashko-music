@@ -37,6 +37,15 @@ public class ReleaseService {
     private final AnalyzeTrackProducer analyzeTrackProducer;
     private final LibrarySearchService librarySearchService;
 
+    @Transactional(readOnly = true)
+    public java.util.Set<Integer> getExistingTrackNumbers(String sourceId) {
+        return releaseRepository.findBySourceId(sourceId)
+                .map(release -> release.getTracks().stream()
+                        .map(Track::getTrackNumber)
+                        .collect(java.util.stream.Collectors.toSet()))
+                .orElseGet(java.util.Set::of);
+    }
+
     @Transactional
     public void clearReleaseData(String sourceId) {
         log.info("Clearing existing data for release with sourceId: {}", sourceId);

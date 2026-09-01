@@ -69,11 +69,34 @@ public class LibraryProcessingService {
             return ProcessingResult.failure("No files were successfully processed", errors);
         }
 
+        processedFiles = skipAlreadyDownloadedTracks(processedFiles, metadata.id());
+        if (processedFiles.isEmpty()) {
+            return ProcessingResult.failure("усі треки з цього завантаження вже є в бібліотеці — нічого додавати не було", errors);
+        }
+
         OrganizationContext orgContext = organizeIntoLibrary(processedFiles, metadata, task, coverArt, errors);
         saveToDatabase(metadata, orgContext.directoryPath, orgContext.coverPath, orgContext.organizedFiles, errors);
 
         log.info("Library processing completed successfully: {} files processed", processedFiles.size());
         return ProcessingResult.success(orgContext.directoryPath, processedFiles, errors);
+    }
+
+    private List<ProcessedFile> skipAlreadyDownloadedTracks(List<ProcessedFile> processedFiles, String sourceId) {
+        if (sourceId == null) return processedFiles;
+
+        java.util.Set<Integer> existingTrackNumbers = releaseService.getExistingTrackNumbers(sourceId);
+        if (existingTrackNumbers.isEmpty()) return processedFiles;
+
+        List<ProcessedFile> result = new ArrayList<>();
+        for (ProcessedFile file : processedFiles) {
+            if (existingTrackNumbers.contains(file.trackNumber())) {
+                log.info("Skipping track {} ('{}') — already in library for release {}",
+                        file.trackNumber(), file.trackTitle(), sourceId);
+            } else {
+                result.add(file);
+            }
+        }
+        return result;
     }
 
     private List<Path> collectAudioFiles(List<String> filePaths) {
