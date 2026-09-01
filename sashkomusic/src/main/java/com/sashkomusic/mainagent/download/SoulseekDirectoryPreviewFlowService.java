@@ -71,7 +71,7 @@ public class SoulseekDirectoryPreviewFlowService {
             return List.of(BotResponse.text("😔 підтвердження вже протухло — знайди реліз ще раз"));
         }
         confirmHolder.markSelecting(ctx.conversationId());
-        return List.of(BotResponse.text("введи номери треків через кому (напр. 1,2,5) — cover додасться автоматично:"));
+        return List.of(BotResponse.text("🤔 введи номери треків через кому (напр. 1,2,5)"));
     }
 
     public boolean isSelecting(ConversationContext ctx) {
