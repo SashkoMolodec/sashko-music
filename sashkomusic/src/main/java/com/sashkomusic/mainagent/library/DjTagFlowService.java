@@ -171,13 +171,19 @@ public class DjTagFlowService {
             djTagContextHolder.activateCommentMode(ctx.conversationId());
             var buttons = List.of(
                     BotResponse.ButtonDto.callback("🏷", "LBL_LIST:T:" + trackId),
-                    BotResponse.ButtonDto.callback("✏️", "EDIT_COMMENT:T:" + trackId)
+                    BotResponse.ButtonDto.callback("✏️", "EDIT_COMMENT:T:" + trackId),
+                    BotResponse.ButtonDto.callback("❌", "COMMENT_CANCEL:T:" + trackId)
             );
             return List.of(BotResponse.withMultiRowButtons("✍️ шось туту во пиши:", List.of(buttons)));
         } catch (NumberFormatException e) {
             log.error("Failed to parse comment activation callback: {}", data, e);
             return List.of(BotResponse.text("помилка обробки"));
         }
+    }
+
+    public List<BotResponse> handleCommentCancel(ConversationContext ctx) {
+        djTagContextHolder.deactivateCommentMode(ctx.conversationId());
+        return List.of(BotResponse.text("❌ скасовано"));
     }
 
     public List<BotResponse> setDjEnergy(ConversationContext ctx, Long trackId, String energyLevel) {

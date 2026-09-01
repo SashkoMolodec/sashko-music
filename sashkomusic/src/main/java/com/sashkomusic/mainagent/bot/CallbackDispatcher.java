@@ -60,6 +60,7 @@ public class CallbackDispatcher {
         handlers.put("ENERGY_RATE:", (ctx, data, msgId) -> djTag.handleEnergyRate(ctx, data));
         handlers.put("FUNCTION_RATE:", (ctx, data, msgId) -> djTag.handleFunctionRate(ctx, data));
         handlers.put("ADD_COMMENT:", (ctx, data, msgId) -> djTag.handleCommentAdd(ctx, data));
+        handlers.put("COMMENT_CANCEL:", (ctx, data, msgId) -> djTag.handleCommentCancel(ctx));
         handlers.put("RM_OK:", (ctx, data, msgId) -> removeRelease.handleConfirm(ctx, data));
         handlers.put("RM_NO:", (ctx, data, msgId) -> removeRelease.handleCancel(ctx, data));
         handlers.put("LIB_ASSIGN:", (ctx, data, msgId) -> sublibAssignment.handle(ctx, data));
