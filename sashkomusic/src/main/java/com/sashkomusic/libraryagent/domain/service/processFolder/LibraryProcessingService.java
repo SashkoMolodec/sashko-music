@@ -76,9 +76,36 @@ public class LibraryProcessingService {
 
         OrganizationContext orgContext = organizeIntoLibrary(processedFiles, metadata, task, coverArt, errors);
         saveToDatabase(metadata, orgContext.directoryPath, orgContext.coverPath, orgContext.organizedFiles, errors);
+        cleanupSourceDirectory(task.directoryPath(), orgContext.directoryPath);
 
         log.info("Library processing completed successfully: {} files processed", processedFiles.size());
         return ProcessingResult.success(orgContext.directoryPath, processedFiles, errors);
+    }
+
+    /**
+     * Files are copied (not moved) into the library, so the slskd/download staging folder is left
+     * behind. If it's not cleared, leftover files from earlier attempts at the same release get
+     * picked up as bogus extra tracks the next time that folder is re-processed.
+     */
+    private void cleanupSourceDirectory(String sourceDirectory, String finalDirectory) {
+        if (sourceDirectory == null || sourceDirectory.equals(finalDirectory)) {
+            return;
+        }
+        Path sourceDir = Paths.get(sourceDirectory);
+        if (!Files.exists(sourceDir)) return;
+
+        try (var walk = Files.walk(sourceDir)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (java.io.IOException e) {
+                    log.warn("Failed to delete leftover download file {}: {}", p, e.getMessage());
+                }
+            });
+            log.info("Cleaned up download staging directory: {}", sourceDir);
+        } catch (java.io.IOException e) {
+            log.warn("Failed to clean up download staging directory {}: {}", sourceDirectory, e.getMessage());
+        }
     }
 
     private List<ProcessedFile> skipAlreadyDownloadedTracks(List<ProcessedFile> processedFiles, String sourceId) {
