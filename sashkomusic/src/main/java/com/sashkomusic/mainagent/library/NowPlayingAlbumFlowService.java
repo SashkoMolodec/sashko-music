@@ -103,7 +103,7 @@ public class NowPlayingAlbumFlowService {
         return List.of(BotResponse.withMultiRowButtons("введи комент (додасться до всіх треків альбому):", List.of(buttons)));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> applyComment(ConversationContext ctx, String comment) {
         Optional<AlbumCommentContext> ctxOpt = commentContextHolder.get(ctx.conversationId());
         if (ctxOpt.isEmpty()) {
@@ -119,7 +119,7 @@ public class NowPlayingAlbumFlowService {
         return List.of(BotResponse.text("✅ комент «%s» додається до %d треків".formatted(comment, tracks.size())));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> handleEditCommentAlbum(ConversationContext ctx, Long releaseId) {
         List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
         SequencedSet<String> uniqueComments = new LinkedHashSet<>();
@@ -139,7 +139,7 @@ public class NowPlayingAlbumFlowService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> applyReplaceComment(ConversationContext ctx, String comment) {
         Optional<AlbumCommentContext> ctxOpt = commentContextHolder.get(ctx.conversationId());
         if (ctxOpt.isEmpty()) {
