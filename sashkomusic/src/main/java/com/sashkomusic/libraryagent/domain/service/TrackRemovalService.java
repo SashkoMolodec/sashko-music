@@ -4,6 +4,7 @@ import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
+import com.sashkomusic.mainagent.library.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,9 +34,16 @@ public class TrackRemovalService {
     private final ReleaseRepository releaseRepository;
     private final TrackRepository trackRepository;
     private final ReleaseRemovalService releaseRemovalService;
+    private final NavidromeClient navidromeClient;
 
     @Value("${trash.base-path}")
     private String trashBasePath;
+
+    @Value("${library.root-path}")
+    private String libraryRootPath;
+
+    @Value("${navidrome.library-path}")
+    private String navidromeLibraryPath;
 
     public record TrackRemovalResult(
             boolean success,
@@ -51,6 +59,7 @@ public class TrackRemovalService {
         if (releaseOpt.isEmpty()) {
             return new TrackRemovalResult(false, List.of(), List.of(), false, "реліз не знайдено в базі");
         }
+        String directoryPath = releaseOpt.get().getDirectoryPath();
 
         List<Track> allTracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
         Set<Integer> requested = new LinkedHashSet<>(trackNumbers);
@@ -81,6 +90,8 @@ public class TrackRemovalService {
         String fileWarning = fileFailures.isEmpty() ? null
                 : "⚠️ файл(и) лишились на диску, не вдалося прибрати: " + String.join(", ", fileFailures);
 
+        triggerNavidromeScan(directoryPath);
+
         if (toRemove.size() == allTracks.size()) {
             releaseRemovalService.remove(releaseId);
             String msg = "усі треки видалено — реліз перенесено у trash";
@@ -89,6 +100,26 @@ public class TrackRemovalService {
         }
 
         return new TrackRemovalResult(true, removedTitles, notFound, false, fileWarning);
+    }
+
+    /**
+     * Navidrome keeps serving/playing removed tracks until it rescans the folder on its own
+     * schedule. Nudge it immediately so a deleted track actually disappears from clients.
+     */
+    private void triggerNavidromeScan(String directoryPath) {
+        if (directoryPath == null || directoryPath.isEmpty()) return;
+        try {
+            Path full = Paths.get(directoryPath).toAbsolutePath().normalize();
+            Path root = Paths.get(libraryRootPath).toAbsolutePath().normalize();
+            if (!full.startsWith(root)) {
+                log.warn("Skipping Navidrome scan after track removal - {} is not under library root {}", directoryPath, libraryRootPath);
+                return;
+            }
+            String relativePath = root.relativize(full).toString();
+            navidromeClient.triggerScan(navidromeLibraryPath.stripTrailing() + "/" + relativePath);
+        } catch (Exception e) {
+            log.warn("Failed to trigger Navidrome scan after track removal for {}: {}", directoryPath, e.getMessage());
+        }
     }
 
     /** @return true if the file was moved to trash (or there was nothing to move) */

@@ -27,7 +27,7 @@ public class RemoveReleaseCompleteListener {
         if (event.success()) {
             message = "🗑️ перенесено у trash: " + title;
             if (event.trashPath() != null) {
-                message += "\n📁 " + event.trashPath();
+                message += "\n📁 `" + event.trashPath() + "`";
             }
             if (event.message() != null
                     && !"moved to trash".equals(event.message())

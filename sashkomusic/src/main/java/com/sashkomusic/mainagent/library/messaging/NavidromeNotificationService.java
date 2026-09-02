@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
+import com.sashkomusic.events.RemoveReleaseCompleteEvent;
 import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
 import com.sashkomusic.mainagent.library.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,29 @@ public class NavidromeNotificationService {
 
         String navidromePath = navidromeLibraryPath.stripTrailing() + "/" + relativePath;
         log.info("Triggering Navidrome scan for: {}", navidromePath);
+        navidromeClient.triggerScan(navidromePath);
+    }
+
+    /**
+     * Navidrome only re-checks a directory when it's scanned. A release/track removal deletes
+     * or moves files without telling Navidrome, so without this the library and cover art keep
+     * showing/playing removed content until Navidrome's next scheduled scan.
+     */
+    @EventListener
+    @Async
+    public void handleReleaseRemoved(RemoveReleaseCompleteEvent event) {
+        if (!event.success() || event.directoryPath() == null || event.directoryPath().isEmpty()) {
+            return;
+        }
+
+        String relativePath = extractRelativePath(event.directoryPath());
+        if (relativePath == null || relativePath.isEmpty()) {
+            log.warn("Skipping Navidrome scan after removal - could not extract relative path from: {}", event.directoryPath());
+            return;
+        }
+
+        String navidromePath = navidromeLibraryPath.stripTrailing() + "/" + relativePath;
+        log.info("Triggering Navidrome scan after release removal: {}", navidromePath);
         navidromeClient.triggerScan(navidromePath);
     }
 
