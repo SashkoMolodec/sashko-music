@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -66,28 +67,37 @@ public class TrackRemovalService {
         }
 
         List<String> removedTitles = new ArrayList<>();
+        List<String> fileFailures = new ArrayList<>();
         for (Track track : toRemove) {
-            removedTitles.add((track.getTrackNumber() != null ? track.getTrackNumber() + ". " : "") + track.getTitle());
-            moveFileToTrash(track.getLocalPath());
+            String label = (track.getTrackNumber() != null ? track.getTrackNumber() + ". " : "") + track.getTitle();
+            removedTitles.add(label);
+            if (!moveFileToTrash(track.getLocalPath())) {
+                fileFailures.add(label);
+            }
             trackRepository.delete(track);
             log.info("Removed track id={} '{}' from release {}", track.getId(), track.getTitle(), releaseId);
         }
 
+        String fileWarning = fileFailures.isEmpty() ? null
+                : "⚠️ файл(и) лишились на диску, не вдалося прибрати: " + String.join(", ", fileFailures);
+
         if (toRemove.size() == allTracks.size()) {
             releaseRemovalService.remove(releaseId);
+            String msg = "усі треки видалено — реліз перенесено у trash";
             return new TrackRemovalResult(true, removedTitles, notFound, true,
-                    "усі треки видалено — реліз перенесено у trash");
+                    fileWarning != null ? msg + "\n" + fileWarning : msg);
         }
 
-        return new TrackRemovalResult(true, removedTitles, notFound, false, null);
+        return new TrackRemovalResult(true, removedTitles, notFound, false, fileWarning);
     }
 
-    private void moveFileToTrash(String localPath) {
-        if (localPath == null || localPath.isBlank()) return;
-        try {
-            Path source = Paths.get(localPath);
-            if (!Files.exists(source)) return;
+    /** @return true if the file was moved to trash (or there was nothing to move) */
+    private boolean moveFileToTrash(String localPath) {
+        if (localPath == null || localPath.isBlank()) return true;
+        Path source = Paths.get(localPath);
+        if (!Files.exists(source)) return true;
 
+        try {
             Path trashRoot = Paths.get(trashBasePath);
             Files.createDirectories(trashRoot);
 
@@ -98,10 +108,17 @@ public class TrackRemovalService {
                 target = trashRoot.resolve(stamp + "__" + source.getFileName() + "_" + suffix++);
             }
 
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+                Files.delete(source);
+            }
             log.info("Moved track file to trash: {} -> {}", source, target);
+            return true;
         } catch (Exception e) {
-            log.warn("Failed to move track file to trash {}: {}", localPath, e.getMessage());
+            log.error("Failed to move track file to trash {}: {}", localPath, e.getMessage(), e);
+            return false;
         }
     }
 }
