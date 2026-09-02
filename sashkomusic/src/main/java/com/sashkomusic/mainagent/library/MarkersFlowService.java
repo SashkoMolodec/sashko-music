@@ -3,6 +3,8 @@ package com.sashkomusic.mainagent.library;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.libraryagent.domain.entity.Marker;
 import com.sashkomusic.libraryagent.domain.repository.MarkerRepository;
+import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDsl;
+import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
@@ -27,6 +29,7 @@ public class MarkersFlowService {
 
     private final MarkerRepository markerRepository;
     private final ChatStateStore chatStateStore;
+    private final SmartlistService smartlistService;
 
     @Transactional(readOnly = true)
     public List<BotResponse> showMarkers(ConversationContext ctx) {
@@ -70,7 +73,22 @@ public class MarkersFlowService {
             return List.of(BotResponse.text("мітка «" + trimmed + "» вже існує."));
         }
         markerRepository.save(new Marker(trimmed));
-        return List.of(BotResponse.text("✅ мітка «" + trimmed + "» створена"));
+        return List.of(BotResponse.text("✅ мітка «" + trimmed + "» створена" + createMatchingSmartlist(trimmed)));
+    }
+
+    /** Every marker gets a matching smartlist: tagged with it and rated above 1 star. */
+    private String createMatchingSmartlist(String markerName) {
+        SmartlistDsl dsl = new SmartlistDsl(List.of(
+                new SmartlistDsl.ContainsCondition("comment", "(" + markerName + ")"),
+                new SmartlistDsl.GtCondition("rating", 1)
+        ));
+        try {
+            smartlistService.create(markerName, dsl);
+            return "\n🧠 і смартлист «" + markerName + "»";
+        } catch (Exception e) {
+            log.warn("Failed to auto-create smartlist for marker '{}': {}", markerName, e.getMessage());
+            return "\n⚠️ смартлист не створився: " + e.getMessage();
+        }
     }
 
     @Transactional
