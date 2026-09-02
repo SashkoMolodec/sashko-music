@@ -37,11 +37,23 @@ public class SmartlistLabelFlowService {
         return showList(ctx, p[0], Long.parseLong(p[1]));
     }
 
+    @Transactional
     public List<BotResponse> showList(ConversationContext ctx, String mode, Long targetId) {
         List<Marker> all = markerRepository.findAll();
         if (all.isEmpty()) {
             return List.of(BotResponse.text("міток ще немає — створи через /labels"));
         }
+
+        // Entering the label picker abandons whichever "waiting for free-text comment" mode
+        // brought us here (💬 button) — otherwise that stale context stays active and the
+        // next thing the user types gets misapplied as a bulk comment (same bug class as the
+        // original album-comment fix, just reached via the 🏷 sub-flow instead).
+        if (LabelContext.MODE_TRACK.equals(mode)) {
+            djTagContextHolder.deactivateCommentMode(ctx.conversationId());
+        } else {
+            albumCommentContextHolder.clear(ctx.conversationId());
+        }
+
         List<Long> ids = all.stream().map(Marker::getId).toList();
         holder.set(ctx.conversationId(), new LabelContext(mode, targetId, ids, 0));
         return buildPage(all, 0);
