@@ -1,0 +1,107 @@
+package com.sashkomusic.libraryagent.domain.service;
+
+import com.sashkomusic.libraryagent.domain.entity.Release;
+import com.sashkomusic.libraryagent.domain.entity.Track;
+import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
+import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class TrackRemovalService {
+
+    private static final DateTimeFormatter TS_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
+    private final ReleaseRepository releaseRepository;
+    private final TrackRepository trackRepository;
+    private final ReleaseRemovalService releaseRemovalService;
+
+    @Value("${trash.base-path}")
+    private String trashBasePath;
+
+    public record TrackRemovalResult(
+            boolean success,
+            List<String> removedTitles,
+            List<Integer> notFoundNumbers,
+            boolean releaseFullyRemoved,
+            String message
+    ) {}
+
+    @Transactional
+    public TrackRemovalResult removeTracks(Long releaseId, List<Integer> trackNumbers) {
+        var releaseOpt = releaseRepository.findById(releaseId);
+        if (releaseOpt.isEmpty()) {
+            return new TrackRemovalResult(false, List.of(), List.of(), false, "реліз не знайдено в базі");
+        }
+
+        List<Track> allTracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
+        Set<Integer> requested = new LinkedHashSet<>(trackNumbers);
+
+        List<Track> toRemove = allTracks.stream()
+                .filter(t -> t.getTrackNumber() != null && requested.contains(t.getTrackNumber()))
+                .toList();
+
+        Set<Integer> foundNumbers = toRemove.stream().map(Track::getTrackNumber).collect(Collectors.toSet());
+        List<Integer> notFound = trackNumbers.stream().filter(n -> !foundNumbers.contains(n)).distinct().toList();
+
+        if (toRemove.isEmpty()) {
+            return new TrackRemovalResult(false, List.of(), notFound, false, "жоден із вказаних номерів не знайдено");
+        }
+
+        List<String> removedTitles = new ArrayList<>();
+        for (Track track : toRemove) {
+            removedTitles.add((track.getTrackNumber() != null ? track.getTrackNumber() + ". " : "") + track.getTitle());
+            moveFileToTrash(track.getLocalPath());
+            trackRepository.delete(track);
+            log.info("Removed track id={} '{}' from release {}", track.getId(), track.getTitle(), releaseId);
+        }
+
+        if (toRemove.size() == allTracks.size()) {
+            releaseRemovalService.remove(releaseId);
+            return new TrackRemovalResult(true, removedTitles, notFound, true,
+                    "усі треки видалено — реліз перенесено у trash");
+        }
+
+        return new TrackRemovalResult(true, removedTitles, notFound, false, null);
+    }
+
+    private void moveFileToTrash(String localPath) {
+        if (localPath == null || localPath.isBlank()) return;
+        try {
+            Path source = Paths.get(localPath);
+            if (!Files.exists(source)) return;
+
+            Path trashRoot = Paths.get(trashBasePath);
+            Files.createDirectories(trashRoot);
+
+            String stamp = LocalDateTime.now().format(TS_FORMAT);
+            Path target = trashRoot.resolve(stamp + "__" + source.getFileName());
+            int suffix = 1;
+            while (Files.exists(target)) {
+                target = trashRoot.resolve(stamp + "__" + source.getFileName() + "_" + suffix++);
+            }
+
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            log.info("Moved track file to trash: {} -> {}", source, target);
+        } catch (Exception e) {
+            log.warn("Failed to move track file to trash {}: {}", localPath, e.getMessage());
+        }
+    }
+}

@@ -4,6 +4,7 @@ import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
+import com.sashkomusic.libraryagent.domain.service.TrackRemovalService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.messaging.RemoveReleaseTaskProducer;
@@ -12,10 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,11 +26,14 @@ import java.util.Map;
 public class RemoveReleaseFlowService {
 
     private static final String CB_CONFIRM = "RM_OK:";
+    private static final String CB_SELECT = "RM_SEL:";
     private static final String CB_CANCEL = "RM_NO:";
 
     private final LibrarySearchService librarySearchService;
     private final ReleaseRepository releaseRepository;
     private final RemoveReleaseTaskProducer taskProducer;
+    private final TrackRemovalService trackRemovalService;
+    private final TrackRemovalContextHolder trackRemovalContextHolder;
 
     @Transactional(readOnly = true)
     public List<BotResponse> presentConfirmationByQuery(String query) {
@@ -84,6 +90,58 @@ public class RemoveReleaseFlowService {
         return List.of(BotResponse.text("✅ скасовано, нічого не видалено"));
     }
 
+    public List<BotResponse> promptTrackSelection(ConversationContext ctx, String callbackData) {
+        Long releaseId = parseId(callbackData, CB_SELECT);
+        if (releaseId == null) {
+            return List.of(BotResponse.text("❌ не зрозумів який реліз"));
+        }
+        trackRemovalContextHolder.markSelecting(ctx.conversationId(), releaseId);
+        return List.of(BotResponse.text("🤔 введи номери треків для видалення через кому (напр. 1,2,5)"));
+    }
+
+    public boolean isSelectingTracks(ConversationContext ctx) {
+        return trackRemovalContextHolder.get(ctx.conversationId()).isPresent();
+    }
+
+    public List<BotResponse> handleTrackSelection(ConversationContext ctx, String input) {
+        var pending = trackRemovalContextHolder.get(ctx.conversationId());
+        if (pending.isEmpty()) {
+            return List.of(BotResponse.text("😔 сесія протухла — спробуй ще раз"));
+        }
+        trackRemovalContextHolder.clear(ctx.conversationId());
+        Long releaseId = pending.get().releaseId();
+
+        List<Integer> numbers;
+        try {
+            numbers = Arrays.stream(input.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(Integer::parseInt)
+                    .toList();
+        } catch (NumberFormatException e) {
+            return List.of(BotResponse.text("не зрозумів номери — введи через кому, напр. 1,2,5"));
+        }
+        if (numbers.isEmpty()) {
+            return List.of(BotResponse.text("вкажи хоч один номер треку"));
+        }
+
+        TrackRemovalService.TrackRemovalResult result = trackRemovalService.removeTracks(releaseId, numbers);
+        if (!result.success()) {
+            return List.of(BotResponse.text("❌ " + result.message()));
+        }
+
+        StringBuilder sb = new StringBuilder("🗑 видалено:\n");
+        result.removedTitles().forEach(t -> sb.append("  ").append(t).append("\n"));
+        if (!result.notFoundNumbers().isEmpty()) {
+            sb.append("\n⚠️ не знайдено номер(и): ")
+                    .append(result.notFoundNumbers().stream().map(String::valueOf).collect(Collectors.joining(", ")));
+        }
+        if (result.message() != null) {
+            sb.append("\n\n").append(result.message());
+        }
+        return List.of(BotResponse.text(sb.toString().stripTrailing()));
+    }
+
     private List<BotResponse> buildConfirmationCard(LibrarySearchResult match) {
         var releaseOpt = releaseRepository.findById(match.releaseId());
         if (releaseOpt.isEmpty()) {
@@ -114,6 +172,7 @@ public class RemoveReleaseFlowService {
 
         Map<String, String> buttons = new LinkedHashMap<>();
         buttons.put("✅", CB_CONFIRM + release.getId());
+        buttons.put("🔢", CB_SELECT + release.getId());
         buttons.put("❌", CB_CANCEL + release.getId());
 
         return List.of(BotResponse.htmlWithButtons(sb.toString(), buttons));

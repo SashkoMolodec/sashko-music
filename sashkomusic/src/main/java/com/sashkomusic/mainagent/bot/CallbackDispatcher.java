@@ -62,6 +62,7 @@ public class CallbackDispatcher {
         handlers.put("ADD_COMMENT:", (ctx, data, msgId) -> djTag.handleCommentAdd(ctx, data));
         handlers.put("COMMENT_CANCEL:", (ctx, data, msgId) -> djTag.handleCommentCancel(ctx));
         handlers.put("RM_OK:", (ctx, data, msgId) -> removeRelease.handleConfirm(ctx, data));
+        handlers.put("RM_SEL:", (ctx, data, msgId) -> removeRelease.promptTrackSelection(ctx, data));
         handlers.put("RM_NO:", (ctx, data, msgId) -> removeRelease.handleCancel(ctx, data));
         handlers.put("LIB_ASSIGN:", (ctx, data, msgId) -> sublibAssignment.handle(ctx, data));
         handlers.put("PROC_SEL:", (ctx, data, msgId) -> processFolder.handleMetadataSelectionByIndex(ctx, data));
