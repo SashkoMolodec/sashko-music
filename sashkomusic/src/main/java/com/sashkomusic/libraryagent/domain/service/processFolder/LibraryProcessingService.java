@@ -75,8 +75,15 @@ public class LibraryProcessingService {
         }
 
         OrganizationContext orgContext = organizeIntoLibrary(processedFiles, metadata, task, coverArt, errors);
-        saveToDatabase(metadata, orgContext.directoryPath, orgContext.coverPath, orgContext.organizedFiles, errors);
+        boolean saved = saveToDatabase(metadata, orgContext.directoryPath, orgContext.coverPath, orgContext.organizedFiles, errors);
         cleanupSourceDirectory(task.directoryPath(), orgContext.directoryPath);
+
+        if (!saved) {
+            log.error("Files organized into {} but the database save failed — library and DB are now out of sync", orgContext.directoryPath);
+            return ProcessingResult.failure(
+                    "файли скопійовано в бібліотеку, але не вдалося зберегти в базу — постав /reprocess \"" + orgContext.directoryPath + "\" --force --skip-retag",
+                    errors);
+        }
 
         log.info("Library processing completed successfully: {} files processed", processedFiles.size());
         return ProcessingResult.success(orgContext.directoryPath, processedFiles, errors);
@@ -242,17 +249,19 @@ public class LibraryProcessingService {
         return finalFiles;
     }
 
-    private void saveToDatabase(ReleaseMetadata metadata, String directoryPath, String coverPath,
-                                List<FileOrganizer.OrganizedFile> organizedFiles, List<String> errors) {
+    private boolean saveToDatabase(ReleaseMetadata metadata, String directoryPath, String coverPath,
+                                   List<FileOrganizer.OrganizedFile> organizedFiles, List<String> errors) {
         try {
             releaseService.saveRelease(metadata, directoryPath, coverPath, organizedFiles, processingVersion,
                     libraryConfig.getDefaultSublibrary());
             log.info("Release saved to database successfully");
             metadataWriter.writeMetadata(directoryPath, metadata, processingVersion);
+            return true;
 
         } catch (Exception ex) {
             log.error("Failed to save release to database: {}", ex.getMessage(), ex);
             errors.add("Failed to save release to database: " + ex.getMessage());
+            return false;
         }
     }
 
