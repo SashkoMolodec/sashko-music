@@ -12,6 +12,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Slf4j
@@ -20,6 +23,7 @@ import java.util.List;
 public class MarkersFlowService {
 
     private static final String FLOW_KEY = "markers_creating";
+    private static final String REMOVE_FLOW_KEY = "markers_removing";
 
     private final MarkerRepository markerRepository;
     private final ChatStateStore chatStateStore;
@@ -38,8 +42,11 @@ public class MarkersFlowService {
             }
         }
 
-        var addBtn = List.of(BotResponse.ButtonDto.callback("➕", "MARKERS_ADD"));
-        return List.of(BotResponse.withMultiRowButtons(sb.toString().stripTrailing(), List.of(addBtn)));
+        var row = List.of(
+                BotResponse.ButtonDto.callback("➕", "MARKERS_ADD"),
+                BotResponse.ButtonDto.callback("🗑", "MARKERS_RM")
+        );
+        return List.of(BotResponse.withMultiRowButtons(sb.toString().stripTrailing(), List.of(row)));
     }
 
     public List<BotResponse> promptCreate(ConversationContext ctx) {
@@ -66,8 +73,66 @@ public class MarkersFlowService {
         return List.of(BotResponse.text("✅ мітка «" + trimmed + "» створена"));
     }
 
+    @Transactional(readOnly = true)
+    public List<BotResponse> promptRemove(ConversationContext ctx) {
+        List<Marker> markers = markerRepository.findAll();
+        if (markers.isEmpty()) {
+            return List.of(BotResponse.text("міток ще немає"));
+        }
+        List<Long> ids = markers.stream().map(Marker::getId).toList();
+        chatStateStore.put(ctx.conversationId(), REMOVE_FLOW_KEY, new RemovalContext(ids));
+        return List.of(BotResponse.text("🤔 введи номер(и) міток для видалення через кому (напр. 1,3)"));
+    }
+
+    public boolean isWaitingForRemoval(ConversationContext ctx) {
+        return chatStateStore.get(ctx.conversationId(), REMOVE_FLOW_KEY, RemovalContext.class).isPresent();
+    }
+
+    @Transactional
+    public List<BotResponse> removeMarkers(ConversationContext ctx, String input) {
+        var removalCtx = chatStateStore.get(ctx.conversationId(), REMOVE_FLOW_KEY, RemovalContext.class);
+        if (removalCtx.isEmpty()) {
+            return List.of(BotResponse.text("😔 сесія протухла — тисни 🗑 знову"));
+        }
+        chatStateStore.remove(ctx.conversationId(), REMOVE_FLOW_KEY);
+        List<Long> ids = removalCtx.get().markerIds();
+
+        List<Integer> numbers;
+        try {
+            numbers = Arrays.stream(input.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(Integer::parseInt)
+                    .toList();
+        } catch (NumberFormatException e) {
+            return List.of(BotResponse.text("не зрозумів номери — введи через кому, напр. 1,3"));
+        }
+        if (numbers.isEmpty()) {
+            return List.of(BotResponse.text("вкажи хоч один номер мітки"));
+        }
+        for (int n : numbers) {
+            if (n < 1 || n > ids.size()) {
+                return List.of(BotResponse.text("номер %d поза межами (усього %d міток)".formatted(n, ids.size())));
+            }
+        }
+
+        List<String> removedNames = new ArrayList<>();
+        for (int n : new LinkedHashSet<>(numbers)) {
+            Long markerId = ids.get(n - 1);
+            markerRepository.findById(markerId).ifPresent(marker -> {
+                removedNames.add(marker.getName());
+                markerRepository.deleteById(markerId);
+            });
+        }
+
+        return List.of(BotResponse.text("🗑 видалено: " + String.join(", ", removedNames)));
+    }
+
     @EventListener
     public void onHardReset(ChatHardResetEvent event) {
         chatStateStore.remove(event.conversationId(), FLOW_KEY);
+        chatStateStore.remove(event.conversationId(), REMOVE_FLOW_KEY);
     }
+
+    private record RemovalContext(List<Long> markerIds) {}
 }
