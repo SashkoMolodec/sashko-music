@@ -86,6 +86,7 @@ public class CallbackDispatcher {
         handlers.put("LBL_LIST:", (ctx, data, msgId) -> smartlistLabel.showListFromCallback(ctx, data.substring("LBL_LIST:".length())));
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));
         handlers.put("LBL_SEL:", (ctx, data, msgId) -> smartlistLabel.select(ctx, Integer.parseInt(data.substring("LBL_SEL:".length()))));
+        handlers.put("LBL_CANCEL", (ctx, data, msgId) -> smartlistLabel.cancel(ctx));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {

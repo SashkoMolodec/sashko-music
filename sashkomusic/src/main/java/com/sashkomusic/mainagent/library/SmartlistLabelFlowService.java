@@ -59,6 +59,29 @@ public class SmartlistLabelFlowService {
         return buildPage(all, 0);
     }
 
+    public boolean isSelecting(ConversationContext ctx) {
+        return holder.get(ctx.conversationId()).isPresent();
+    }
+
+    public List<BotResponse> cancel(ConversationContext ctx) {
+        holder.clear(ctx.conversationId());
+        return List.of(BotResponse.text("❌ скасовано"));
+    }
+
+    public List<BotResponse> handleTypedSelection(ConversationContext ctx, String input) {
+        LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
+        if (lctx == null) {
+            return List.of(BotResponse.text("контекст не знайдено — тисни 🏷 знову."));
+        }
+        int number;
+        try {
+            number = Integer.parseInt(input.trim());
+        } catch (NumberFormatException e) {
+            return List.of(BotResponse.text("не зрозумів номер — введи цифру мітки або тисни ❌"));
+        }
+        return select(ctx, number - 1);
+    }
+
     public List<BotResponse> goToPage(ConversationContext ctx, int page) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
@@ -125,6 +148,8 @@ public class SmartlistLabelFlowService {
             if (to < all.size()) nav.add(BotResponse.ButtonDto.callback("➡️", "LBL_PAGE:" + (page + 1)));
             if (!nav.isEmpty()) rows.add(nav);
         }
+
+        rows.add(List.of(BotResponse.ButtonDto.callback("❌", "LBL_CANCEL")));
 
         return List.of(BotResponse.withMultiRowButtons(sb.toString().stripTrailing(), rows));
     }
