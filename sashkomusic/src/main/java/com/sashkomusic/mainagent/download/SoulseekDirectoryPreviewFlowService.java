@@ -19,8 +19,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class SoulseekDirectoryPreviewFlowService {
 
-    private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "bmp", "gif");
-
     private final SoulseekDirectoryService directoryService;
     private final SoulseekDirectoryConfirmContextHolder confirmHolder;
     private final DownloadContextHolder downloadContextHolder;
@@ -112,7 +110,6 @@ public class SoulseekDirectoryPreviewFlowService {
         for (int n : numbers) {
             selected.add(allFiles.get(n - 1));
         }
-        allFiles.stream().filter(f -> isImage(f.displayName())).forEach(selected::add);
 
         int totalSizeMB = (int) (selected.stream().mapToLong(DownloadOption.FileItem::size).sum() / (1024L * 1024L));
         DownloadOption filtered = new DownloadOption(
@@ -139,12 +136,5 @@ public class SoulseekDirectoryPreviewFlowService {
                 option.files().size(),
                 option.totalSize()
         )));
-    }
-
-    private boolean isImage(String filename) {
-        if (filename == null) return false;
-        int dot = filename.lastIndexOf('.');
-        if (dot < 0 || dot >= filename.length() - 1) return false;
-        return IMAGE_EXTENSIONS.contains(filename.substring(dot + 1).toLowerCase());
     }
 }
