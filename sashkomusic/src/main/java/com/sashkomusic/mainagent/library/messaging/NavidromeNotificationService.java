@@ -60,23 +60,20 @@ public class NavidromeNotificationService {
      * Navidrome only re-checks a directory when it's scanned. A release/track removal deletes
      * or moves files without telling Navidrome, so without this the library and cover art keep
      * showing/playing removed content until Navidrome's next scheduled scan.
+     * <p>
+     * Deliberately a full scan, not scoped to the removed folder: scoped scans run as
+     * Navidrome's "quick-selective" mode, which picks up new/changed files but was verified
+     * to NOT reliably prune entries for files that vanished (a deleted track stayed
+     * searchable/playable 10+ minutes after a scoped scan completed).
      */
     @EventListener
     @Async
     public void handleReleaseRemoved(RemoveReleaseCompleteEvent event) {
-        if (!event.success() || event.directoryPath() == null || event.directoryPath().isEmpty()) {
+        if (!event.success()) {
             return;
         }
-
-        String relativePath = extractRelativePath(event.directoryPath());
-        if (relativePath == null || relativePath.isEmpty()) {
-            log.warn("Skipping Navidrome scan after removal - could not extract relative path from: {}", event.directoryPath());
-            return;
-        }
-
-        String navidromePath = navidromeLibraryPath.stripTrailing() + "/" + relativePath;
-        log.info("Triggering Navidrome scan after release removal: {}", navidromePath);
-        navidromeClient.triggerScan(navidromePath);
+        log.info("Triggering full Navidrome scan after release removal: {}", event.releaseTitle());
+        navidromeClient.triggerFullScan();
     }
 
     private String extractRelativePath(String fullPath) {

@@ -39,12 +39,6 @@ public class TrackRemovalService {
     @Value("${trash.base-path}")
     private String trashBasePath;
 
-    @Value("${library.root-path}")
-    private String libraryRootPath;
-
-    @Value("${navidrome.library-path}")
-    private String navidromeLibraryPath;
-
     public record TrackRemovalResult(
             boolean success,
             List<String> removedTitles,
@@ -103,23 +97,15 @@ public class TrackRemovalService {
     }
 
     /**
-     * Navidrome keeps serving/playing removed tracks until it rescans the folder on its own
-     * schedule. Nudge it immediately so a deleted track actually disappears from clients.
+     * Navidrome keeps serving/playing removed tracks until it rescans. A scoped scan
+     * (target=folder) runs as Navidrome's "quick-selective" mode, which picks up new/changed
+     * files but does NOT reliably prune entries for files that vanished — verified empirically:
+     * a deleted track stayed searchable/playable in Navidrome for 10+ minutes after a scoped
+     * scan completed, and only a full scan actually removed it. So: full scan it is.
      */
     private void triggerNavidromeScan(String directoryPath) {
         if (directoryPath == null || directoryPath.isEmpty()) return;
-        try {
-            Path full = Paths.get(directoryPath).toAbsolutePath().normalize();
-            Path root = Paths.get(libraryRootPath).toAbsolutePath().normalize();
-            if (!full.startsWith(root)) {
-                log.warn("Skipping Navidrome scan after track removal - {} is not under library root {}", directoryPath, libraryRootPath);
-                return;
-            }
-            String relativePath = root.relativize(full).toString();
-            navidromeClient.triggerScan(navidromeLibraryPath.stripTrailing() + "/" + relativePath);
-        } catch (Exception e) {
-            log.warn("Failed to trigger Navidrome scan after track removal for {}: {}", directoryPath, e.getMessage());
-        }
+        navidromeClient.triggerFullScan();
     }
 
     /** @return true if the file was moved to trash (or there was nothing to move) */
