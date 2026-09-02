@@ -73,7 +73,7 @@ public class MarkersFlowService {
         return List.of(BotResponse.text("✅ мітка «" + trimmed + "» створена"));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> promptRemove(ConversationContext ctx) {
         List<Marker> markers = markerRepository.findAll();
         if (markers.isEmpty()) {
