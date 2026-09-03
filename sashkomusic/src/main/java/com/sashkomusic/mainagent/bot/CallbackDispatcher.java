@@ -10,6 +10,7 @@ import com.sashkomusic.mainagent.library.MarkersFlowService;
 import com.sashkomusic.mainagent.library.SmartlistLabelFlowService;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
+import com.sashkomusic.mainagent.library.SmartlistsFlowService;
 import com.sashkomusic.mainagent.library.SublibraryAssignmentHandler;
 import com.sashkomusic.mainagent.process.PendingProcessCallbackHandler;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
@@ -42,7 +43,8 @@ public class CallbackDispatcher {
                               SmartlistCreationFlowService smartlistCreation,
                               NowPlayingAlbumFlowService npAlbum,
                               SmartlistLabelFlowService smartlistLabel,
-                              MarkersFlowService markersFlow) {
+                              MarkersFlowService markersFlow,
+                              SmartlistsFlowService smartlistsFlow) {
         handlers.put("CARD:", search::handleCardCallback);
         handlers.put("DIG_DEEPER", (ctx, data, msgId) -> search.switchStrategyAndSearch(ctx));
         handlers.put("NOOP", (ctx, data, msgId) -> List.of());
@@ -90,6 +92,12 @@ public class CallbackDispatcher {
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));
         handlers.put("LBL_SEL:", (ctx, data, msgId) -> smartlistLabel.select(ctx, Integer.parseInt(data.substring("LBL_SEL:".length()))));
         handlers.put("LBL_CANCEL", (ctx, data, msgId) -> smartlistLabel.cancel(ctx));
+        handlers.put("SMARTLISTS_ADD_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelCreate(ctx));
+        handlers.put("SMARTLISTS_ADD", (ctx, data, msgId) -> smartlistsFlow.promptCreate(ctx));
+        handlers.put("SMARTLISTS_RM_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelRemove(ctx));
+        handlers.put("SMARTLISTS_RM", (ctx, data, msgId) -> smartlistsFlow.promptRemove(ctx));
+        handlers.put("SMARTLISTS_INFO_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelInfo(ctx));
+        handlers.put("SMARTLISTS_INFO", (ctx, data, msgId) -> smartlistsFlow.promptInfo(ctx));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {
