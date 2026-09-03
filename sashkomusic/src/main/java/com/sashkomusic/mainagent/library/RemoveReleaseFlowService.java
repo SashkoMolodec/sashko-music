@@ -1,8 +1,11 @@
 package com.sashkomusic.mainagent.library;
 
 import com.sashkomusic.libraryagent.domain.entity.Release;
+import com.sashkomusic.libraryagent.domain.entity.Track;
+import com.sashkomusic.libraryagent.domain.entity.TrackTag;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
+import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.TrackRemovalService;
 import com.sashkomusic.mainagent.bot.BotResponse;
@@ -13,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -34,6 +38,7 @@ public class RemoveReleaseFlowService {
     private final RemoveReleaseTaskProducer taskProducer;
     private final TrackRemovalService trackRemovalService;
     private final TrackRemovalContextHolder trackRemovalContextHolder;
+    private final TrackTagRepository trackTagRepository;
 
     @Transactional(readOnly = true)
     public List<BotResponse> presentConfirmationByQuery(String query) {
@@ -90,13 +95,38 @@ public class RemoveReleaseFlowService {
         return List.of(BotResponse.text("✅ скасовано, нічого не видалено"));
     }
 
+    @Transactional(readOnly = true)
     public List<BotResponse> promptTrackSelection(ConversationContext ctx, String callbackData) {
         Long releaseId = parseId(callbackData, CB_SELECT);
         if (releaseId == null) {
             return List.of(BotResponse.text("❌ не зрозумів який реліз"));
         }
+        var releaseOpt = releaseRepository.findById(releaseId);
+        if (releaseOpt.isEmpty()) {
+            return List.of(BotResponse.text("❌ реліз вже не існує в базі"));
+        }
         trackRemovalContextHolder.markSelecting(ctx.conversationId(), releaseId);
-        return List.of(BotResponse.text("🤔 введи номери треків для видалення через кому (напр. 1,2,5)"));
+
+        List<Track> tracks = new ArrayList<>(releaseOpt.get().getTracks());
+        Map<Long, String> ratingByTrackId = trackTagRepository.findAllByTrackIds(tracks.stream().map(Track::getId).toList())
+                .stream()
+                .filter(tt -> "RATING".equals(tt.getTagName()))
+                .collect(Collectors.toMap(tt -> tt.getTrack().getId(), TrackTag::getTagValue, (v1, v2) -> v1));
+
+        StringBuilder sb = new StringBuilder("🤔 введи номери треків для видалення через кому (напр. 1,2,5):\n\n");
+        tracks.stream()
+                .sorted(Comparator.comparingInt(t -> ratingWmp(ratingByTrackId.get(t.getId()))))
+                .forEach(t -> {
+                    sb.append(t.getTrackNumber() == null ? "•" : t.getTrackNumber() + ".")
+                            .append(" ").append(escape(t.getTitle()));
+                    String stars = toStars(ratingByTrackId.get(t.getId()));
+                    if (!stars.isEmpty()) {
+                        sb.append("  ").append(stars);
+                    }
+                    sb.append("\n");
+                });
+
+        return List.of(BotResponse.text(sb.toString().stripTrailing()));
     }
 
     public boolean isSelectingTracks(ConversationContext ctx) {
@@ -185,6 +215,22 @@ public class RemoveReleaseFlowService {
             log.warn("Failed to parse release id from callback: {}", callbackData);
             return null;
         }
+    }
+
+    private int ratingWmp(String rating) {
+        if (rating == null) return 0;
+        try {
+            return Integer.parseInt(rating);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private String toStars(String rating) {
+        int r = ratingWmp(rating);
+        if (r == 0) return "";
+        int stars = r <= 51 ? 1 : r <= 102 ? 2 : r <= 153 ? 3 : r <= 204 ? 4 : 5;
+        return "⭐".repeat(stars);
     }
 
     private String escape(String s) {
