@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,7 +97,7 @@ public class RemoveReleaseFlowService {
         return List.of(BotResponse.text("✅ скасовано, нічого не видалено"));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<BotResponse> promptTrackSelection(ConversationContext ctx, String callbackData) {
         Long releaseId = parseId(callbackData, CB_SELECT);
         if (releaseId == null) {
@@ -108,24 +109,8 @@ public class RemoveReleaseFlowService {
         }
         trackRemovalContextHolder.markSelecting(ctx.conversationId(), releaseId);
 
-        List<Track> tracks = new ArrayList<>(releaseOpt.get().getTracks());
-        Map<Long, String> ratingByTrackId = trackTagRepository.findAllByTrackIds(tracks.stream().map(Track::getId).toList())
-                .stream()
-                .filter(tt -> "RATING".equals(tt.getTagName()))
-                .collect(Collectors.toMap(tt -> tt.getTrack().getId(), TrackTag::getTagValue, (v1, v2) -> v1));
-
         StringBuilder sb = new StringBuilder("🤔 введи номери треків для видалення через кому (напр. 1,2,5):\n\n");
-        tracks.stream()
-                .sorted(Comparator.comparingInt(t -> ratingWmp(ratingByTrackId.get(t.getId()))))
-                .forEach(t -> {
-                    sb.append(t.getTrackNumber() == null ? "•" : t.getTrackNumber() + ".")
-                            .append(" ").append(escape(t.getTitle()));
-                    String stars = toStars(ratingByTrackId.get(t.getId()));
-                    if (!stars.isEmpty()) {
-                        sb.append("  ").append(stars);
-                    }
-                    sb.append("\n");
-                });
+        appendTrackListSortedByRating(sb, releaseOpt.get().getTracks(), "");
 
         return List.of(BotResponse.withButtons(sb.toString().stripTrailing(), Map.of("❌", CB_SELECT_CANCEL)));
     }
@@ -198,11 +183,7 @@ public class RemoveReleaseFlowService {
         sb.append("📁 <code>").append(escape(release.getDirectoryPath())).append("</code>\n\n");
 
         sb.append("треки (").append(release.getTracks().size()).append("):\n");
-        release.getTracks().stream()
-                .sorted(Comparator.comparing(t -> t.getTrackNumber() == null ? 0 : t.getTrackNumber()))
-                .forEach(t -> sb.append("  ")
-                        .append(t.getTrackNumber() == null ? "•" : t.getTrackNumber() + ".")
-                        .append(" ").append(escape(t.getTitle())).append("\n"));
+        appendTrackListSortedByRating(sb, release.getTracks(), "  ");
 
         sb.append("\n♻️ папку буде перенесено у trash, метадані з бази видаляться");
 
@@ -212,6 +193,27 @@ public class RemoveReleaseFlowService {
         buttons.put("❌", CB_CANCEL + release.getId());
 
         return List.of(BotResponse.htmlWithButtons(sb.toString(), buttons));
+    }
+
+    private void appendTrackListSortedByRating(StringBuilder sb, Collection<Track> trackCollection, String indent) {
+        List<Track> tracks = new ArrayList<>(trackCollection);
+        Map<Long, String> ratingByTrackId = trackTagRepository.findAllByTrackIds(tracks.stream().map(Track::getId).toList())
+                .stream()
+                .filter(tt -> "RATING".equals(tt.getTagName()))
+                .collect(Collectors.toMap(tt -> tt.getTrack().getId(), TrackTag::getTagValue, (v1, v2) -> v1));
+
+        tracks.stream()
+                .sorted(Comparator.comparingInt(t -> ratingWmp(ratingByTrackId.get(t.getId()))))
+                .forEach(t -> {
+                    sb.append(indent)
+                            .append(t.getTrackNumber() == null ? "•" : t.getTrackNumber() + ".")
+                            .append(" ").append(escape(t.getTitle()));
+                    String stars = toStars(ratingByTrackId.get(t.getId()));
+                    if (!stars.isEmpty()) {
+                        sb.append("  ").append(stars);
+                    }
+                    sb.append("\n");
+                });
     }
 
     private Long parseId(String callbackData, String prefix) {
