@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -54,12 +55,17 @@ public class MarkersFlowService {
 
     public List<BotResponse> promptCreate(ConversationContext ctx) {
         chatStateStore.put(ctx.conversationId(), FLOW_KEY, true);
-        return List.of(BotResponse.text("введи назву нової мітки:"));
+        return List.of(BotResponse.withButtons("введи назву нової мітки:", Map.of("❌", "MARKERS_ADD_CANCEL")));
     }
 
     public boolean isWaitingForName(ConversationContext ctx) {
         return chatStateStore.get(ctx.conversationId(), FLOW_KEY, Boolean.class)
                 .orElse(false);
+    }
+
+    public List<BotResponse> cancelCreate(ConversationContext ctx) {
+        chatStateStore.remove(ctx.conversationId(), FLOW_KEY);
+        return List.of(BotResponse.text("❌ скасовано"));
     }
 
     @Transactional
@@ -99,11 +105,18 @@ public class MarkersFlowService {
         }
         List<Long> ids = markers.stream().map(Marker::getId).toList();
         chatStateStore.put(ctx.conversationId(), REMOVE_FLOW_KEY, new RemovalContext(ids));
-        return List.of(BotResponse.text("🤔 введи номер(и) міток для видалення через кому (напр. 1,3)"));
+        return List.of(BotResponse.withButtons(
+                "🤔 введи номер(и) міток для видалення через кому (напр. 1,3)",
+                Map.of("❌", "MARKERS_RM_CANCEL")));
     }
 
     public boolean isWaitingForRemoval(ConversationContext ctx) {
         return chatStateStore.get(ctx.conversationId(), REMOVE_FLOW_KEY, RemovalContext.class).isPresent();
+    }
+
+    public List<BotResponse> cancelRemove(ConversationContext ctx) {
+        chatStateStore.remove(ctx.conversationId(), REMOVE_FLOW_KEY);
+        return List.of(BotResponse.text("❌ скасовано"));
     }
 
     @Transactional

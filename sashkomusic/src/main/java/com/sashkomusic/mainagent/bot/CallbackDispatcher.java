@@ -62,6 +62,7 @@ public class CallbackDispatcher {
         handlers.put("ADD_COMMENT:", (ctx, data, msgId) -> djTag.handleCommentAdd(ctx, data));
         handlers.put("COMMENT_CANCEL:", (ctx, data, msgId) -> djTag.handleCommentCancel(ctx));
         handlers.put("RM_OK:", (ctx, data, msgId) -> removeRelease.handleConfirm(ctx, data));
+        handlers.put("RM_SEL_CANCEL", (ctx, data, msgId) -> removeRelease.cancelTrackSelection(ctx));
         handlers.put("RM_SEL:", (ctx, data, msgId) -> removeRelease.promptTrackSelection(ctx, data));
         handlers.put("RM_NO:", (ctx, data, msgId) -> removeRelease.handleCancel(ctx, data));
         handlers.put("LIB_ASSIGN:", (ctx, data, msgId) -> sublibAssignment.handle(ctx, data));
@@ -81,7 +82,9 @@ public class CallbackDispatcher {
                     ? djTag.handleEditCommentTrack(ctx, targetId)
                     : npAlbum.handleEditCommentAlbum(ctx, targetId);
         });
+        handlers.put("MARKERS_ADD_CANCEL", (ctx, data, msgId) -> markersFlow.cancelCreate(ctx));
         handlers.put("MARKERS_ADD", (ctx, data, msgId) -> markersFlow.promptCreate(ctx));
+        handlers.put("MARKERS_RM_CANCEL", (ctx, data, msgId) -> markersFlow.cancelRemove(ctx));
         handlers.put("MARKERS_RM", (ctx, data, msgId) -> markersFlow.promptRemove(ctx));
         handlers.put("LBL_LIST:", (ctx, data, msgId) -> smartlistLabel.showListFromCallback(ctx, data.substring("LBL_LIST:".length())));
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length()))));

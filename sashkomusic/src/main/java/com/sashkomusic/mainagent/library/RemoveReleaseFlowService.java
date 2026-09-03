@@ -31,6 +31,7 @@ public class RemoveReleaseFlowService {
 
     private static final String CB_CONFIRM = "RM_OK:";
     private static final String CB_SELECT = "RM_SEL:";
+    private static final String CB_SELECT_CANCEL = "RM_SEL_CANCEL";
     private static final String CB_CANCEL = "RM_NO:";
 
     private final LibrarySearchService librarySearchService;
@@ -126,11 +127,16 @@ public class RemoveReleaseFlowService {
                     sb.append("\n");
                 });
 
-        return List.of(BotResponse.text(sb.toString().stripTrailing()));
+        return List.of(BotResponse.withButtons(sb.toString().stripTrailing(), Map.of("❌", CB_SELECT_CANCEL)));
     }
 
     public boolean isSelectingTracks(ConversationContext ctx) {
         return trackRemovalContextHolder.get(ctx.conversationId()).isPresent();
+    }
+
+    public List<BotResponse> cancelTrackSelection(ConversationContext ctx) {
+        trackRemovalContextHolder.clear(ctx.conversationId());
+        return List.of(BotResponse.text("❌ скасовано"));
     }
 
     public List<BotResponse> handleTrackSelection(ConversationContext ctx, String input) {
