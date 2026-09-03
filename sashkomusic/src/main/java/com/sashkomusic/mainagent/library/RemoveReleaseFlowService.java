@@ -109,10 +109,9 @@ public class RemoveReleaseFlowService {
         }
         trackRemovalContextHolder.markSelecting(ctx.conversationId(), releaseId);
 
-        StringBuilder sb = new StringBuilder("🤔 введи номери треків для видалення через кому (напр. 1,2,5):\n\n");
-        appendTrackListSortedByRating(sb, releaseOpt.get().getTracks(), "");
-
-        return List.of(BotResponse.withButtons(sb.toString().stripTrailing(), Map.of("❌", CB_SELECT_CANCEL)));
+        return List.of(BotResponse.withButtons(
+                "🤔 введи номери треків для видалення через кому (напр. 1,2,5)",
+                Map.of("❌", CB_SELECT_CANCEL)));
     }
 
     public boolean isSelectingTracks(ConversationContext ctx) {
@@ -207,7 +206,7 @@ public class RemoveReleaseFlowService {
                 .forEach(t -> {
                     sb.append(indent)
                             .append(t.getTrackNumber() == null ? "•" : t.getTrackNumber() + ".")
-                            .append(" ").append(escape(t.getTitle()));
+                            .append(" ").append(escape(t.getTitle() == null ? "" : t.getTitle().toLowerCase()));
                     String stars = toStars(ratingByTrackId.get(t.getId()));
                     if (!stars.isEmpty()) {
                         sb.append("  ").append(stars);
