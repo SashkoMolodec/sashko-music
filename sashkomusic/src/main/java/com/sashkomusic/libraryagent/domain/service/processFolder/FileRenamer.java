@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.text.Normalizer;
 
 @Slf4j
 @Service
@@ -55,8 +56,13 @@ public class FileRenamer {
     }
 
     private String sanitize(String filename) {
+        // Normalize to NFC first: source metadata (esp. from Apple Music/gamdl) can mix
+        // precomposed and decomposed Unicode forms, which breaks byte-exact path matching
+        // in tools like Navidrome that don't normalize before comparing.
+        String normalized = Normalizer.normalize(filename, Normalizer.Form.NFC);
+
         // Remove illegal characters for filesystems: / \ : * ? " < > |
-        return filename.replaceAll("[/\\\\:*?\"<>|]", "")
+        return normalized.replaceAll("[/\\\\:*?\"<>|]", "")
                 .trim()
                 .toLowerCase();
     }

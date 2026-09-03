@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -91,8 +92,13 @@ public class FileOrganizer {
             return "unknown";
         }
 
+        // Normalize to NFC first: source metadata (esp. from Apple Music/gamdl) can mix
+        // precomposed and decomposed Unicode forms, which breaks byte-exact path matching
+        // in tools like Navidrome that don't normalize before comparing.
+        String normalized = Normalizer.normalize(name, Normalizer.Form.NFC);
+
         // Remove illegal filesystem characters
-        String sanitized = name.replaceAll("[/\\\\:*?\"<>|]", "").trim();
+        String sanitized = normalized.replaceAll("[/\\\\:*?\"<>|]", "").trim();
 
         // Limit length
         if (sanitized.length() > MAX_FOLDER_NAME_LENGTH) {
