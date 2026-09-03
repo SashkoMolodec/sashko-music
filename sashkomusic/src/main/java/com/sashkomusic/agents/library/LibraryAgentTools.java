@@ -2,6 +2,7 @@ package com.sashkomusic.agents.library;
 
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
+import com.sashkomusic.libraryagent.domain.entity.Artist;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
@@ -207,6 +208,26 @@ public class LibraryAgentTools {
         for (var s : all) {
             sb.append("• ").append(s.name()).append(" — ").append(s.trackCount()).append(" треків [")
                     .append(s.dslDescription()).append("]\n");
+        }
+        return sb.toString().strip();
+    }
+
+    @Tool("""
+            Get the track list of an existing smart playlist by name (evaluates its DSL rule against the library).
+            Use for: "які пісні в смартлисті X", "покажи треки з X", "what's in smartlist X".
+            """)
+    public String getSmartlistTracks(@P("smartlist name") String name) {
+        List<Track> tracks;
+        try {
+            tracks = smartlistService.getTracks(name);
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        }
+        if (tracks.isEmpty()) return "смартлист '" + name + "' порожній (жоден трек не підпадає під правило)";
+        var sb = new StringBuilder(name).append(" (").append(tracks.size()).append("):\n");
+        for (Track t : tracks) {
+            String artist = t.getArtists().stream().findFirst().map(Artist::getName).orElse("");
+            sb.append("• ").append(artist).append(" - ").append(t.getTitle()).append("\n");
         }
         return sb.toString().strip();
     }
