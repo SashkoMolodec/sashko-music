@@ -20,6 +20,8 @@ http-client.private.env.json
 # Authentication & cookies
 cookies.txt
 *.cookies
+apple_cookies.txt
+ytdlp_cookies.txt
 
 # Music downloads
 **/qobuz/downloads/
@@ -75,3 +77,7 @@ lib/
 
 # Slskd application data (root-level only, not Java source packages)
 /slskd/
+
+# Work in progress, not ready to commit
+/.specs/applemusic-sync.md
+/tools/
