@@ -40,7 +40,10 @@ public class FolderAudioScanner {
     }
 
     public String stripProcessPrefix(String rawCommand) {
-        return stripQuotes(rawCommand.substring("/process ".length()).trim());
+        String stripped = rawCommand.length() > "/process".length()
+                ? rawCommand.substring("/process".length()).trim()
+                : "";
+        return stripQuotes(stripped);
     }
 
     /**
