@@ -34,7 +34,7 @@ public class MarkersFlowService {
 
     @Transactional(readOnly = true)
     public List<BotResponse> showMarkers(ConversationContext ctx) {
-        List<Marker> markers = markerRepository.findAll();
+        List<Marker> markers = markerRepository.findAllByOrderByLastUsedAtDescNameAsc();
 
         StringBuilder sb = new StringBuilder("🏷 мітки");
         if (markers.isEmpty()) {

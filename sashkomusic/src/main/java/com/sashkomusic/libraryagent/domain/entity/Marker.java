@@ -22,6 +22,9 @@ public class Marker {
     @Column(name = "created_at", updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(name = "last_used_at")
+    private Instant lastUsedAt;
+
     public Marker() {}
 
     public Marker(String name) {

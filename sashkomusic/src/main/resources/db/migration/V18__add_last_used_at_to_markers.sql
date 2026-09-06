@@ -1,0 +1,1 @@
+ALTER TABLE markers ADD COLUMN last_used_at TIMESTAMPTZ;

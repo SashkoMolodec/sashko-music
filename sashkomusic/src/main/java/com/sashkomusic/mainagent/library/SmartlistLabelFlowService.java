@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,7 +40,7 @@ public class SmartlistLabelFlowService {
 
     @Transactional
     public List<BotResponse> showList(ConversationContext ctx, String mode, Long targetId) {
-        List<Marker> all = markerRepository.findAll();
+        List<Marker> all = markerRepository.findAllByOrderByLastUsedAtDescNameAsc();
         if (all.isEmpty()) {
             return List.of(BotResponse.text("міток ще немає — створи через /labels"));
         }
@@ -107,6 +108,7 @@ public class SmartlistLabelFlowService {
         if (marker == null) {
             return List.of(BotResponse.text("мітку не знайдено."));
         }
+        marker.setLastUsedAt(Instant.now());
 
         String label = "(" + marker.getName() + ")";
 
