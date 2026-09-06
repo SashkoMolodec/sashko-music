@@ -60,6 +60,8 @@ public class GoogleVisionReleaseIdentifier {
                     .retrieve()
                     .body(AnnotateImagesResponse.class);
 
+            logDiagnostics(response);
+
             Optional<String> discogsUrl = extractDiscogsUrl(response);
             if (discogsUrl.isPresent()) {
                 log.info("Google Vision matched Discogs URL: {}", discogsUrl.get());
@@ -71,6 +73,28 @@ public class GoogleVisionReleaseIdentifier {
             log.warn("Google Vision web detection failed: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private void logDiagnostics(AnnotateImagesResponse response) {
+        if (response == null || response.responses() == null || response.responses().isEmpty()) {
+            log.info("Google Vision returned no responses");
+            return;
+        }
+        AnnotateImageResponse first = response.responses().getFirst();
+        if (first.error() != null) {
+            log.warn("Google Vision returned an error: {}", first.error().message());
+        }
+        WebDetection webDetection = first.webDetection();
+        if (webDetection == null) {
+            log.info("Google Vision returned no webDetection block");
+            return;
+        }
+        List<String> pageUrls = webDetection.pagesWithMatchingImages() == null ? List.of()
+                : webDetection.pagesWithMatchingImages().stream().map(WebPage::url).filter(Objects::nonNull).toList();
+        List<String> guesses = webDetection.bestGuessLabels() == null ? List.of()
+                : webDetection.bestGuessLabels().stream().map(BestGuessLabel::label).filter(Objects::nonNull).toList();
+        log.info("Google Vision: {} matching pages, bestGuessLabels={}, pages={}",
+                pageUrls.size(), guesses, pageUrls);
     }
 
     private Optional<String> extractDiscogsUrl(AnnotateImagesResponse response) {
@@ -89,7 +113,9 @@ public class GoogleVisionReleaseIdentifier {
     }
 
     record AnnotateImagesResponse(List<AnnotateImageResponse> responses) {}
-    record AnnotateImageResponse(WebDetection webDetection) {}
-    record WebDetection(List<WebPage> pagesWithMatchingImages) {}
+    record AnnotateImageResponse(WebDetection webDetection, ApiError error) {}
+    record ApiError(String message) {}
+    record WebDetection(List<WebPage> pagesWithMatchingImages, List<BestGuessLabel> bestGuessLabels) {}
     record WebPage(String url) {}
+    record BestGuessLabel(String label) {}
 }
