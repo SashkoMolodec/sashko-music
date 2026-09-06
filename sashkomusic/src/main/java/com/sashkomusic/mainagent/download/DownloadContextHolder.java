@@ -20,16 +20,19 @@ public class DownloadContextHolder {
     private final ChatStateStore stateStore;
 
     public void saveDownloadOptions(String conversationId, String releaseId,
-                                    List<DownloadFlowHandler.OptionReport> currentPage,
                                     List<DownloadFlowHandler.OptionReport> allReports,
                                     DownloadEngine source) {
         log.debug("Saving download options for conversation: {}, releaseId: {}, total: {}", conversationId, releaseId, allReports.size());
-        stateStore.put(conversationId, FLOW_KEY, new DownloadContext(releaseId, currentPage, allReports, 0, source));
+        stateStore.put(conversationId, FLOW_KEY, new DownloadContext(releaseId, allReports, 0, source));
     }
 
+    /**
+     * Returns the full, page-independent option list. Selection is by global index (see
+     * {@link #advancePage}) so a button rendered on an earlier page stays valid after paging further.
+     */
     public List<DownloadFlowHandler.OptionReport> getDownloadOptions(String conversationId) {
         return stateStore.get(conversationId, FLOW_KEY, DownloadContext.class)
-                .map(DownloadContext::optionReports)
+                .map(DownloadContext::allReports)
                 .orElse(List.of());
     }
 
@@ -58,7 +61,7 @@ public class DownloadContextHolder {
             int to = Math.min(from + PAGE_SIZE, ctx.allReports().size());
             List<DownloadFlowHandler.OptionReport> next = ctx.allReports().subList(from, to);
             stateStore.put(conversationId, FLOW_KEY,
-                    new DownloadContext(ctx.chosenReleaseId(), next, ctx.allReports(), nextPage, ctx.source()));
+                    new DownloadContext(ctx.chosenReleaseId(), ctx.allReports(), nextPage, ctx.source()));
             return next;
         }).orElse(List.of());
     }
@@ -92,7 +95,6 @@ public class DownloadContextHolder {
 
     public record DownloadContext(
             String chosenReleaseId,
-            List<DownloadFlowHandler.OptionReport> optionReports,
             List<DownloadFlowHandler.OptionReport> allReports,
             int currentPage,
             DownloadEngine source

@@ -12,8 +12,8 @@ import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
 import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -22,7 +22,6 @@ import java.util.Map;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class MusicDownloadFlowService {
 
     private final SearchFilesTaskProducer searchFilesProducer;
@@ -32,6 +31,45 @@ public class MusicDownloadFlowService {
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers;
     private final SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview;
+    private final Long defaultChatId;
+    private final Integer downloadTopicId;
+
+    public MusicDownloadFlowService(SearchFilesTaskProducer searchFilesProducer,
+                                    DownloadTaskProducer downloadTaskProducer,
+                                    SearchContextService contextService,
+                                    DownloadContextHolder downloadContextHolder,
+                                    ReleaseSearchFlowService releaseSearchFlowService,
+                                    Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers,
+                                    SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview,
+                                    @Value("${telegram.default-chat-id}") Long defaultChatId,
+                                    @Value("${telegram.download-topic-id:#{null}}") Integer downloadTopicId) {
+        this.searchFilesProducer = searchFilesProducer;
+        this.downloadTaskProducer = downloadTaskProducer;
+        this.contextService = contextService;
+        this.downloadContextHolder = downloadContextHolder;
+        this.releaseSearchFlowService = releaseSearchFlowService;
+        this.downloadFlowHandlers = downloadFlowHandlers;
+        this.soulseekDirectoryPreview = soulseekDirectoryPreview;
+        this.defaultChatId = defaultChatId;
+        this.downloadTopicId = downloadTopicId;
+        if (downloadTopicId == null) {
+            log.info("telegram.download-topic-id not configured — download flow stays in the originating chat/topic");
+        }
+    }
+
+    /**
+     * All actual downloading (file search, option selection, soulseek preview, progress, and the final
+     * "added to library" message) is funneled into one fixed topic when configured — keeps the noisy
+     * part of the flow out of whatever topic the release was discovered in. Release discovery/search
+     * itself is untouched and keeps using the original {@code ctx}. The very first ack ("🔎 шукаю
+     * опції...") still goes back through the caller's own ctx (the click that triggered it), since
+     * sending it directly here would require injecting TelegramChatBot, which would create a circular
+     * bean dependency (MusicDownloadFlowService -> TelegramChatBot -> UserInteractionOrchestrator ->
+     * CallbackDispatcher -> MusicDownloadFlowService).
+     */
+    private ConversationContext resolveDownloadCtx(ConversationContext ctx) {
+        return downloadTopicId == null ? ctx : ConversationContext.topic(defaultChatId, downloadTopicId);
+    }
 
     public List<BotResponse> handleDownload(ConversationContext ctx, String data) {
         if (data.startsWith("DL:")) {
@@ -55,7 +93,11 @@ public class MusicDownloadFlowService {
     private List<BotResponse> initiateDownloadSearch(ConversationContext ctx, ReleaseMetadata metadata, DownloadEngine source) {
         log.info("Initiating download search for: {} - {}", metadata.artist(), metadata.title());
 
-        searchFilesProducer.send(SearchFilesTaskDto.of(ctx.conversationId(), metadata.id(), metadata.artist(), metadata.title(), source));
+        ConversationContext downloadCtx = resolveDownloadCtx(ctx);
+        if (!downloadCtx.equals(ctx)) {
+            contextService.mirrorReleaseForDownload(downloadCtx.conversationId(), metadata);
+        }
+        searchFilesProducer.send(SearchFilesTaskDto.of(downloadCtx.conversationId(), metadata.id(), metadata.artist(), metadata.title(), source));
 
         return List.of(BotResponse.text(
                 "🔎 шукаю опції завантаження (%s): _%s - %s_".formatted(
@@ -78,12 +120,12 @@ public class MusicDownloadFlowService {
                 allReports.stream().limit(DownloadContextHolder.PAGE_SIZE).toList(),
                 analysisResult.aiSummary());
 
-        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), firstPage, allReports, dto.source());
+        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), allReports, dto.source());
         firstPage.forEach(r -> log.info("{}", r));
 
-        String text = DownloadOptionsCardFormatter.format(firstPage, analysisResult.aiSummary());
+        String text = DownloadOptionsCardFormatter.format(firstPage, analysisResult.aiSummary(), 0);
         BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source());
-        BotResponse merged = mergeWithSelectionButtons(sourceCard, firstPage, flowHandler.appendDefaultCancelRow());
+        BotResponse merged = mergeWithSelectionButtons(sourceCard, firstPage, flowHandler.appendDefaultCancelRow(), 0);
 
         if (downloadContextHolder.hasNextPage(dto.conversationId())) {
             merged = appendNextPageButton(merged, dto.releaseId(), 0, allReports.size());
@@ -128,7 +170,13 @@ public class MusicDownloadFlowService {
         return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));
     }
 
-    private BotResponse mergeWithSelectionButtons(BotResponse sourceCard, List<DownloadFlowHandler.OptionReport> reports, boolean appendCancelRow) {
+    /**
+     * @param offset global index of the first report in {@code reports} (page * PAGE_SIZE). Selection
+     *               buttons encode the global index so a button rendered on an earlier page still
+     *               resolves correctly against {@code allReports} after paging further (see
+     *               DownloadContextHolder — indices are never reused/reset per page).
+     */
+    private BotResponse mergeWithSelectionButtons(BotResponse sourceCard, List<DownloadFlowHandler.OptionReport> reports, boolean appendCancelRow, int offset) {
         List<List<BotResponse.ButtonDto>> allRows = new ArrayList<>();
 
         // Convert flat source-switch buttons to a single row
@@ -145,7 +193,8 @@ public class MusicDownloadFlowService {
         // Add numbered selection buttons (up to 5 per row)
         List<BotResponse.ButtonDto> row = new ArrayList<>();
         for (int i = 0; i < reports.size(); i++) {
-            row.add(new BotResponse.ButtonDto(indexIcon(i + 1), "DLOPT:" + i));
+            int globalIndex = offset + i;
+            row.add(new BotResponse.ButtonDto(indexIcon(globalIndex + 1), "DLOPT:" + globalIndex));
             if (row.size() == 5) {
                 allRows.add(List.copyOf(row));
                 row.clear();
@@ -169,9 +218,10 @@ public class MusicDownloadFlowService {
         DownloadEngine source = downloadContextHolder.getSource(ctx.conversationId());
         var flowHandler = downloadFlowHandlers.get(source != null ? source : DownloadEngine.SOULSEEK);
 
-        String text = DownloadOptionsCardFormatter.format(nextReports, "");
+        int offset = page * DownloadContextHolder.PAGE_SIZE;
+        String text = DownloadOptionsCardFormatter.format(nextReports, "", offset);
         BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, releaseId, source);
-        BotResponse merged = mergeWithSelectionButtons(sourceCard, nextReports, flowHandler.appendDefaultCancelRow());
+        BotResponse merged = mergeWithSelectionButtons(sourceCard, nextReports, flowHandler.appendDefaultCancelRow(), offset);
 
         if (downloadContextHolder.hasNextPage(ctx.conversationId())) {
             merged = appendNextPageButton(merged, releaseId, page, total);

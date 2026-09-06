@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
@@ -93,6 +94,15 @@ class DownloadFlowIntegrationTest {
 
     @Configuration
     static class TestConfig {
+        @Bean
+        static PropertySourcesPlaceholderConfigurer placeholderConfigurer() {
+            var props = new java.util.Properties();
+            props.setProperty("telegram.default-chat-id", String.valueOf(CHAT_ID));
+            props.setProperty("telegram.download-topic-id", "");
+            var configurer = new PropertySourcesPlaceholderConfigurer();
+            configurer.setProperties(props);
+            return configurer;
+        }
         @Bean ChatStateStore chatStateStore() { return new InMemoryChatStateStore(); }
         @Bean Map<SearchEngine, SearchEngineService> searchEngines() { return Map.of(); }
         @Bean Map<DownloadEngine, DownloadFlowHandler> downloadHandlers() { return Map.of(); }

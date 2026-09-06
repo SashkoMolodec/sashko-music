@@ -22,17 +22,21 @@ public class DownloadOptionsCardFormatter {
      * within Telegram's message limit. Returns the trimmed list; original is not mutated.
      */
     public static List<OptionReport> trimToFit(List<OptionReport> reports, String aiSummary) {
-        if (format(reports, aiSummary).length() <= TELEGRAM_MAX_LENGTH) {
+        if (format(reports, aiSummary, 0).length() <= TELEGRAM_MAX_LENGTH) {
             return reports;
         }
         List<OptionReport> trimmed = new ArrayList<>(reports);
-        while (trimmed.size() > 1 && format(trimmed, aiSummary).length() > TELEGRAM_MAX_LENGTH) {
+        while (trimmed.size() > 1 && format(trimmed, aiSummary, 0).length() > TELEGRAM_MAX_LENGTH) {
             trimmed.removeLast();
         }
         return trimmed;
     }
 
-    public static String format(List<DownloadFlowHandler.OptionReport> reports, String aiSummary) {
+    /**
+     * @param offset global index of the first report in {@code reports} (page * PAGE_SIZE), so the
+     *               printed numbering matches the selection buttons across pages instead of resetting to 1.
+     */
+    public static String format(List<DownloadFlowHandler.OptionReport> reports, String aiSummary, int offset) {
         if (reports.isEmpty()) {
             return "😔 **на жаль, нич.**";
         }
@@ -40,7 +44,7 @@ public class DownloadOptionsCardFormatter {
         StringBuilder sb = new StringBuilder();
         sb.append("🔎 знайдено %s варіантів:\n\n".formatted(reports.size()));
 
-        int i = 1;
+        int i = offset + 1;
         for (var report : reports) {
             var option = report.option();
             var suitability = report.suitability();

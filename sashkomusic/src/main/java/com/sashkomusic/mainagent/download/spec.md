@@ -60,13 +60,15 @@ FileSearchResultEvent (async, від downloadagent)
 
 ```
 dto → flowHandler.analyzeAll(options, releaseId, conversationId)
-           └─ AnalysisResult(reports, aiSummary)
-  → downloadContextHolder.saveDownloadOptions(conversationId, releaseId, reports)
-  → DownloadOptionsCardFormatter.format(reports, aiSummary) + flowHandler.buildSearchResultsResponse()
-  → mergeWithSelectionButtons(sourceCard, reports)
+           └─ AnalysisResult(allReports, aiSummary)
+  → downloadContextHolder.saveDownloadOptions(conversationId, releaseId, allReports, source)
+  → firstPage = allReports.limit(PAGE_SIZE), offset = 0
+  → DownloadOptionsCardFormatter.format(firstPage, aiSummary, offset) + flowHandler.buildSearchResultsResponse()
+  → mergeWithSelectionButtons(sourceCard, firstPage, appendCancelRow, offset)
        ├─ buttons from sourceCard converted to row
-       ├─ DLOPT:0, DLOPT:1, ..., DLOPT:N-1 (5 per row, emoji-numbered)
+       ├─ DLOPT:<offset+0>, DLOPT:<offset+1>, ... (глобальний індекс, 5 per row, emoji-numbered)
        └─ DLOPT:cancel (❌ скасувати)
+  → якщо є наступна сторінка → DLNEXT:<releaseId> кнопка (advancePage при кліку, offset росте далі)
 ```
 
 Результати завжди показуються юзеру — автоматичного скачування без підтвердження **немає**.
@@ -176,15 +178,64 @@ DownloadBatchAnalyzer.analyze(artist, album, tracklist, optionsText)   // Haiku 
 Персистується через `ChatStateStore` (flow_key: `"dl_ctx"`). Переживає рестарт JVM — кнопки DLOPT на старих картках залишаються робочими.
 
 ```java
-record DownloadContext(String chosenReleaseId, List<DownloadFlowHandler.OptionReport> optionReports) {}
+record DownloadContext(String chosenReleaseId, List<DownloadFlowHandler.OptionReport> allReports, int currentPage, DownloadEngine source) {}
 ```
 
-| Метод                                                     | Дія                                                      |
-|-----------------------------------------------------------|----------------------------------------------------------|
-| `saveDownloadOptions(conversationId, releaseId, reports)` | Зберігає результати пошуку в ChatStateStore              |
-| `getDownloadOptions(conversationId)`                      | Читає для `handleDownloadOptionCallback`                 |
-| `clearSession(conversationId)`                            | Після вибору або скасування                              |
-| `clearAllSessions()`                                      | По "стоп" або `clearAllCaches()`                        |
+Зберігається **тільки** повний відсортований список (`allReports`) + номер поточної сторінки —
+без окремого "поточна сторінка" списку. `DLOPT:<i>` кодує **глобальний** індекс в `allReports`
+(не локальний індекс на сторінці), тому кнопка, показана на 1-й сторінці, лишається робочою і
+після того як юзер перегорнув на 3-тю — не інвалідиться, бо ніколи не перевикористовується.
+Нумерація в тексті (`DownloadOptionsCardFormatter.format(reports, aiSummary, offset)`) і кнопки
+(`mergeWithSelectionButtons(..., offset)`) використовують той самий `offset = page * PAGE_SIZE`.
+
+| Метод                                          | Дія                                                       |
+|-------------------------------------------------|------------------------------------------------------------|
+| `saveDownloadOptions(conversationId, releaseId, allReports, source)` | Зберігає повний список результатів, `currentPage = 0`     |
+| `getDownloadOptions(conversationId)`            | Повертає `allReports` — глобальний lookup для `DLOPT:<globalIndex>` |
+| `advancePage(conversationId)`                   | Зсуває `currentPage`, повертає підсписок для показу (без збереження підсписку) |
+| `clearSession(conversationId)`                  | Після вибору або скасування                               |
+| `clearAllSessions()`                            | По "стоп" або `clearAllCaches()`                          |
+
+---
+
+## Download topic routing (опційно)
+
+Якщо задано `telegram.download-topic-id` (env `TGBOT_DOWNLOAD_TOPIC_ID`), увесь процес
+**фактичного** скачування — від моменту `DL:`/`SEARCH_ALT:`/direct-query кліку і до
+"✅ додано в лібку!" (`LibraryProcessingCompleteListener`) — переїжджає в один фіксований
+форум-топік, незалежно від того, де юзер шукав реліз. Пошук/дискавері релізу (`ReleaseSearchFlowService`,
+`/search`, метадата-картка) **не** зачіпається — лишається там, де почався.
+
+Механізм — `MusicDownloadFlowService.resolveDownloadCtx(ctx)`:
+- якщо `telegram.download-topic-id` не задано → no-op, `ctx` як і раніше (backward-compatible,
+  той самий патерн, що й `TelegramDownloadLogStreamer`/`telegram.logs-topic-id`);
+- якщо задано → повертає `ConversationContext.topic(defaultChatId, downloadTopicId)`.
+
+Це спрацьовує "безкоштовно" для всього, що йде після першого кліку, бо:
+1. `conversationId` наскрізно проходить рядком через увесь event-пайплайн
+   (`SearchFilesTaskDto` → `FileSearchResultEvent`/`DownloadCompleteEvent`/`DownloadBatchCompleteEvent`
+   → `ConversationContext.from(dto.conversationId())` у відповідних listener-ах);
+2. колбеки (`DLOPT:`, `DLNEXT:`, `SLSK_*`) отримують `ctx` від Telegram — з того топіку, де
+   фізично лежить повідомлення з кнопками, тобто вже download-топік, без додаткової маршрутизації.
+
+Єдиний нюанс: `SearchContextService` кешує `ReleaseMetadata` по `conversationId` (з моменту пошуку
+релізу). Коли downstream-lookup (`SoulseekDownloadFlowHandler.analyzeAll`, `handleSearchAlternative`)
+починає читати по download-топіковому `conversationId`, оригінального запису там нема — тому
+`initiateDownloadSearch` при першому редиректі (`!downloadCtx.equals(ctx)`) віддзеркалює вибраний
+реліз через `SearchContextService.mirrorReleaseForDownload(downloadCtx.conversationId(), metadata)`.
+
+Свідомо **не** зберігається "куди повернутись" — фінальне "✅ додано в лібку!" теж лишається в
+download-топіку (простіше, і `ProcessFolderFlowService.process()` все одно робить власний
+незалежний re-lookup метаданих по тому ж `conversationId`, без залежності від оригінальної розмови).
+
+Наслідок: топік по суті одно-сесійний — два паралельні завантаження, стартовані з різних
+розмов, писатимуть в один і той же `dl_ctx`/`search`-стан і будуть переплітатись. Прийнятно для
+одно-користувацького бота; якщо колись знадобиться паралельність — треба буде тегувати сесії
+окремим id замість того щоб покладатись на єдиний спільний `conversationId`.
+
+`DirectSoulseekSearchFlowService` (команда `копай`) через цей механізм **не** проходить — це
+окремий, самодостатній entry point, який зберігає й читає метадані в одній і тій самій розмові
+за один виклик, без залежності від download-топіку.
 
 ---
 

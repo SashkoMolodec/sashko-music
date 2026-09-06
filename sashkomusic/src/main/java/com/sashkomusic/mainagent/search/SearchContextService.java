@@ -31,6 +31,16 @@ public class SearchContextService {
                 .orElse(null);
     }
 
+    /**
+     * Mirrors one already-resolved release into a different conversation's search-state slot.
+     * Needed when the download subflow is routed into a dedicated topic: suitability scoring and
+     * "search on another source" re-lookup fetch the release by the conversationId messages are now
+     * routed through, which is no longer the conversation the original release search populated.
+     */
+    public void mirrorReleaseForDownload(String conversationId, ReleaseMetadata metadata) {
+        saveSearchContext(conversationId, metadata.source(), "", null, List.of(metadata));
+    }
+
     public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
                                   MetadataSearchRequest request, List<ReleaseMetadata> results) {
         LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
