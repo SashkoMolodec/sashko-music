@@ -15,13 +15,17 @@ import com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.library.SmartlistsFlowService;
 import com.sashkomusic.mainagent.bot.newtopic.NewTopicFlowService;
+import com.sashkomusic.mainagent.bot.photo.PhotoSearchFlowService;
 import com.sashkomusic.mainagent.download.DirectSoulseekSearchFlowService;
+import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
+import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService;
 import com.sashkomusic.mainagent.search.MetadataUrlFetcher;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.telegram.telegrambots.meta.api.objects.photo.PhotoSize;
 
 import org.slf4j.MDC;
 
@@ -53,6 +57,9 @@ public class UserInteractionOrchestrator {
     private final TelegramLogsChannel logsChannel;
     private final MetadataUrlFetcher metadataUrlFetcher;
     private final ReleaseSearchFlowService releaseSearchFlowService;
+    private final ProcessFolderFlowService processFolderFlowService;
+    private final ReprocessReleasesFlowService reprocessReleasesFlowService;
+    private final PhotoSearchFlowService photoSearchFlowService;
 
     public List<BotResponse> handleUserRequest(ConversationContext ctx, String rawInput) {
         try {
@@ -98,6 +105,14 @@ public class UserInteractionOrchestrator {
 
     public List<BotResponse> handleCallback(ConversationContext ctx, String data, Integer messageId) {
         return callbackDispatcher.dispatch(ctx, data, messageId);
+    }
+
+    public List<BotResponse> handleUserPhoto(ConversationContext ctx, List<PhotoSize> photoSizes, String caption) {
+        try {
+            return photoSearchFlowService.handlePhoto(ctx, photoSizes, caption);
+        } finally {
+            logFlowCost();
+        }
     }
 
     private List<BotResponse> runMainAgent(ConversationContext ctx, String rawInput) {
@@ -153,6 +168,13 @@ public class UserInteractionOrchestrator {
         }
         if (rawInput.startsWith("/markers")) {
             return markersFlowService.showMarkers(ctx);
+        }
+        if (rawInput.startsWith("/reprocess")) {
+            var result = reprocessReleasesFlowService.handle(ctx, rawInput);
+            return List.of(BotResponse.text(result.message()));
+        }
+        if (rawInput.startsWith("/process")) {
+            return processFolderFlowService.handleProcessCommand(ctx, rawInput);
         }
         if (rawInput.startsWith("/smartlists")) {
             return smartlistsFlowService.showList(ctx);

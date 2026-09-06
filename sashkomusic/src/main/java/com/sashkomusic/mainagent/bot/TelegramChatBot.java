@@ -110,6 +110,17 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 orchestrator.handleUserRequest(ctx, text)
                         .forEach(res -> sendResponse(ctx, res));
 
+            } else if (update.hasMessage() && update.getMessage().getPhoto() != null && !update.getMessage().getPhoto().isEmpty()) {
+                Message msg = update.getMessage();
+                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
+                if (!isAllowed(ctx)) return;
+
+                String caption = msg.getCaption() != null ? msg.getCaption() : "";
+                log.info("🖼️ Photo from [{}], caption: {}", ctx.conversationId(), caption);
+
+                orchestrator.handleUserPhoto(ctx, msg.getPhoto(), caption)
+                        .forEach(res -> sendResponse(ctx, res));
+
             } else if (update.hasCallbackQuery()) {
                 var callback = update.getCallbackQuery();
                 var data = callback.getData();

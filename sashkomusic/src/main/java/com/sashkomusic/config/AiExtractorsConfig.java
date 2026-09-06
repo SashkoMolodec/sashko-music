@@ -3,6 +3,7 @@ package com.sashkomusic.config;
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.newtopic.TopicEmojiPicker;
 import com.sashkomusic.mainagent.bot.newtopic.TopicNameGenerator;
+import com.sashkomusic.mainagent.bot.photo.PhotoReleaseTextExtractor;
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
 import com.sashkomusic.mainagent.process.MetadataSuggester;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderNameParser;
@@ -14,8 +15,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Stateless extractors backed by the cheap Haiku model.
- * Each one owns a single narrow prompt — no shared interface.
+ * Stateless single-purpose LLM extractors, one {@code @Bean} per interface.
+ * Most use the cheap Haiku model; {@code photoReleaseTextExtractor} uses Sonnet for vision quality.
  */
 @Configuration
 public class AiExtractorsConfig {
@@ -23,6 +24,11 @@ public class AiExtractorsConfig {
     @Bean
     public SearchRequestExtractor searchRequestExtractor(@Qualifier("haikuChatModel") ChatModel haiku) {
         return AiServices.builder(SearchRequestExtractor.class).chatModel(haiku).build();
+    }
+
+    @Bean
+    public PhotoReleaseTextExtractor photoReleaseTextExtractor(@Qualifier("sonnetChatModel") ChatModel sonnet) {
+        return AiServices.builder(PhotoReleaseTextExtractor.class).chatModel(sonnet).build();
     }
 
     @Bean
