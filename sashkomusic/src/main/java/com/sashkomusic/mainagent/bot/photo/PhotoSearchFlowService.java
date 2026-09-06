@@ -3,7 +3,9 @@ package com.sashkomusic.mainagent.bot.photo;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.download.DirectSoulseekSearchFlowService;
+import com.sashkomusic.mainagent.search.MetadataUrlFetcher;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
+import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import dev.langchain4j.data.message.ImageContent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +33,8 @@ public class PhotoSearchFlowService {
     private final PhotoReleaseTextExtractor photoReleaseTextExtractor;
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final DirectSoulseekSearchFlowService directSoulseekSearchFlowService;
+    private final GoogleVisionReleaseIdentifier visionReleaseIdentifier;
+    private final MetadataUrlFetcher metadataUrlFetcher;
 
     public List<BotResponse> handlePhoto(ConversationContext ctx, List<PhotoSize> photoSizes, String caption) {
         byte[] imageBytes;
@@ -38,6 +43,12 @@ public class PhotoSearchFlowService {
         } catch (Exception e) {
             log.warn("Failed to download photo for [{}]: {}", ctx.conversationId(), e.getMessage());
             return List.of(BotResponse.text("😔 не вдалось завантажити фото, спробуй ще раз."));
+        }
+
+        Optional<ReleaseMetadata> visionMatch = visionReleaseIdentifier.identifyDiscogsUrl(imageBytes)
+                .flatMap(metadataUrlFetcher::fetch);
+        if (visionMatch.isPresent()) {
+            return respondWithRelease(ctx, visionMatch.get(), caption);
         }
 
         String recognized;
@@ -60,6 +71,16 @@ public class PhotoSearchFlowService {
         responses.addAll(isDirectDownloadCaption(caption)
                 ? directSoulseekSearchFlowService.search(ctx, query)
                 : releaseSearchFlowService.searchDefault(ctx, query));
+        return responses;
+    }
+
+    private List<BotResponse> respondWithRelease(ConversationContext ctx, ReleaseMetadata release, String caption) {
+        String label = release.artist() + " - " + release.title();
+        List<BotResponse> responses = new ArrayList<>();
+        responses.add(BotResponse.text("🔎 знайшов по фото: " + label));
+        responses.addAll(isDirectDownloadCaption(caption)
+                ? directSoulseekSearchFlowService.search(ctx, label)
+                : releaseSearchFlowService.showResolvedRelease(ctx, release, "photo"));
         return responses;
     }
 

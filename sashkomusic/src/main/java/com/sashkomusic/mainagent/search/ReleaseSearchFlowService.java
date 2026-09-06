@@ -37,10 +37,17 @@ public class ReleaseSearchFlowService {
         if (result.isEmpty()) {
             return List.of(BotResponse.text("😔 не вдалось знайти реліз за цим посиланням."));
         }
-        ReleaseMetadata release = result.get();
+        return showResolvedRelease(ctx, result.get(), url);
+    }
+
+    /**
+     * Shows an already-resolved release (e.g. matched via Google Vision image search) without
+     * re-fetching it from the source engine.
+     */
+    public List<BotResponse> showResolvedRelease(ConversationContext ctx, ReleaseMetadata release, String rawInput) {
         MetadataSearchRequest request = new MetadataSearchRequest(
                 null, release.artist(), release.title(), "", DateRange.empty(), "", "", "", "", "", "", "");
-        contextService.saveSearchContext(ctx.conversationId(), release.source(), url, request, List.of(release));
+        contextService.saveSearchContext(ctx.conversationId(), release.source(), rawInput, request, List.of(release));
         return buildPageResponse(ctx, 0);
     }
 
