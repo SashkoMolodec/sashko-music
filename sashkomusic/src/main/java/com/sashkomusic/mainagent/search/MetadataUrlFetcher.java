@@ -21,6 +21,8 @@ public class MetadataUrlFetcher {
             Pattern.compile("discogs\\.com[^?#]*/release/(\\d+)");
     private static final Pattern DISCOGS_MASTER =
             Pattern.compile("discogs\\.com[^?#]*/master/(\\d+)");
+    private static final Pattern DISCOGS_MARKETPLACE_ITEM =
+            Pattern.compile("discogs\\.com[^?#]*/(?:sell|shop)/item/(\\d+)");
     private static final Pattern MUSICBRAINZ_RELEASE =
             Pattern.compile("musicbrainz\\.org/release/([0-9a-f\\-]{36})");
     private static final Pattern BANDCAMP =
@@ -48,6 +50,13 @@ public class MetadataUrlFetcher {
             if (m.find()) {
                 log.info("Fetching Discogs master by URL: {}", url);
                 return Optional.ofNullable(discogsClient.getReleaseById("discogs:master:" + m.group(1)));
+            }
+
+            m = DISCOGS_MARKETPLACE_ITEM.matcher(url);
+            if (m.find()) {
+                log.info("Fetching Discogs release via marketplace listing URL: {}", url);
+                return discogsClient.getReleaseIdFromMarketplaceListing(m.group(1))
+                        .map(releaseId -> discogsClient.getReleaseById("discogs:release:" + releaseId));
             }
 
             m = MUSICBRAINZ_RELEASE.matcher(url);

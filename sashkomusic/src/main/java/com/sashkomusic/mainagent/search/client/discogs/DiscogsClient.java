@@ -397,6 +397,39 @@ public class DiscogsClient implements SearchEngineService {
         return null;
     }
 
+    @CircuitBreaker(name = "discogsClient", fallbackMethod = "getReleaseIdFromMarketplaceListingFallback")
+    @Retry(name = "discogsClient")
+    public Optional<Long> getReleaseIdFromMarketplaceListing(String listingId) {
+        log.info("Resolving Discogs marketplace listing to release: {}", listingId);
+        try {
+            DiscogsMarketplaceListingResponse response = client.get()
+                    .uri(uriBuilder -> {
+                        uriBuilder.path("/marketplace/listings/" + listingId);
+                        if (!apiToken.isEmpty()) {
+                            uriBuilder.queryParam("token", apiToken);
+                        }
+                        return uriBuilder.build();
+                    })
+                    .retrieve()
+                    .body(DiscogsMarketplaceListingResponse.class);
+
+            if (response == null || response.release() == null) {
+                log.warn("No release found for marketplace listing: {}", listingId);
+                return Optional.empty();
+            }
+            return Optional.ofNullable(response.release().id());
+        } catch (Exception ex) {
+            log.error("Error fetching Discogs marketplace listing {}: {}", listingId, ex.getMessage());
+            throw ex;
+        }
+    }
+
+    public Optional<Long> getReleaseIdFromMarketplaceListingFallback(String listingId, Exception e) {
+        log.warn("Discogs getReleaseIdFromMarketplaceListing fallback triggered for listing '{}': {}",
+                listingId, e.getMessage());
+        return Optional.empty();
+    }
+
     @CircuitBreaker(name = "discogsClient", fallbackMethod = "getTracksFallback")
     @Retry(name = "discogsClient")
     @Override
