@@ -22,11 +22,36 @@ CallbackDispatcher
 ProcessFolderFlowService.process()
   ├─ FolderAudioScanner.resolve() + listAudioFiles()
   ├─ ReleaseIdentifierService.identifyFrom*(audioFile / folderName) → MetadataSearchRequest
-  ├─ ProcessFolderSearcher.searchAll() → SearchResults(mbResults, discogsResults, bandcampResults)
+  ├─ ProcessFolderSearcher.searchAll() → SearchResults(knownResults, mbResults, discogsResults, bandcampResults)
+  ├─ (опційно) known release із SearchContextService → results.withKnownRelease() → варіант 1
   ├─ MetadataSuggester.suggest()       → AI-підказка (Haiku, best-effort)
   ├─ ProcessOptionsFormatter.format()  → BotResponse з кнопками PROC_SEL:0..N + PROC_SEL:cancel
   └─ ProcessFolderContextHolder.save() → ChatStateStore
 ```
+
+---
+
+## Known-release pre-fill (после скачування)
+
+`DownloadBatchCompleteListener` викликає `process(ctx, directoryPath, "", dto.releaseId())` —
+`dto.releaseId()` це той самий реліз, який юзер обрав кнопкою `DL:` на самому початку (до пошуку
+файлів і скачування). У 90% випадків це саме той реліз, що й треба для тегування — тому замість
+змушувати юзера повторно копіювати/шукати те саме, `process()` резолвить `knownReleaseId` через
+`SearchContextService.getReleaseMetadata(releaseId, conversationId)` (той самий кеш, що заповнює
+`DL:`-пошук і `mirrorReleaseForDownload` при topic-роутингу) і кладе результат у
+`SearchResults.knownResults` — рендериться `ProcessOptionsFormatter` **першою** секцією
+("✅ знайдено при пошуку:"), тобто завжди варіант `1️⃣`.
+
+- Якщо `SearchContextService` вже не містить цей releaseId (сесія протухла / юзер щось інше шукав
+  у той самий conversationId, поки йшло скачування) — `getReleaseMetadata` повертає `null`,
+  `knownResults` лишається пустим, і флоу деградує до звичайного 3-джерельного пошуку по назві
+  папки, як і раніше.
+- Якщо назва папки взагалі не парситься (`validateSearchRequest` fail) **але** known release
+  резолвився — пошук по 3 джерелах пропускається повністю, юзер бачить лише один варіант
+  (той самий known release) замість помилки "не вдалося розпізнати назву релізу".
+- `handleProcessCommand` (ручний `/process`) і `ProcessFolderSelectionOngoingFlow`/
+  `PendingProcessCallbackHandler`/`LibraryAgentTools` (ручний реprocess) **не передають**
+  `knownReleaseId` — цей механізм працює тільки на автоматичному post-download шляху.
 
 ---
 

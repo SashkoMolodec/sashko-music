@@ -33,7 +33,7 @@ public class DownloadBatchCompleteListener {
 
         telegramBot.sendMessage(ctx, buildFileListMessage(dto.allFiles(), dto.directoryPath()));
 
-        processFolderFlowService.process(ctx, dto.directoryPath())
+        processFolderFlowService.process(ctx, dto.directoryPath(), "", dto.releaseId())
                 .forEach(msg -> telegramBot.sendResponse(ctx, msg));
     }
 

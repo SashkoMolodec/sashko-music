@@ -64,6 +64,15 @@ public class ProcessFolderFlowService {
     }
 
     public List<BotResponse> process(ConversationContext ctx, String folderName, String additionalContext) {
+        return process(ctx, folderName, additionalContext, null);
+    }
+
+    /**
+     * @param knownReleaseId release the user already picked to trigger this download (via {@code DL:}) —
+     *                       looked up in {@link SearchContextService} and, if still resolvable, surfaced
+     *                       as option 1 instead of forcing the user to re-search/re-paste it.
+     */
+    public List<BotResponse> process(ConversationContext ctx, String folderName, String additionalContext, String knownReleaseId) {
         try {
             String processPath = pathMappingService.mapProcessPath(folderName);
             FolderAudioScanner.ResolvedFolder folder = audioScanner.resolve(processPath);
@@ -85,10 +94,23 @@ public class ProcessFolderFlowService {
             log.info("Processing folder: {}, found {} audio files", folder.name(), audioFiles.size());
 
             MetadataSearchRequest searchRequest = buildSearchRequest(folder.name(), audioFiles, additionalContext);
-            List<BotResponse> invalid = validateSearchRequest(searchRequest, folder.name());
-            if (invalid != null) return invalid;
 
-            ProcessFolderSearcher.SearchResults results = searcher.searchAll(searchRequest);
+            ReleaseMetadata knownRelease = knownReleaseId != null
+                    ? searchContextService.getReleaseMetadata(knownReleaseId, ctx.conversationId())
+                    : null;
+
+            List<BotResponse> invalid = validateSearchRequest(searchRequest, folder.name());
+            if (invalid != null && knownRelease == null) return invalid;
+
+            ProcessFolderSearcher.SearchResults results = invalid == null
+                    ? searcher.searchAll(searchRequest)
+                    : new ProcessFolderSearcher.SearchResults(List.of(), List.of(), List.of(), List.of());
+
+            if (knownRelease != null) {
+                results = results.withKnownRelease(knownRelease);
+                log.info("Pre-filled known release as option 1: {} - {}", knownRelease.artist(), knownRelease.title());
+            }
+
             BotResponse header = BotResponse.text("📄 %d файлів, знайдено метадані:".formatted(audioFiles.size()));
 
             if (results.isEmpty()) {

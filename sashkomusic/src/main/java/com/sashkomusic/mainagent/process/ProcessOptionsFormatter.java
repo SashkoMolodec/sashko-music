@@ -25,6 +25,11 @@ public class ProcessOptionsFormatter {
         StringBuilder message = new StringBuilder();
         int optionIndex = 1;
 
+        if (!results.knownResults().isEmpty()) {
+            message.append("✅ _знайдено при пошуку:_\n");
+            optionIndex = appendResults(message, results.knownResults(), optionIndex);
+            message.append("\n");
+        }
         if (!results.mbResults().isEmpty()) {
             message.append("🎵 _musicbrainz:_\n");
             optionIndex = appendResults(message, results.mbResults(), optionIndex);

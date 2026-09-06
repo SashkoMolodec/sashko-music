@@ -38,6 +38,7 @@ public class ProcessFolderSearcher {
     public SearchResults searchAll(MetadataSearchRequest request) {
         String title = request.getTitle();
         SearchResults results = new SearchResults(
+                List.of(),
                 run(() -> musicBrainzClient.searchReleases(request), title, MB_LIMIT),
                 run(() -> discogsClient.searchReleases(request), title, DISCOGS_LIMIT),
                 run(() -> bandcampClient.searchReleases(request), title, BANDCAMP_LIMIT));
@@ -58,12 +59,13 @@ public class ProcessFolderSearcher {
             log.info("Cleaned query: artist='{}' release='{}' type='{}' dateRange={}",
                     clean.artist(), clean.release(), clean.type(), clean.dateRange());
             return new SearchResults(
+                    List.of(),
                     run(() -> musicBrainzClient.searchReleases(clean), title, MB_LIMIT),
                     run(() -> discogsClient.searchReleases(clean), title, DISCOGS_LIMIT),
                     run(() -> bandcampClient.searchReleases(clean), title, BANDCAMP_LIMIT));
         } catch (Exception e) {
             log.warn("Fallback search failed: {}", e.getMessage());
-            return new SearchResults(List.of(), List.of(), List.of());
+            return new SearchResults(List.of(), List.of(), List.of(), List.of());
         }
     }
 
@@ -124,12 +126,14 @@ public class ProcessFolderSearcher {
     }
 
     public record SearchResults(
+            List<ReleaseMetadata> knownResults,
             List<ReleaseMetadata> mbResults,
             List<ReleaseMetadata> discogsResults,
             List<ReleaseMetadata> bandcampResults) {
 
         public List<ReleaseMetadata> allResults() {
             List<ReleaseMetadata> all = new ArrayList<>();
+            all.addAll(knownResults);
             all.addAll(mbResults);
             all.addAll(discogsResults);
             all.addAll(bandcampResults);
@@ -137,7 +141,19 @@ public class ProcessFolderSearcher {
         }
 
         public boolean isEmpty() {
-            return mbResults.isEmpty() && discogsResults.isEmpty() && bandcampResults.isEmpty();
+            return knownResults.isEmpty() && mbResults.isEmpty() && discogsResults.isEmpty() && bandcampResults.isEmpty();
+        }
+
+        /**
+         * Prepends the release the user already picked when the download was kicked off — it's
+         * right 90% of the time, so it should surface as option 1 instead of forcing a re-search.
+         */
+        public SearchResults withKnownRelease(ReleaseMetadata known) {
+            return new SearchResults(
+                    List.of(known),
+                    mbResults.stream().filter(r -> !r.id().equals(known.id())).toList(),
+                    discogsResults.stream().filter(r -> !r.id().equals(known.id())).toList(),
+                    bandcampResults.stream().filter(r -> !r.id().equals(known.id())).toList());
         }
     }
 }
