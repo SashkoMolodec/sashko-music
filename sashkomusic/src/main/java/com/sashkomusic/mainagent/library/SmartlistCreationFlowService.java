@@ -72,6 +72,28 @@ public class SmartlistCreationFlowService {
                 "показав картку підтвердження смартлиста '" + draft.name() + "' (картка вже містить усі деталі — не переказуй)");
     }
 
+    /**
+     * Start editing an existing smartlist: seeds the draft from its current DSL and sends
+     * the current rule as its own plain message (no formatting/buttons) so it's easy to
+     * copy, plus a prompt to describe the change in natural language via the same refine loop.
+     */
+    public List<BotResponse> startEdit(ConversationContext ctx, String name) {
+        SmartlistDsl dsl;
+        try {
+            dsl = smartlistService.getDsl(name);
+        } catch (IllegalArgumentException e) {
+            return List.of(BotResponse.text("❌ " + e.getMessage()));
+        }
+        SmartlistDraft draft = new SmartlistDraft(name, dsl, name);
+        chatStateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, draft);
+        return List.of(
+                BotResponse.text(smartlistService.describe(dsl)),
+                BotResponse.withButtons(
+                        "✏️ опиши що змінити в правилі '" + name + "' (своїми словами, можна уточнювати)",
+                        Map.of("❌", CB_CANCEL))
+        );
+    }
+
     public boolean hasDraft(ConversationContext ctx) {
         return chatStateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class).isPresent();
     }
@@ -103,7 +125,7 @@ public class SmartlistCreationFlowService {
         if (updated == null || updated.conditions().isEmpty()) {
             return List.of(BotResponse.text("❌ не зміг оновити умови — спробуй ще раз або напиши 'ок' щоб підтвердити"));
         }
-        SmartlistDraft next = new SmartlistDraft(current.name(), updated);
+        SmartlistDraft next = current.withDsl(updated);
         chatStateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, next);
         return buildPreviewCard(next);
     }
@@ -121,15 +143,19 @@ public class SmartlistCreationFlowService {
         if (opt.isEmpty()) return List.of(BotResponse.text("❌ нема чорнетки смартлиста"));
         SmartlistDraft draft = opt.get();
         try {
+            if (draft.isEdit()) {
+                smartlistService.delete(draft.originalName());
+            }
             SmartlistService.SmartlistSummary summary = smartlistService.create(draft.name(), draft.dsl());
             chatStateStore.remove(ctx.conversationId(), SmartlistDraft.FLOW_KEY);
-            logsChannel.send("✅ смартлист '" + summary.name() + "' створено — " + summary.trackCount() + " треків");
-            return List.of(BotResponse.text("✅ смартлист '" + summary.name() + "' створено, " + summary.trackCount() + " треків"));
+            String verb = draft.isEdit() ? "оновлено" : "створено";
+            logsChannel.send("✅ смартлист '" + summary.name() + "' " + verb + " — " + summary.trackCount() + " треків");
+            return List.of(BotResponse.text("✅ смартлист '" + summary.name() + "' " + verb + ", " + summary.trackCount() + " треків"));
         } catch (IllegalArgumentException e) {
             return List.of(BotResponse.text("❌ " + e.getMessage()));
         } catch (Exception e) {
-            log.warn("Failed to create smartlist '{}': {}", draft.name(), e.getMessage(), e);
-            return List.of(BotResponse.text("❌ не вдалось створити смартлист: " + e.getMessage()));
+            log.warn("Failed to {} smartlist '{}': {}", draft.isEdit() ? "update" : "create", draft.name(), e.getMessage(), e);
+            return List.of(BotResponse.text("❌ не вдалось " + (draft.isEdit() ? "оновити" : "створити") + " смартлист: " + e.getMessage()));
         }
     }
 
@@ -169,7 +195,8 @@ public class SmartlistCreationFlowService {
     private List<BotResponse> buildPreviewCard(SmartlistDraft draft) {
         List<Track> preview = smartlistService.previewTracks(draft.dsl(), PREVIEW_LIMIT);
         StringBuilder sb = new StringBuilder();
-        sb.append("🧠 смартлист: <b>").append(escape(draft.name())).append("</b>\n");
+        String label = draft.isEdit() ? "✏️ редагування смартлиста: <b>" : "🧠 смартлист: <b>";
+        sb.append(label).append(escape(draft.name())).append("</b>\n");
         sb.append("📐 правило: <code>").append(escape(smartlistService.describe(draft.dsl()))).append("</code>\n\n");
         if (preview.isEmpty()) {
             sb.append("⚠️ під ці умови не підпадає жоден трек — підправ правило або підтверди порожній смартлист");

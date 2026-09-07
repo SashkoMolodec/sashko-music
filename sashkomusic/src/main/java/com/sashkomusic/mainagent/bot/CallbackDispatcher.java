@@ -99,6 +99,7 @@ public class CallbackDispatcher {
         handlers.put("SMARTLISTS_RM", (ctx, data, msgId) -> smartlistsFlow.promptRemove(ctx));
         handlers.put("SMARTLISTS_INFO_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelInfo(ctx));
         handlers.put("SMARTLISTS_INFO", (ctx, data, msgId) -> smartlistsFlow.promptInfo(ctx));
+        handlers.put("SMARTLISTS_EDIT", (ctx, data, msgId) -> smartlistsFlow.startEditFromInfo(ctx));
     }
 
     public List<BotResponse> dispatch(ConversationContext ctx, String data, Integer messageId) {

@@ -24,6 +24,7 @@ public class SmartlistsFlowService {
     private static final String FLOW_KEY_CREATE = "smartlists_creating";
     private static final String FLOW_KEY_REMOVE = "smartlists_removing";
     private static final String FLOW_KEY_INFO = "smartlists_info";
+    private static final String FLOW_KEY_EDIT_TARGET = "smartlists_edit_target";
 
     private final SmartlistService smartlistService;
     private final SmartlistCreationFlowService smartlistCreationFlowService;
@@ -183,10 +184,22 @@ public class SmartlistsFlowService {
         if (summary == null) {
             return List.of(BotResponse.text("смартлист вже не існує"));
         }
+        chatStateStore.put(ctx.conversationId(), FLOW_KEY_EDIT_TARGET, name);
         String text = "🧠 " + summary.name()
                 + "\n\n📐 правило: " + summary.dslDescription()
                 + "\n🎵 треків: " + summary.trackCount();
-        return List.of(BotResponse.text(text));
+        return List.of(BotResponse.withButtons(text, Map.of("✏️", "SMARTLISTS_EDIT")));
+    }
+
+    // --- edit ---
+
+    public List<BotResponse> startEditFromInfo(ConversationContext ctx) {
+        var name = chatStateStore.get(ctx.conversationId(), FLOW_KEY_EDIT_TARGET, String.class);
+        if (name.isEmpty()) {
+            return List.of(BotResponse.text("😔 сесія протухла — тисни ℹ️ знову"));
+        }
+        chatStateStore.remove(ctx.conversationId(), FLOW_KEY_EDIT_TARGET);
+        return smartlistCreationFlowService.startEdit(ctx, name.get());
     }
 
     private List<Integer> parseNumbers(String input) {
@@ -206,6 +219,7 @@ public class SmartlistsFlowService {
         chatStateStore.remove(event.conversationId(), FLOW_KEY_CREATE);
         chatStateStore.remove(event.conversationId(), FLOW_KEY_REMOVE);
         chatStateStore.remove(event.conversationId(), FLOW_KEY_INFO);
+        chatStateStore.remove(event.conversationId(), FLOW_KEY_EDIT_TARGET);
     }
 
     private record NameSelection(List<String> names) {}

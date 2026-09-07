@@ -121,6 +121,13 @@ public class SmartlistService {
         return evaluator.evaluate(parse(sl.getDsl()));
     }
 
+    @Transactional(readOnly = true)
+    public SmartlistDsl getDsl(String name) {
+        Smartlist sl = repository.findByName(name)
+                .orElseThrow(() -> new IllegalArgumentException("smartlist '" + name + "' не знайдено"));
+        return parse(sl.getDsl());
+    }
+
     public String describe(SmartlistDsl dsl) {
         return evaluator.describe(dsl);
     }

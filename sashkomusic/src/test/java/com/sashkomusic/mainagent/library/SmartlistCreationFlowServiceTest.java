@@ -153,6 +153,50 @@ class SmartlistCreationFlowServiceTest {
         assertThat(responses.get(0).text()).contains("створено");
     }
 
+    @Test
+    void startEdit_seeds_draft_from_existing_dsl_and_sends_copyable_rule_message() {
+        SmartlistDsl dsl = new SmartlistDsl(List.of(new SmartlistDsl.ContainsCondition("comment", "detroit techno")));
+        when(smartlistService.getDsl("detroit techno")).thenReturn(dsl);
+        when(smartlistService.describe(dsl)).thenReturn("comment contains \"(detroit techno)\"");
+
+        List<BotResponse> responses = sut.startEdit(ctx, "detroit techno");
+
+        assertThat(sut.hasDraft(ctx)).isTrue();
+        SmartlistDraft stored = stateStore.get(ctx.conversationId(), SmartlistDraft.FLOW_KEY, SmartlistDraft.class).orElseThrow();
+        assertThat(stored.isEdit()).isTrue();
+        assertThat(stored.originalName()).isEqualTo("detroit techno");
+        assertThat(stored.dsl()).isEqualTo(dsl);
+        assertThat(responses).hasSize(2);
+        assertThat(responses.get(0).text()).isEqualTo("comment contains \"(detroit techno)\"");
+        assertThat(responses.get(0).buttons()).isNullOrEmpty();
+        assertThat(responses.get(1).text()).contains("опиши що змінити", "detroit techno");
+        assertThat(responses.get(1).buttons()).containsEntry("❌", "SM:NO");
+    }
+
+    @Test
+    void startEdit_reports_error_when_smartlist_missing() {
+        when(smartlistService.getDsl("gone")).thenThrow(new IllegalArgumentException("smartlist 'gone' не знайдено"));
+
+        List<BotResponse> responses = sut.startEdit(ctx, "gone");
+
+        assertThat(sut.hasDraft(ctx)).isFalse();
+        assertThat(responses.get(0).text()).contains("не знайдено");
+    }
+
+    @Test
+    void confirm_on_edit_draft_deletes_original_then_recreates_and_reports_updated() {
+        SmartlistDsl dsl = new SmartlistDsl(List.of(new SmartlistDsl.ContainsCondition("genre", "house")));
+        stateStore.put(ctx.conversationId(), SmartlistDraft.FLOW_KEY, new SmartlistDraft("hl", dsl, "hl"));
+        when(smartlistService.create("hl", dsl)).thenReturn(new SmartlistService.SmartlistSummary(1L, "hl", 5, "..."));
+
+        List<BotResponse> responses = sut.handleConfirm(ctx, "SM:OK");
+
+        verify(smartlistService).delete("hl");
+        verify(smartlistService).create("hl", dsl);
+        assertThat(sut.hasDraft(ctx)).isFalse();
+        assertThat(responses.get(0).text()).contains("оновлено", "5 треків");
+    }
+
     private Track track(String title, String artistName) {
         Track t = new Track(title, 1);
         Set<Artist> artists = new HashSet<>();
