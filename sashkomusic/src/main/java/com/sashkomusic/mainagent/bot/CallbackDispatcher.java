@@ -76,6 +76,7 @@ public class CallbackDispatcher {
         handlers.put("ALB_INFO:", (ctx, data, msgId) -> npAlbum.handleInfo(ctx, Long.parseLong(data.substring("ALB_INFO:".length()))));
         handlers.put("ALB_COMMENT:", (ctx, data, msgId) -> npAlbum.handleComment(ctx, Long.parseLong(data.substring("ALB_COMMENT:".length()))));
         handlers.put("ALB_RM:", (ctx, data, msgId) -> npAlbum.handleDelete(ctx, Long.parseLong(data.substring("ALB_RM:".length()))));
+        handlers.put("ALB_APPLE_SYNC:", (ctx, data, msgId) -> npAlbum.handleAppleSync(ctx, Long.parseLong(data.substring("ALB_APPLE_SYNC:".length()))));
         handlers.put("EDIT_COMMENT:", (ctx, data, msgId) -> {
             String suffix = data.substring("EDIT_COMMENT:".length());
             String[] parts = suffix.split(":", 2);

@@ -10,6 +10,19 @@ if [ ! -f "$CONFIG_FILE" ]; then
     rip config reset
 fi
 
+if [ -f /run/applemusic-ssh/applemusic-sync-key ]; then
+    # Bind-mounted from the host owned by the host user, not root; OpenSSH's
+    # client-side strict mode refuses key/config files it doesn't own, so copy
+    # them in as root instead of using the mount in place.
+    mkdir -p /root/.ssh
+    cp /run/applemusic-ssh/applemusic-sync-key /root/.ssh/applemusic-sync-key
+    cp /run/applemusic-ssh/ssh-config /root/.ssh/config
+    chown -R root:root /root/.ssh
+    chmod 700 /root/.ssh
+    chmod 600 /root/.ssh/applemusic-sync-key
+    chmod 644 /root/.ssh/config
+fi
+
 if [ -n "$QOBUZ_AUTH_TOKEN" ] && [ -n "$QOBUZ_EMAIL" ]; then
     python3 - <<'EOF'
 import os, re

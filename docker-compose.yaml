@@ -79,6 +79,9 @@ services:
       - YTDLP_CLI_PATH=${YTDLP_CLI_PATH}
       - YTDLP_DOWNLOAD_PATH=${YTDLP_DOWNLOAD_PATH}
       - YTDLP_COOKIES_PATH=${YTDLP_COOKIES_PATH}
+      - APPLEMUSIC_SYNC_ENABLED=${APPLEMUSIC_SYNC_ENABLED:-false}
+      - APPLEMUSIC_SYNC_HOST=${APPLEMUSIC_SYNC_HOST:-192.168.122.128}
+      - APPLEMUSIC_SYNC_PORT=${APPLEMUSIC_SYNC_PORT:-8765}
       - PATH_MAPPING_REPROCESS_SOURCE=${PATH_MAPPING_REPROCESS_SOURCE}
       - PATH_MAPPING_REPROCESS_TARGET=${PATH_MAPPING_REPROCESS_TARGET}
       - PATH_MAPPING_PROCESS_SOURCE=${PATH_MAPPING_PROCESS_SOURCE}
@@ -94,6 +97,9 @@ services:
       - ${ANALYSIS_RESULTS_PATH}:${ANALYSIS_RESULTS_PATH}:ro
       - ${APPLE_GAMDL_COOKIES}:${APPLE_GAMDL_COOKIES}:ro
       - ${YTDLP_COOKIES_PATH}:${YTDLP_COOKIES_PATH}:ro
+      - ./tools/itunes-agent/applemusic_sync.py:/app/tools/applemusic_sync.py:ro
+      - ./tools/itunes-agent/applemusic-sync-key:/run/applemusic-ssh/applemusic-sync-key:ro
+      - ./tools/itunes-agent/ssh-config:/run/applemusic-ssh/ssh-config:ro
     depends_on:
       postgres:
         condition: service_healthy

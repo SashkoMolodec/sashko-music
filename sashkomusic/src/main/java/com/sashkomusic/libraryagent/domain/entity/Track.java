@@ -29,6 +29,9 @@ public class Track {
     @Column
     private String localPath;
 
+    @Column(name = "apple_music_dbid")
+    private Long appleMusicDbid;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "release_id", nullable = false)
     private Release release;

@@ -13,12 +13,19 @@ import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.client.NavidromeClient;
 import com.sashkomusic.mainagent.library.AlbumCommentContextHolder.AlbumCommentContext;
+import com.sashkomusic.mainagent.library.config.AppleMusicSyncConfig;
 import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
+import com.sashkomusic.mainagent.library.messaging.AppleMusicSyncOutputParser;
 import com.sashkomusic.mainagent.library.messaging.ReplaceCommentTaskProducer;
 import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
 import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
+import com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor;
+import com.sashkomusic.events.AppleMusicSyncCompleteEvent;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +52,10 @@ public class NowPlayingAlbumFlowService {
     private final AddCommentTaskProducer addCommentTaskProducer;
     private final ReplaceCommentTaskProducer replaceCommentTaskProducer;
     private final AlbumCommentContextHolder commentContextHolder;
+    private final ObjectMapper objectMapper;
+    private final ProcessCommandExecutor commandExecutor;
+    private final ApplicationEventPublisher eventPublisher;
+    private final AppleMusicSyncConfig appleMusicSyncConfig;
 
     @Transactional(readOnly = true)
     public List<BotResponse> nowPlayingAlbum(ConversationContext ctx) {
@@ -72,7 +83,8 @@ public class NowPlayingAlbumFlowService {
         List<List<BotResponse.ButtonDto>> rows = List.of(List.of(
                 BotResponse.ButtonDto.callback("ℹ️", "ALB_INFO:" + release.getId()),
                 BotResponse.ButtonDto.callback("💬", "ALB_COMMENT:" + release.getId()),
-                BotResponse.ButtonDto.callback("🗑", "ALB_RM:" + release.getId())
+                BotResponse.ButtonDto.callback("🗑", "ALB_RM:" + release.getId()),
+                BotResponse.ButtonDto.callback("🍎", "ALB_APPLE_SYNC:" + release.getId())
         ));
 
         String imageUrl = release.getCoverPath() != null ? LOCAL_FILE_PREFIX + release.getCoverPath() : null;
@@ -157,6 +169,38 @@ public class NowPlayingAlbumFlowService {
 
     public List<BotResponse> handleDelete(ConversationContext ctx, Long releaseId) {
         return removeReleaseFlowService.presentConfirmationByReleaseId(releaseId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BotResponse> handleAppleSync(ConversationContext ctx, Long releaseId) {
+        Optional<Release> releaseOpt = releaseRepository.findById(releaseId);
+        if (releaseOpt.isEmpty()) {
+            return List.of(BotResponse.text("реліз не знайдено."));
+        }
+        String directoryPath = releaseOpt.get().getDirectoryPath();
+
+        try {
+            String output = commandExecutor.executeCapturing("applemusic-sync-manual",
+                    "python3", appleMusicSyncConfig.getScriptPath(), directoryPath,
+                    "--host", appleMusicSyncConfig.getHost(), "--port", String.valueOf(appleMusicSyncConfig.getPort()));
+
+            if (output == null || output.isBlank()) {
+                return List.of(BotResponse.text("❌ не вийшло залити в apple music: порожній результат"));
+            }
+
+            List<AppleMusicSyncCompleteEvent.TrackDbid> mappings = AppleMusicSyncOutputParser.parse(objectMapper, output);
+            if (!mappings.isEmpty()) {
+                eventPublisher.publishEvent(new AppleMusicSyncCompleteEvent(directoryPath, mappings));
+            }
+
+            JsonNode json = objectMapper.readTree(output);
+            int staged = json.path("staged").asInt();
+            int added = json.path("added").asInt();
+            return List.of(BotResponse.text("🍎 залито в apple music: %d/%d треків".formatted(added, staged)));
+        } catch (Exception e) {
+            log.error("Apple Music manual sync failed for releaseId={}: {}", releaseId, e.getMessage(), e);
+            return List.of(BotResponse.text("❌ помилка синку з apple music: " + e.getMessage()));
+        }
     }
 
     private String buildMainCardText(Release release, List<Track> tracks) {

@@ -159,6 +159,7 @@ libraryagent         →  SmartlistsRegeneratedEvent         →  mainagent (Sma
 libraryagent         →  SmartlistDeletedEvent              →  mainagent (NavidromePlaylistDeleteListener → NavidromeClient.findPlaylistIdByName + deletePlaylist)
 libraryagent         →  SmartlistsChangedEvent             →  mainagent (NavidromeSmartlistScanListener → NavidromeClient.triggerScan(smartlists/))
 downloadagent        →  SlskdPrivateMessageReceivedEvent   →  mainagent (SlskdPrivateMessageNotificationListener → TelegramChatBot main chat)
+mainagent            →  AppleMusicSyncCompleteEvent        →  libraryagent (AppleMusicDbidPersistenceListener → Track.appleMusicDbid)
 mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider
 mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheService, DownloadContextHolder, DjTagContextHolder, LastReleaseContextHolder, SmartlistCreationFlowService
 ```
@@ -168,6 +169,10 @@ mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheSer
 Audio analyzer REST bridge:
 - Java → Python: `POST {AUDIO_ANALYZER_URL}/analyze` (WebClient, fire-and-forget)
 - Python → Java: `POST /internal/audio-analysis-complete` → `TrackAnalysisCompleteEvent` → libraryagent listener
+
+Apple Music itunes-agent bridge (see `.specs/applemusic-sync.md`):
+- Java → win10 VM: `ITunesAgentClient.removeTrack(dbid)` → `POST /remove` on `itunes_agent.py` (fire-and-log, short timeouts — a dead VM never blocks local removal)
+- `ReleaseRemovalService` / `TrackRemovalService` call it per-track when `Track.appleMusicDbid` is set
 
 ## Dependency Rules
 

@@ -1,7 +1,9 @@
 package com.sashkomusic.libraryagent.domain.service;
 
 import com.sashkomusic.libraryagent.domain.entity.Release;
+import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
+import com.sashkomusic.mainagent.library.client.ITunesAgentClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +17,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Slf4j
@@ -25,6 +29,7 @@ public class ReleaseRemovalService {
     private static final DateTimeFormatter TS_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private final ReleaseRepository releaseRepository;
+    private final ITunesAgentClient iTunesAgentClient;
 
     @Value("${trash.base-path}")
     private String trashBasePath;
@@ -43,6 +48,10 @@ public class ReleaseRemovalService {
         Release release = releaseOpt.get();
         String title = release.getTitle();
         String directoryPath = release.getDirectoryPath();
+        List<Long> appleMusicDbids = release.getTracks().stream()
+                .map(Track::getAppleMusicDbid)
+                .filter(Objects::nonNull)
+                .toList();
 
         log.info("Removing release id={} title='{}' dir='{}'", releaseId, title, directoryPath);
 
@@ -50,6 +59,8 @@ public class ReleaseRemovalService {
 
         releaseRepository.delete(release);
         log.info("Deleted release id={} from DB", releaseId);
+
+        appleMusicDbids.forEach(iTunesAgentClient::removeTrack);
 
         if (move.error != null) {
             return new RemovalResult(true, title, directoryPath, null,

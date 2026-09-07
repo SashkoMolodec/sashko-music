@@ -17,6 +17,7 @@ RUN apt-get update && \
         python3-pip \
         python3-venv \
         ffmpeg \
+        openssh-client \
         build-essential \
         python3-dev \
         libjpeg-dev \

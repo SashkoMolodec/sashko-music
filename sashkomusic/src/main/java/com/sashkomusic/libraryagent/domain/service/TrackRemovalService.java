@@ -4,6 +4,7 @@ import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
+import com.sashkomusic.mainagent.library.client.ITunesAgentClient;
 import com.sashkomusic.mainagent.library.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class TrackRemovalService {
     private final TrackRepository trackRepository;
     private final ReleaseRemovalService releaseRemovalService;
     private final NavidromeClient navidromeClient;
+    private final ITunesAgentClient iTunesAgentClient;
 
     @Value("${trash.base-path}")
     private String trashBasePath;
@@ -76,6 +78,9 @@ public class TrackRemovalService {
             removedTitles.add(label);
             if (!moveFileToTrash(track.getLocalPath())) {
                 fileFailures.add(label);
+            }
+            if (track.getAppleMusicDbid() != null) {
+                iTunesAgentClient.removeTrack(track.getAppleMusicDbid());
             }
             trackRepository.delete(track);
             log.info("Removed track id={} '{}' from release {}", track.getId(), track.getTitle(), releaseId);

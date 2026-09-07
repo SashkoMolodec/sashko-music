@@ -45,6 +45,55 @@ public class ProcessCommandExecutor {
         }
     }
 
+    /**
+     * Like {@link #execute}, but returns stdout instead of only logging it — for callers that
+     * need to parse a command's output (e.g. the Apple Music sync script's JSON result). stdout
+     * and stderr are read on separate threads so a chatty stderr can't deadlock the pipe.
+     */
+    public String executeCapturing(String logTag, String... command) {
+        try {
+            log.info("Executing command [{}]: {}", logTag, String.join(" ", command));
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            Process process = pb.start();
+
+            StringBuilder stdout = new StringBuilder();
+            Thread stdoutReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        stdout.append(line).append('\n');
+                    }
+                } catch (IOException e) {
+                    log.error("Error reading [{}] stdout: {}", logTag, e.getMessage(), e);
+                }
+            });
+            Thread stderrReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        log.info("[{}] {}", logTag, line);
+                    }
+                } catch (IOException e) {
+                    log.error("Error reading [{}] stderr: {}", logTag, e.getMessage(), e);
+                }
+            });
+            stdoutReader.start();
+            stderrReader.start();
+
+            int exitCode = process.waitFor();
+            stdoutReader.join();
+            stderrReader.join();
+
+            if (exitCode != 0) {
+                log.error("Command [{}] failed with exit code {}", logTag, exitCode);
+            }
+            return stdout.toString();
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException("Failed to execute command", e);
+        }
+    }
+
     private void logOutputAsync(String logTag, String conversationId, Process process) {
         CompletableFuture.runAsync(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
