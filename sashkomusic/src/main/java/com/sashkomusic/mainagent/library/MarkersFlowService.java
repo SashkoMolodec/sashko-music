@@ -153,6 +153,7 @@ public class MarkersFlowService {
             markerRepository.findById(markerId).ifPresent(marker -> {
                 removedNames.add(marker.getName());
                 markerRepository.deleteById(markerId);
+                smartlistService.delete(marker.getName());
             });
         }
 

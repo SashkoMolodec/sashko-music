@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -28,7 +29,7 @@ public class SmartlistService {
 
     public record SmartlistSummary(Long id, String name, int trackCount, String dslDescription) {}
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SmartlistSummary create(String name, SmartlistDsl dsl) {
         if (repository.existsByName(name)) {
             throw new IllegalArgumentException("smartlist '" + name + "' вже існує");
