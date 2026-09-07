@@ -18,6 +18,7 @@ public class SoulseekCustomSearchFlowService {
 
     private final ChatStateStore stateStore;
     private final SearchFilesTaskProducer searchFilesProducer;
+    private final DownloadTopicResolver downloadTopicResolver;
 
     public List<BotResponse> handleCallback(ConversationContext ctx, String callbackData) {
         String releaseId = callbackData.substring("SLSK_CUSTOM:".length());
@@ -37,7 +38,8 @@ public class SoulseekCustomSearchFlowService {
             return List.of(BotResponse.text("щось пішло не так, спробуй ще раз"));
         }
 
-        searchFilesProducer.send(new SearchFilesTaskDto(ctx.conversationId(), releaseId, query, "", DownloadEngine.SOULSEEK));
+        String downloadConversationId = downloadTopicResolver.resolve(ctx).conversationId();
+        searchFilesProducer.send(new SearchFilesTaskDto(downloadConversationId, releaseId, query, "", DownloadEngine.SOULSEEK));
         return List.of(BotResponse.text("🔎 шукаю опції завантаження (soulseek): " + query));
     }
 }

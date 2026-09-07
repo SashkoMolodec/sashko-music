@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
 @Import({CallbackDispatcher.class, MusicDownloadFlowService.class,
         SearchFilesTaskProducer.class, DownloadTaskProducer.class,
         SearchContextService.class, DownloadContextHolder.class,
-        SoulseekDirectoryConfirmContextHolder.class,
+        SoulseekDirectoryConfirmContextHolder.class, DownloadTopicResolver.class,
         DownloadFlowIntegrationTest.TestConfig.class})
 class DownloadFlowIntegrationTest {
 
@@ -130,6 +130,9 @@ class DownloadFlowIntegrationTest {
         }
         @Bean com.sashkomusic.mainagent.library.SmartlistCreationFlowService smartlistCreationFlowService() {
             return mock(com.sashkomusic.mainagent.library.SmartlistCreationFlowService.class);
+        }
+        @Bean com.sashkomusic.mainagent.library.SmartlistsFlowService smartlistsFlowService() {
+            return mock(com.sashkomusic.mainagent.library.SmartlistsFlowService.class);
         }
         @Bean com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService nowPlayingAlbumFlowService() {
             return mock(com.sashkomusic.mainagent.library.NowPlayingAlbumFlowService.class);

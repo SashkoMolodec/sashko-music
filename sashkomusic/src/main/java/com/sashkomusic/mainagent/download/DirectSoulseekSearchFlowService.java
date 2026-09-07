@@ -22,6 +22,7 @@ public class DirectSoulseekSearchFlowService {
 
     private final SearchFilesTaskProducer searchFilesProducer;
     private final SearchContextService searchContextService;
+    private final DownloadTopicResolver downloadTopicResolver;
 
     public List<BotResponse> search(ConversationContext ctx, String query) {
         query = query.trim();
@@ -48,9 +49,10 @@ public class DirectSoulseekSearchFlowService {
         MetadataSearchRequest request = MetadataSearchRequest.create(
                 artist, title, "", null, "", "", "", "", "", "", "", null
         );
-        searchContextService.saveSearchContext(ctx.conversationId(), SearchEngine.DISCOGS, query, request, List.of(synthetic));
+        ConversationContext downloadCtx = downloadTopicResolver.resolve(ctx);
+        searchContextService.saveSearchContext(downloadCtx.conversationId(), SearchEngine.DISCOGS, query, request, List.of(synthetic));
 
-        searchFilesProducer.send(new SearchFilesTaskDto(ctx.conversationId(), releaseId, query, "", DownloadEngine.SOULSEEK));
+        searchFilesProducer.send(new SearchFilesTaskDto(downloadCtx.conversationId(), releaseId, query, "", DownloadEngine.SOULSEEK));
         log.info("Direct Soulseek search: query='{}', releaseId={}", query, releaseId);
         return List.of(BotResponse.text("🔎 шукаю на soulseek: " + query));
     }

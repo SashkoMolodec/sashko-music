@@ -13,7 +13,6 @@ import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
 import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,8 +30,7 @@ public class MusicDownloadFlowService {
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers;
     private final SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview;
-    private final Long defaultChatId;
-    private final Integer downloadTopicId;
+    private final DownloadTopicResolver downloadTopicResolver;
 
     public MusicDownloadFlowService(SearchFilesTaskProducer searchFilesProducer,
                                     DownloadTaskProducer downloadTaskProducer,
@@ -41,8 +39,7 @@ public class MusicDownloadFlowService {
                                     ReleaseSearchFlowService releaseSearchFlowService,
                                     Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers,
                                     SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview,
-                                    @Value("${telegram.default-chat-id}") Long defaultChatId,
-                                    @Value("${telegram.download-topic-id:#{null}}") Integer downloadTopicId) {
+                                    DownloadTopicResolver downloadTopicResolver) {
         this.searchFilesProducer = searchFilesProducer;
         this.downloadTaskProducer = downloadTaskProducer;
         this.contextService = contextService;
@@ -50,25 +47,7 @@ public class MusicDownloadFlowService {
         this.releaseSearchFlowService = releaseSearchFlowService;
         this.downloadFlowHandlers = downloadFlowHandlers;
         this.soulseekDirectoryPreview = soulseekDirectoryPreview;
-        this.defaultChatId = defaultChatId;
-        this.downloadTopicId = downloadTopicId;
-        if (downloadTopicId == null) {
-            log.info("telegram.download-topic-id not configured — download flow stays in the originating chat/topic");
-        }
-    }
-
-    /**
-     * All actual downloading (file search, option selection, soulseek preview, progress, and the final
-     * "added to library" message) is funneled into one fixed topic when configured — keeps the noisy
-     * part of the flow out of whatever topic the release was discovered in. Release discovery/search
-     * itself is untouched and keeps using the original {@code ctx}. The very first ack ("🔎 шукаю
-     * опції...") still goes back through the caller's own ctx (the click that triggered it), since
-     * sending it directly here would require injecting TelegramChatBot, which would create a circular
-     * bean dependency (MusicDownloadFlowService -> TelegramChatBot -> UserInteractionOrchestrator ->
-     * CallbackDispatcher -> MusicDownloadFlowService).
-     */
-    private ConversationContext resolveDownloadCtx(ConversationContext ctx) {
-        return downloadTopicId == null ? ctx : ConversationContext.topic(defaultChatId, downloadTopicId);
+        this.downloadTopicResolver = downloadTopicResolver;
     }
 
     public List<BotResponse> handleDownload(ConversationContext ctx, String data) {
@@ -93,7 +72,11 @@ public class MusicDownloadFlowService {
     private List<BotResponse> initiateDownloadSearch(ConversationContext ctx, ReleaseMetadata metadata, DownloadEngine source) {
         log.info("Initiating download search for: {} - {}", metadata.artist(), metadata.title());
 
-        ConversationContext downloadCtx = resolveDownloadCtx(ctx);
+        // The very first ack ("🔎 шукаю опції...") below still goes back through the caller's own
+        // ctx (the click that triggered it), since sending it directly here would require injecting
+        // TelegramChatBot, which would create a circular bean dependency (MusicDownloadFlowService ->
+        // TelegramChatBot -> UserInteractionOrchestrator -> CallbackDispatcher -> MusicDownloadFlowService).
+        ConversationContext downloadCtx = downloadTopicResolver.resolve(ctx);
         if (!downloadCtx.equals(ctx)) {
             contextService.mirrorReleaseForDownload(downloadCtx.conversationId(), metadata);
         }
