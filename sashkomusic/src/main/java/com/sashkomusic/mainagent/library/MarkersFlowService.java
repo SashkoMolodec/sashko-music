@@ -99,7 +99,7 @@ public class MarkersFlowService {
 
     @Transactional
     public List<BotResponse> promptRemove(ConversationContext ctx) {
-        List<Marker> markers = markerRepository.findAll();
+        List<Marker> markers = markerRepository.findAllByOrderByLastUsedAtDescNameAsc();
         if (markers.isEmpty()) {
             return List.of(BotResponse.text("міток ще немає"));
         }
