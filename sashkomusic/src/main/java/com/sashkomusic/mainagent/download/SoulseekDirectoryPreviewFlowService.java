@@ -19,6 +19,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class SoulseekDirectoryPreviewFlowService {
 
+    static final String CONFIRM_PREFIX = "SLSK_DIR_OK:";
+    static final String SELECT_PREFIX = "SLSK_DIR_SEL:";
+    static final String CANCEL_PREFIX = "SLSK_DIR_NO:";
+    private static final String STALE_TOKEN_MESSAGE = "😔 підтвердження вже протухло — знайди реліз ще раз";
+
     private final SoulseekDirectoryService directoryService;
     private final SoulseekDirectoryConfirmContextHolder confirmHolder;
     private final DownloadContextHolder downloadContextHolder;
@@ -35,38 +40,45 @@ public class SoulseekDirectoryPreviewFlowService {
             return List.of(BotResponse.text("❌ не вдалося завантажити директорію з slskd"));
         }
 
-        confirmHolder.save(ctx.conversationId(), releaseId, expanded);
+        String token = confirmHolder.save(ctx.conversationId(), releaseId, expanded);
 
         String text = "📁 повна директорія:\n\n" + DownloadOptionsCardFormatter.formatSingle(expanded);
 
         return List.of(BotResponse.withMultiRowButtons(text, List.of(
                 List.of(
-                        new BotResponse.ButtonDto("✅", "SLSK_DIR_OK"),
-                        new BotResponse.ButtonDto("🔢", "SLSK_DIR_SEL"),
-                        new BotResponse.ButtonDto("❌", "SLSK_DIR_NO")
+                        new BotResponse.ButtonDto("✅", CONFIRM_PREFIX + token),
+                        new BotResponse.ButtonDto("🔢", SELECT_PREFIX + token),
+                        new BotResponse.ButtonDto("❌", CANCEL_PREFIX + token)
                 )
         )));
     }
 
-    public List<BotResponse> handleConfirm(ConversationContext ctx) {
-        var pending = confirmHolder.get(ctx.conversationId());
+    public List<BotResponse> handleConfirm(ConversationContext ctx, String callbackData) {
+        String token = callbackData.substring(CONFIRM_PREFIX.length());
+        var pending = confirmHolder.getIfMatches(ctx.conversationId(), token);
         if (pending.isEmpty()) {
-            return List.of(BotResponse.text("😔 підтвердження вже протухло — знайди реліз ще раз"));
+            return List.of(BotResponse.text(STALE_TOKEN_MESSAGE));
         }
 
         var confirm = pending.get();
         return finalizeDownload(ctx, confirm.releaseId(), confirm.expandedOption());
     }
 
-    public List<BotResponse> handleCancel(ConversationContext ctx) {
+    public List<BotResponse> handleCancel(ConversationContext ctx, String callbackData) {
+        String token = callbackData.substring(CANCEL_PREFIX.length());
+        var pending = confirmHolder.getIfMatches(ctx.conversationId(), token);
+        if (pending.isEmpty()) {
+            return List.of(BotResponse.text(STALE_TOKEN_MESSAGE));
+        }
         confirmHolder.clear(ctx.conversationId());
         return List.of(BotResponse.text("❌ скасовано"));
     }
 
-    public List<BotResponse> promptSelection(ConversationContext ctx) {
-        var pending = confirmHolder.get(ctx.conversationId());
+    public List<BotResponse> promptSelection(ConversationContext ctx, String callbackData) {
+        String token = callbackData.substring(SELECT_PREFIX.length());
+        var pending = confirmHolder.getIfMatches(ctx.conversationId(), token);
         if (pending.isEmpty()) {
-            return List.of(BotResponse.text("😔 підтвердження вже протухло — знайди реліз ще раз"));
+            return List.of(BotResponse.text(STALE_TOKEN_MESSAGE));
         }
         confirmHolder.markSelecting(ctx.conversationId());
         return List.of(BotResponse.text("🤔 введи номери треків через кому (напр. 1,2,5)"));
@@ -81,7 +93,7 @@ public class SoulseekDirectoryPreviewFlowService {
     public List<BotResponse> handleSelection(ConversationContext ctx, String input) {
         var pending = confirmHolder.get(ctx.conversationId());
         if (pending.isEmpty()) {
-            return List.of(BotResponse.text("😔 підтвердження вже протухло — знайди реліз ще раз"));
+            return List.of(BotResponse.text(STALE_TOKEN_MESSAGE));
         }
         var confirm = pending.get();
         List<DownloadOption.FileItem> allFiles = confirm.expandedOption().files();

@@ -52,9 +52,9 @@ public class CallbackDispatcher {
         handlers.put("DLNEXT:", (ctx, data, msgId) -> download.handleNextPage(ctx, data));
         handlers.put("SEARCH_ALT:", (ctx, data, msgId) -> download.handleSearchAlternative(ctx, data));
         handlers.put("SLSK_CUSTOM:", (ctx, data, msgId) -> soulseekCustomSearch.handleCallback(ctx, data));
-        handlers.put("SLSK_DIR_OK", (ctx, data, msgId) -> soulseekDirPreview.handleConfirm(ctx));
-        handlers.put("SLSK_DIR_SEL", (ctx, data, msgId) -> soulseekDirPreview.promptSelection(ctx));
-        handlers.put("SLSK_DIR_NO", (ctx, data, msgId) -> soulseekDirPreview.handleCancel(ctx));
+        handlers.put("SLSK_DIR_OK:", (ctx, data, msgId) -> soulseekDirPreview.handleConfirm(ctx, data));
+        handlers.put("SLSK_DIR_SEL:", (ctx, data, msgId) -> soulseekDirPreview.promptSelection(ctx, data));
+        handlers.put("SLSK_DIR_NO:", (ctx, data, msgId) -> soulseekDirPreview.handleCancel(ctx, data));
         handlers.put("DL:", (ctx, data, msgId) -> download.handleDownload(ctx, data));
         handlers.put("STREAM:", (ctx, data, msgId) -> streaming.handleStreamingPlatforms(ctx, data));
         handlers.put("RATE:", (ctx, data, msgId) -> nowPlaying.handleRate(ctx, data));
