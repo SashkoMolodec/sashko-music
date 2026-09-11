@@ -69,6 +69,9 @@ public class DownloadOptionsCardFormatter {
                 if (option.files().size() > 7) {
                     sb.append("   ... _та ще %d файлів_\n".formatted(option.files().size() - 7));
                 }
+                if (report.warning() != null && !report.warning().isBlank()) {
+                    sb.append("   %s\n".formatted(report.warning()));
+                }
                 sb.append("\n");
             }
             i++;

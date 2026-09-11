@@ -143,13 +143,20 @@ SearchContextService.getMetadataWithTracks(releaseId, conversationId)
   → ReleaseMetadata { artist, title, minTracks, trackTitles[] }   // ground truth з MusicBrainz
 
 для кожного DownloadOption:
-  resolveSuitabilityLevel(opt, expected)
+  buildReport(opt, expected) → OptionReport(option, suitability, warning)
     ├─ isLossless: >90% аудіо-файлів мають розширення flac/wav/aiff/alac
-    ├─ diff = audioFilesCount - expected.minTracks()
-    └─ PERFECT   : lossless && diff == 0
-       GOOD      : lossless && diff > 0  (бонус-треки)
-       WARNING   : |diff| ≤ 2  або  !lossless
-       BAD       : !lossless && diff > 2
+    ├─ diff = audioFilesCount - expectedTrackCount
+    └─ PERFECT   : diff == 0 && lossless
+       WARNING   : diff == 0 && !lossless,  або  |diff| ≤ 2  (будь-який знак diff, лосless чи ні)
+       BAD       : |diff| > 2 && !lossless
+
+  diff != 0 → report.warning() заповнюється текстом попередження ("має більше/менше файлів,
+  ніж очікується N треків") — рендериться в `DownloadOptionsCardFormatter.format()` під списком
+  файлів варіанту. Це суто інформаційне попередження в UI, воно НЕ блокує вибір/завантаження —
+  BAD і WARNING лише впливають на сортування і текст; легітимний maxi-single/бонус-трек лишається
+  вибором користувача. Реальний hard-gate проти зайвих файлів (дублікат треку в іншому форматі)
+  живе в `libraryagent.domain.service.processFolder.FileValidator` — він блокує процесинг, коли
+  audioFileCount > expectedTrackCount, безпосередньо перед persist в бібліотеку.
 
 сортування: PERFECT → GOOD → WARNING → BAD
 .limit(10)  ← ріжемо тут, після sort — Haiku бачить топ-10 по якості

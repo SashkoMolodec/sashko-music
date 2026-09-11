@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.domain.model.ValidationResult;
 import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
+import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -72,6 +73,21 @@ public class FileValidator {
 
         if (task.metadata() == null) {
             errors.add("No release metadata provided");
+        } else {
+            int expectedTrackCount = expectedTrackCount(task.metadata());
+            // Only block when we have MORE audio files than the release is supposed to have.
+            // This is the real signature of the duplicate-track bug: a Soulseek peer folder that is a
+            // superset of the release with an extra copy of one track in another format (e.g. FLAC + MP3
+            // of the same recording, numbered differently so dedup-by-track-number never catches it).
+            //
+            // We deliberately do NOT block when there are FEWER files than expected: partial downloads are
+            // a legitimate, user-driven path (SoulseekDirectoryPreviewFlowService lets the user pick a
+            // subset of tracks from a directory, e.g. grabbing a single off a maxi-single), so a smaller
+            // audioFileCount is expected behavior, not a validation failure.
+            if (expectedTrackCount > 0 && audioFileCount > expectedTrackCount) {
+                errors.add("Audio file count (%d) exceeds expected track count (%d) from metadata — possible duplicate track in a different format"
+                        .formatted(audioFileCount, expectedTrackCount));
+            }
         }
 
         if (errors.isEmpty()) {
@@ -81,6 +97,13 @@ public class FileValidator {
             log.warn("Validation failed with {} errors", errors.size());
             return ValidationResult.invalid(errors);
         }
+    }
+
+    private int expectedTrackCount(ReleaseMetadata metadata) {
+        if (metadata.tracks() != null && !metadata.tracks().isEmpty()) {
+            return metadata.tracks().size();
+        }
+        return metadata.minTracks();
     }
 
     private boolean isAudioFile(Path file) {

@@ -20,8 +20,12 @@ public interface DownloadFlowHandler {
 
     record OptionReport(
             DownloadOption option,
-            Suitability suitability
+            Suitability suitability,
+            String warning
     ) {
+        public OptionReport(DownloadOption option, Suitability suitability) {
+            this(option, suitability, null);
+        }
     }
 
     record AnalysisResult(

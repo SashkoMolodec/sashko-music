@@ -33,7 +33,7 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
         int expectedTrackCount = enrichedMetadata != null ? resolveExpectedTrackCount(enrichedMetadata) : 0;
         log.info("Expected track count from metadata: {}", expectedTrackCount);
         var allReports = options.stream()
-                .map(opt -> new OptionReport(opt, resolveSuitabilityLevel(opt, enrichedMetadata)))
+                .map(opt -> buildReport(opt, enrichedMetadata))
                 .sorted(Comparator.comparing(OptionReport::suitability)
                         .thenComparingInt(r -> {
                             if (expectedTrackCount == 0) return 0;
@@ -105,25 +105,41 @@ public class SoulseekDownloadFlowHandler implements DownloadFlowHandler {
                 .collect(Collectors.joining("\n"));
     }
 
-    private Suitability resolveSuitabilityLevel(DownloadOption option, ReleaseMetadata expected) {
+    /**
+     * Cosmetic-only classification (sort order + summary text shown to the user before they pick an
+     * option) — it never blocks a download. A folder with more files than the release has tracks (e.g. a
+     * bonus/maxi-single, or — per a real incident — a duplicate track kept in two formats) is a choice the
+     * user might deliberately make, so we surface it as a warning rather than filtering it out. The actual
+     * hard gate against duplicate-inflated file counts lives in
+     * {@code libraryagent.domain.service.processFolder.FileValidator}, which runs right before the files
+     * are persisted into the library and has no further human review step after it.
+     */
+    private OptionReport buildReport(DownloadOption option, ReleaseMetadata expected) {
         int expectedTrackCount = expected != null ? resolveExpectedTrackCount(expected) : 0;
         if (expectedTrackCount == 0) {
-            return Suitability.WARNING;
+            return new OptionReport(option, Suitability.WARNING);
         }
 
         boolean isLossless = isLossless(option);
         long audioFilesCount = option.files().stream().filter(f -> isAudio(f.filename())).count();
         long diff = audioFilesCount - expectedTrackCount;
 
-        if (isLossless && diff == 0) {
-            return Suitability.PERFECT;
-        } else if (isLossless && diff > 0) {
-            return Suitability.GOOD;
-        } else if (Math.abs(diff) <= 2 || !isLossless) {
-            return Suitability.WARNING;
-        } else {
-            return Suitability.BAD;
+        if (diff == 0) {
+            return new OptionReport(option, isLossless ? Suitability.PERFECT : Suitability.WARNING);
         }
+
+        // Any mismatch — too many OR too few files versus the expected track count — gets at least a
+        // WARNING with an explicit message, never a silent GOOD/PERFECT. Previously an extra file on an
+        // otherwise-lossless option was scored GOOD, which is exactly what hid the duplicate-track bug
+        // from the user in the incident that motivated this check.
+        Suitability suitability = (Math.abs(diff) <= 2 || !isLossless) ? Suitability.WARNING : Suitability.BAD;
+        String warning = diff > 0
+                ? "⚠️ цей варіант має %d файлів, більше ніж очікується %d треків — можливий дубль треку в іншому форматі"
+                        .formatted(audioFilesCount, expectedTrackCount)
+                : "⚠️ цей варіант має %d файлів, менше ніж очікується %d треків — можливо не всі треки"
+                        .formatted(audioFilesCount, expectedTrackCount);
+
+        return new OptionReport(option, suitability, warning);
     }
 
     private int resolveExpectedTrackCount(ReleaseMetadata expected) {
