@@ -1,11 +1,12 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
 import com.sashkomusic.downloadagent.domain.SoulseekDirectoryService;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.CallbackDispatcher;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
@@ -41,7 +42,7 @@ import static org.mockito.Mockito.when;
 @RecordApplicationEvents
 @Import({CallbackDispatcher.class, SoulseekDirectoryPreviewFlowService.class,
         SoulseekDirectoryConfirmContextHolder.class, DownloadContextHolder.class,
-        DownloadTaskProducer.class, SoulseekDirectoryPreviewFlowServiceTest.TestConfig.class})
+        SoulseekDirectoryPreviewFlowServiceTest.TestConfig.class})
 class SoulseekDirectoryPreviewFlowServiceTest {
 
     private static final long CHAT_ID = 42L;

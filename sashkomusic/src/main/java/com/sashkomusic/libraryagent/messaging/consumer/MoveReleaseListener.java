@@ -19,7 +19,7 @@ public class MoveReleaseListener {
     private final ApplicationEventPublisher eventPublisher;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handle(MoveReleaseTaskEvent event) {
         log.info("Received move release task: conversationId={}, releaseId={}, target={}",
                 event.conversationId(), event.releaseId(), event.targetSublibrary());

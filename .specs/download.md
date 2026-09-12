@@ -12,11 +12,11 @@
       └─ MusicDownloadFlowService.handleDownload(ctx, "DL:<releaseId>")
            ├─ getReleaseMetadata(releaseId, conversationId)   ← lazy-load з DB якщо кеш порожній
            ├─ default engine: QOBUZ
-           └─ SearchFilesTaskProducer.send() → FilesSearchTaskEvent → downloadagent
+           └─ publishEvent(FilesSearchTaskEvent) → downloadagent
 
 2. downloadagent шукає файли (async):
       └─ MusicSourcePort.search(artist, release)
-      └─ SearchResultProducer.send() → FileSearchResultEvent → mainagent
+      └─ publishEvent(FileSearchResultEvent) → mainagent
 
 3. MusicDownloadFlowService.handleSearchResults(dto)
       ├─ flowHandler.analyzeAll(options) → AnalysisResult { reports, aiSummary }
@@ -26,7 +26,7 @@
 4. User type "1" (або іншу цифру)
       └─ DownloadOptionSelectionOngoingFlow.handle(ctx, "1")
            ├─ reports.get(0) → обраний DownloadOption
-           ├─ DownloadTaskProducer.send() → FilesDownloadTaskEvent → downloadagent
+           ├─ publishEvent(FilesDownloadTaskEvent) → downloadagent
            └─ DownloadContextHolder.clearSession(conversationId)
 
 5. downloadagent quality (async):
@@ -34,7 +34,7 @@
       └─ client.handleDownloadCompletion() → monitoring starts
 
 6. DownloadBatchCompleteEvent → mainagent:
-      └─ ProcessLibraryTaskProducer.send() → ProcessLibraryTaskEvent → libraryagent
+      └─ publishEvent(ProcessLibraryTaskEvent) → libraryagent
            └─ auto-processes downloaded files into library
 ```
 
@@ -78,7 +78,7 @@ LLM summary (DownloadBatchAnalyzer, Haiku): порівнює tracklist релі�
 Перезапускає пошук на іншому движку. `ENGINE` = точна назва `DownloadEngine.name()` (e.g. `YOUTUBE_MUSIC`).
 
 ### `CANCEL_DL:<releaseId>`
-1. `DownloadCancelTaskProducer.send()` → async → `DownloadCancelListener` → `DownloadService.cancelDownload()`
+1. `ActiveDownloadRegistry.cancel(releaseId)` напряму — окремої події скасування немає
 2. `cancelDownload`: знаходить batch по releaseId → `client.cancelDownload(releaseId)` → `ActiveDownloadRegistry.cancel(releaseId)` (kills process/HTTP)
 3. Якщо batch не знайдено → логується, юзеру нічого не шлеться (download вже завершився)
 4. Callback одразу повертає `"❌ скасовано"` — async підтвердження НЕ дублюється

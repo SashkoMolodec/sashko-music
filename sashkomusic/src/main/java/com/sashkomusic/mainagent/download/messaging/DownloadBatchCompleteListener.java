@@ -3,7 +3,6 @@ package com.sashkomusic.mainagent.download.messaging;
 import com.sashkomusic.events.DownloadBatchCompleteEvent;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadBatchCompleteDto;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,17 +22,16 @@ public class DownloadBatchCompleteListener {
     private final TelegramChatBot telegramBot;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleBatchComplete(DownloadBatchCompleteEvent event) {
-        DownloadBatchCompleteDto dto = event.payload();
         log.info("Received download batch complete for conversationId={}, releaseId={}, files={}",
-                dto.conversationId(), dto.releaseId(), dto.totalFiles());
+                event.conversationId(), event.releaseId(), event.totalFiles());
 
-        ConversationContext ctx = ConversationContext.from(dto.conversationId());
+        ConversationContext ctx = ConversationContext.from(event.conversationId());
 
-        telegramBot.sendMessage(ctx, buildFileListMessage(dto.allFiles(), dto.directoryPath()));
+        telegramBot.sendMessage(ctx, buildFileListMessage(event.allFiles(), event.directoryPath()));
 
-        processFolderFlowService.process(ctx, dto.directoryPath(), "", dto.releaseId())
+        processFolderFlowService.process(ctx, event.directoryPath(), "", event.releaseId())
                 .forEach(msg -> telegramBot.sendResponse(ctx, msg));
     }
 

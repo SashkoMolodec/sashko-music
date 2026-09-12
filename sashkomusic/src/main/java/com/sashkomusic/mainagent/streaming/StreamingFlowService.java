@@ -3,7 +3,7 @@ package com.sashkomusic.mainagent.streaming;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.shared.util.SearchUrlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

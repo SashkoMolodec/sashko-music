@@ -1,17 +1,18 @@
 package com.sashkomusic.mainagent.download;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.FileSearchResultEvent;
+import com.sashkomusic.events.FilesDownloadTaskEvent;
+import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.downloadagent.messaging.producer.dto.SearchFilesResultDto;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
-import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
-import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
-import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
+import com.sashkomusic.shared.task.DownloadFilesTask;
+import com.sashkomusic.shared.task.SearchFilesTask;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -23,8 +24,7 @@ import java.util.Map;
 @Slf4j
 public class MusicDownloadFlowService {
 
-    private final SearchFilesTaskProducer searchFilesProducer;
-    private final DownloadTaskProducer downloadTaskProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final SearchContextService contextService;
     private final DownloadContextHolder downloadContextHolder;
     private final ReleaseSearchFlowService releaseSearchFlowService;
@@ -32,16 +32,14 @@ public class MusicDownloadFlowService {
     private final SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview;
     private final DownloadTopicResolver downloadTopicResolver;
 
-    public MusicDownloadFlowService(SearchFilesTaskProducer searchFilesProducer,
-                                    DownloadTaskProducer downloadTaskProducer,
+    public MusicDownloadFlowService(ApplicationEventPublisher eventPublisher,
                                     SearchContextService contextService,
                                     DownloadContextHolder downloadContextHolder,
                                     ReleaseSearchFlowService releaseSearchFlowService,
                                     Map<DownloadEngine, DownloadFlowHandler> downloadFlowHandlers,
                                     SoulseekDirectoryPreviewFlowService soulseekDirectoryPreview,
                                     DownloadTopicResolver downloadTopicResolver) {
-        this.searchFilesProducer = searchFilesProducer;
-        this.downloadTaskProducer = downloadTaskProducer;
+        this.eventPublisher = eventPublisher;
         this.contextService = contextService;
         this.downloadContextHolder = downloadContextHolder;
         this.releaseSearchFlowService = releaseSearchFlowService;
@@ -80,7 +78,7 @@ public class MusicDownloadFlowService {
         if (!downloadCtx.equals(ctx)) {
             contextService.mirrorReleaseForDownload(downloadCtx.conversationId(), metadata);
         }
-        searchFilesProducer.send(SearchFilesTaskDto.of(downloadCtx.conversationId(), metadata.id(), metadata.artist(), metadata.title(), source));
+        eventPublisher.publishEvent(new FilesSearchTaskEvent(new SearchFilesTask(downloadCtx.conversationId(), metadata.id(), metadata.artist(), metadata.title(), source)));
 
         return List.of(BotResponse.text(
                 "🔎 шукаю опції завантаження (%s): _%s - %s_".formatted(
@@ -90,12 +88,12 @@ public class MusicDownloadFlowService {
         ));
     }
 
-    public List<BotResponse> handleSearchResults(SearchFilesResultDto dto) {
+    public List<BotResponse> handleSearchResults(FileSearchResultEvent event) {
         log.info("Processing search results for conversationId={}, releaseId={}, source={}, results count={}",
-                dto.conversationId(), dto.releaseId(), dto.source(), dto.results().size());
+                event.conversationId(), event.releaseId(), event.source(), event.results().size());
 
-        var flowHandler = downloadFlowHandlers.get(dto.source());
-        var analysisResult = flowHandler.analyzeAll(dto.results(), dto.releaseId(), dto.conversationId());
+        var flowHandler = downloadFlowHandlers.get(event.source());
+        var analysisResult = flowHandler.analyzeAll(event.results(), event.releaseId(), event.conversationId());
 
         // All reports sorted; take first page for display
         var allReports = analysisResult.reports();
@@ -103,15 +101,15 @@ public class MusicDownloadFlowService {
                 allReports.stream().limit(DownloadContextHolder.PAGE_SIZE).toList(),
                 analysisResult.aiSummary());
 
-        downloadContextHolder.saveDownloadOptions(dto.conversationId(), dto.releaseId(), allReports, dto.source());
+        downloadContextHolder.saveDownloadOptions(event.conversationId(), event.releaseId(), allReports, event.source());
         firstPage.forEach(r -> log.info("{}", r));
 
         String text = DownloadOptionsCardFormatter.format(firstPage, analysisResult.aiSummary(), 0);
-        BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, dto.releaseId(), dto.source());
+        BotResponse sourceCard = flowHandler.buildSearchResultsResponse(text, event.releaseId(), event.source());
         BotResponse merged = mergeWithSelectionButtons(sourceCard, firstPage, flowHandler.appendDefaultCancelRow(), 0);
 
-        if (downloadContextHolder.hasNextPage(dto.conversationId())) {
-            merged = appendNextPageButton(merged, dto.releaseId(), 0, allReports.size());
+        if (downloadContextHolder.hasNextPage(event.conversationId())) {
+            merged = appendNextPageButton(merged, event.releaseId(), 0, allReports.size());
         }
         return List.of(merged);
     }
@@ -148,7 +146,7 @@ public class MusicDownloadFlowService {
         }
 
         downloadContextHolder.clearSession(ctx.conversationId());
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
+        eventPublisher.publishEvent(new FilesDownloadTaskEvent(new DownloadFilesTask(ctx.conversationId(), releaseId, option)));
         var flowHandler = downloadFlowHandlers.get(option.source());
         return List.of(BotResponse.text(flowHandler.formatDownloadConfirmation(option)));
     }

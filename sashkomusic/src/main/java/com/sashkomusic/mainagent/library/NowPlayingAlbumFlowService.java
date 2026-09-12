@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
+import com.sashkomusic.events.ReplaceCommentTaskEvent;
+import com.sashkomusic.events.AddCommentTaskEvent;
 import com.sashkomusic.api.dto.TrackDto;
 import com.sashkomusic.api.service.TrackService;
 import com.sashkomusic.libraryagent.domain.entity.Artist;
@@ -11,14 +13,10 @@ import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import com.sashkomusic.mainagent.library.AlbumCommentContextHolder.AlbumCommentContext;
-import com.sashkomusic.mainagent.library.config.AppleMusicSyncConfig;
-import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
+import com.sashkomusic.libraryagent.config.AppleMusicSyncConfig;
 import com.sashkomusic.mainagent.library.messaging.AppleMusicSyncOutputParser;
-import com.sashkomusic.mainagent.library.messaging.ReplaceCommentTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
-import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
 import com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor;
 import com.sashkomusic.events.AppleMusicSyncCompleteEvent;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,8 +47,6 @@ public class NowPlayingAlbumFlowService {
     private final TrackTagRepository trackTagRepository;
     private final ReleaseRepository releaseRepository;
     private final RemoveReleaseFlowService removeReleaseFlowService;
-    private final AddCommentTaskProducer addCommentTaskProducer;
-    private final ReplaceCommentTaskProducer replaceCommentTaskProducer;
     private final AlbumCommentContextHolder commentContextHolder;
     private final ObjectMapper objectMapper;
     private final ProcessCommandExecutor commandExecutor;
@@ -126,7 +122,7 @@ public class NowPlayingAlbumFlowService {
 
         List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
         for (Track track : tracks) {
-            addCommentTaskProducer.send(new AddCommentTaskDto(track.getId(), comment, ctx.conversationId()));
+            eventPublisher.publishEvent(new AddCommentTaskEvent(track.getId(), comment, ctx.conversationId()));
         }
         return List.of(BotResponse.text("✅ комент «%s» додається до %d треків".formatted(comment, tracks.size())));
     }
@@ -162,7 +158,7 @@ public class NowPlayingAlbumFlowService {
 
         List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
         for (Track track : tracks) {
-            replaceCommentTaskProducer.send(new ReplaceCommentTaskDto(track.getId(), comment, ctx.conversationId()));
+            eventPublisher.publishEvent(new ReplaceCommentTaskEvent(track.getId(), comment, ctx.conversationId()));
         }
         return List.of(BotResponse.text("✅ комент замінюється у %d треків".formatted(tracks.size())));
     }

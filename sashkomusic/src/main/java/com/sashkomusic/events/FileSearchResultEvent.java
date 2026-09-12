@@ -1,5 +1,14 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.downloadagent.messaging.producer.dto.SearchFilesResultDto;
+import com.sashkomusic.shared.ConversationScoped;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
 
-public record FileSearchResultEvent(SearchFilesResultDto payload) {}
+import java.util.List;
+
+public record FileSearchResultEvent(
+        String conversationId,
+        String releaseId,
+        DownloadEngine source,
+        List<DownloadOption> results
+) implements ConversationScoped {}

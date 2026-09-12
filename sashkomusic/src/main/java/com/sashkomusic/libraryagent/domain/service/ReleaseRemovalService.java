@@ -3,7 +3,7 @@ package com.sashkomusic.libraryagent.domain.service;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
-import com.sashkomusic.mainagent.library.client.ITunesAgentClient;
+import com.sashkomusic.libraryagent.client.ITunesAgentClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

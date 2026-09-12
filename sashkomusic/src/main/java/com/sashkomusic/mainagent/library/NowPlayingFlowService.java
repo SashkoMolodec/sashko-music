@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.RateTrackTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.config.IcecastConfig;
@@ -7,9 +9,7 @@ import com.sashkomusic.mainagent.library.DjTagContextHolder;
 import com.sashkomusic.api.dto.TrackDto;
 import com.sashkomusic.api.service.TrackService;
 import com.sashkomusic.mainagent.library.client.IcecastClient;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
-import com.sashkomusic.mainagent.library.messaging.RateTrackTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.dto.RateTrackTaskDto;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,11 +21,11 @@ import java.util.*;
 @RequiredArgsConstructor
 public class NowPlayingFlowService {
 
+    private final ApplicationEventPublisher eventPublisher;
     private final NavidromeClient navidromeClient;
     private final IcecastClient icecastClient;
     private final IcecastConfig icecastConfig;
     private final TrackService trackService;
-    private final RateTrackTaskProducer rateTrackTaskProducer;
     private final DjTagContextHolder djTagContextHolder;
 
     public List<BotResponse> nowPlaying(ConversationContext ctx) {
@@ -136,8 +136,7 @@ public class NowPlayingFlowService {
 
     public List<BotResponse> rateTrack(ConversationContext ctx, Long trackId, int rating) {
         log.info("Rating track {} with {} stars from conversationId={}", trackId, rating, ctx.conversationId());
-        RateTrackTaskDto task = new RateTrackTaskDto(trackId, rating, ctx.conversationId());
-        rateTrackTaskProducer.send(task);
+        eventPublisher.publishEvent(new RateTrackTaskEvent(trackId, rating, ctx.conversationId()));
         return List.of();
     }
 

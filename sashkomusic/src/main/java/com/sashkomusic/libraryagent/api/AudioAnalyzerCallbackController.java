@@ -1,7 +1,7 @@
 package com.sashkomusic.libraryagent.api;
 
 import com.sashkomusic.events.TrackAnalysisCompleteEvent;
-import com.sashkomusic.libraryagent.messaging.consumer.dto.TrackAnalysisCompleteDto;
+import com.sashkomusic.libraryagent.api.dto.TrackAnalysisCompleteRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,8 +19,9 @@ public class AudioAnalyzerCallbackController {
     private final ApplicationEventPublisher eventPublisher;
 
     @PostMapping("/audio-analysis-complete")
-    public void onAnalysisComplete(@RequestBody TrackAnalysisCompleteDto dto) {
-        log.info("Received audio analysis callback for trackId={}, success={}", dto.trackId(), dto.success());
-        eventPublisher.publishEvent(new TrackAnalysisCompleteEvent(dto));
+    public void onAnalysisComplete(@RequestBody TrackAnalysisCompleteRequest request) {
+        log.info("Received audio analysis callback for trackId={}, success={}", request.trackId(), request.success());
+        eventPublisher.publishEvent(new TrackAnalysisCompleteEvent(
+                request.trackId(), request.jsonResultPath(), request.success(), request.errorMessage()));
     }
 }

@@ -17,7 +17,7 @@ public class RemoveReleaseCompleteListener {
     private final TelegramChatBot chatBot;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handle(RemoveReleaseCompleteEvent event) {
         log.info("Received remove release result: conversationId={}, success={}, releaseId={}",
                 event.conversationId(), event.success(), event.releaseId());

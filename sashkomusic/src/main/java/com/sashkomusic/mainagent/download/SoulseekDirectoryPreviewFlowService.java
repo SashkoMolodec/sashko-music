@@ -1,10 +1,12 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadOption;
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.FilesDownloadTaskEvent;
 import com.sashkomusic.downloadagent.domain.SoulseekDirectoryService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
+import com.sashkomusic.shared.task.DownloadFilesTask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,10 +26,10 @@ public class SoulseekDirectoryPreviewFlowService {
     static final String CANCEL_PREFIX = "SLSK_DIR_NO:";
     private static final String STALE_TOKEN_MESSAGE = "😔 підтвердження вже протухло — знайди реліз ще раз";
 
+    private final ApplicationEventPublisher eventPublisher;
     private final SoulseekDirectoryService directoryService;
     private final SoulseekDirectoryConfirmContextHolder confirmHolder;
     private final DownloadContextHolder downloadContextHolder;
-    private final DownloadTaskProducer downloadTaskProducer;
 
     public List<BotResponse> fetchAndShowPreview(ConversationContext ctx, String releaseId, DownloadOption original) {
         log.info("Fetching full directory for option: {}", original.displayName());
@@ -140,7 +142,7 @@ public class SoulseekDirectoryPreviewFlowService {
         confirmHolder.clear(ctx.conversationId());
         downloadContextHolder.clearSession(ctx.conversationId());
 
-        downloadTaskProducer.send(DownloadFilesTaskDto.of(ctx.conversationId(), releaseId, option));
+        eventPublisher.publishEvent(new FilesDownloadTaskEvent(new DownloadFilesTask(ctx.conversationId(), releaseId, option)));
         log.info("Confirmed Soulseek directory download: releaseId={}, files={}", releaseId, option.files().size());
 
         return List.of(BotResponse.text("✅ *ок, качаю:*\n%s\n📦 %d файлів, %d MB".formatted(

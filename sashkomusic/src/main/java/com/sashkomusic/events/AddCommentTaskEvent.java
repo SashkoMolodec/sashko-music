@@ -1,5 +1,8 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
-
-public record AddCommentTaskEvent(AddCommentTaskDto payload) {}
+import com.sashkomusic.shared.ConversationScoped;
+public record AddCommentTaskEvent(
+        Long trackId,
+        String comment,
+        String conversationId
+) implements ConversationScoped {}

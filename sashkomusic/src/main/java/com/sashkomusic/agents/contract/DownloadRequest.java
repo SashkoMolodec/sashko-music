@@ -1,6 +1,6 @@
 package com.sashkomusic.agents.contract;
 
-import com.sashkomusic.mainagent.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
 
 public record DownloadRequest(
         String conversationId,

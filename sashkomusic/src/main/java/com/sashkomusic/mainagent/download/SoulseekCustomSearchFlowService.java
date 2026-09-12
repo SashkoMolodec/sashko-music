@@ -1,10 +1,12 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadEngine;
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
-import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
-import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
+import com.sashkomusic.shared.task.SearchFilesTask;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,8 +18,8 @@ public class SoulseekCustomSearchFlowService {
 
     private static final String FLOW_KEY = "slsk_custom";
 
+    private final ApplicationEventPublisher eventPublisher;
     private final ChatStateStore stateStore;
-    private final SearchFilesTaskProducer searchFilesProducer;
     private final DownloadTopicResolver downloadTopicResolver;
 
     public List<BotResponse> handleCallback(ConversationContext ctx, String callbackData) {
@@ -39,7 +41,7 @@ public class SoulseekCustomSearchFlowService {
         }
 
         String downloadConversationId = downloadTopicResolver.resolve(ctx).conversationId();
-        searchFilesProducer.send(new SearchFilesTaskDto(downloadConversationId, releaseId, query, "", DownloadEngine.SOULSEEK));
+        eventPublisher.publishEvent(new FilesSearchTaskEvent(new SearchFilesTask(downloadConversationId, releaseId, query, "", DownloadEngine.SOULSEEK)));
         return List.of(BotResponse.text("🔎 шукаю опції завантаження (soulseek): " + query));
     }
 }

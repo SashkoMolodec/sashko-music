@@ -1,7 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
-import com.sashkomusic.libraryagent.messaging.producer.dto.TagChangesNotificationDto;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.shared.task.TagChangesNotification;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,9 +17,9 @@ public class NavidromeRatingSyncService {
 
     private final NavidromeClient navidromeClient;
 
-    public void syncFromNotification(TagChangesNotificationDto notification) {
-        for (TagChangesNotificationDto.TrackChanges track : notification.tracks()) {
-            for (TagChangesNotificationDto.TagChangeInfo change : track.changes()) {
+    public void syncFromNotification(TagChangesNotification notification) {
+        for (TagChangesNotification.TrackChanges track : notification.tracks()) {
+            for (TagChangesNotification.TagChangeInfo change : track.changes()) {
                 if (!isRatingChange(change.tagName())) continue;
                 String newValue = change.newValue();
                 if (newValue == null || newValue.isEmpty()) continue;

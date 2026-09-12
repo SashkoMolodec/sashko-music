@@ -1,5 +1,13 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadCompleteDto;
+import com.sashkomusic.shared.ConversationScoped;
+public record DownloadCompleteEvent(
+        String conversationId,
+        String filename,
+        long sizeMB
+) implements ConversationScoped {
 
-public record DownloadCompleteEvent(DownloadCompleteDto payload) {}
+    public static DownloadCompleteEvent of(String conversationId, String filename, long sizeBytes) {
+        return new DownloadCompleteEvent(conversationId, filename, sizeBytes / (1024 * 1024));
+    }
+}

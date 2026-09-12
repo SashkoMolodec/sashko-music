@@ -1,13 +1,15 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadEngine;
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
-import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
+import com.sashkomusic.shared.task.SearchFilesTask;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,7 +22,7 @@ import java.util.UUID;
 @Slf4j
 public class DirectSoulseekSearchFlowService {
 
-    private final SearchFilesTaskProducer searchFilesProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final SearchContextService searchContextService;
     private final DownloadTopicResolver downloadTopicResolver;
 
@@ -52,7 +54,7 @@ public class DirectSoulseekSearchFlowService {
         ConversationContext downloadCtx = downloadTopicResolver.resolve(ctx);
         searchContextService.saveSearchContext(downloadCtx.conversationId(), SearchEngine.DISCOGS, query, request, List.of(synthetic));
 
-        searchFilesProducer.send(new SearchFilesTaskDto(downloadCtx.conversationId(), releaseId, query, "", DownloadEngine.SOULSEEK));
+        eventPublisher.publishEvent(new FilesSearchTaskEvent(new SearchFilesTask(downloadCtx.conversationId(), releaseId, query, "", DownloadEngine.SOULSEEK)));
         log.info("Direct Soulseek search: query='{}', releaseId={}", query, releaseId);
         return List.of(BotResponse.text("🔎 шукаю на soulseek: " + query));
     }

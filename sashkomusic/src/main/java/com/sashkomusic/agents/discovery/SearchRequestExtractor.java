@@ -1,6 +1,6 @@
 package com.sashkomusic.agents.discovery;
 
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 

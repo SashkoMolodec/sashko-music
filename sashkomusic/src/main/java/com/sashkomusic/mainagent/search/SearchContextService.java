@@ -1,7 +1,8 @@
 package com.sashkomusic.mainagent.search;
 
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
-import com.sashkomusic.mainagent.shared.model.*;
+import com.sashkomusic.shared.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 

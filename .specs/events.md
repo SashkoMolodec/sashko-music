@@ -1,6 +1,16 @@
 # Spring Application Events
 
-Всі міжпакетні async комунікації через Spring `ApplicationEventPublisher` + `@EventListener @Async`.
+Всі міжпакетні async комунікації через Spring `ApplicationEventPublisher` + `@EventListener @Async("asyncExecutor")`.
+
+**Немає `*Producer`-бінів.** Publisher інжектить `ApplicationEventPublisher` і викликає
+`publishEvent(new SomeEvent(...))` прямо з місця, де подія народжується.
+
+**Події пласкі.** Поля лежать прямо на record'і події, без обгортки `XxxDto payload`.
+Виняток — чотири події, чий payload споживає доменний сервіс, а не лише слухач: тоді payload
+живе в `shared/task/` як самостійний контракт (див. нижче).
+
+Події, адресовані чату, реалізують `com.sashkomusic.shared.ConversationScoped` і отримують
+`chatId()` за замовчуванням (числовий префікс `conversationId` до `:`).
 
 ---
 
@@ -15,7 +25,6 @@ mainagent       →  FilesDownloadTaskEvent        →  downloadagent
 downloadagent   →  DownloadCompleteEvent         →  mainagent
 downloadagent   →  DownloadBatchCompleteEvent    →  mainagent
 downloadagent   →  DownloadErrorEvent            →  mainagent
-mainagent       →  DownloadCancelTaskEvent       →  downloadagent
 
 mainagent       →  ProcessLibraryTaskEvent       →  libraryagent
 libraryagent    →  LibraryProcessingCompleteEvent→  mainagent
@@ -26,6 +35,7 @@ mainagent       →  RateTrackTaskEvent            →  libraryagent
 mainagent       →  SetEnergyTaskEvent            →  libraryagent
 mainagent       →  SetFunctionTaskEvent          →  libraryagent
 mainagent       →  AddCommentTaskEvent           →  libraryagent
+mainagent       →  ReplaceCommentTaskEvent       →  libraryagent
 libraryagent    →  TrackUpdateResultEvent        →  mainagent
 libraryagent    →  TagChangesNotificationEvent   →  mainagent
 
@@ -33,179 +43,185 @@ Python REST     →  POST /internal/audio-analysis-complete
                    → TrackAnalysisCompleteEvent  →  libraryagent
 ```
 
+Повний перелік (включно з move/remove/smartlist/Apple Music) — таблиця Spring Event Map у `CLAUDE.md`.
+
 ---
 
 ## Download events
 
 ### `FilesSearchTaskEvent`
-mainagent → downloadagent. Ініціює пошук.
+mainagent → downloadagent. Ініціює пошук. Payload — спільний контракт, бо його читає
+`AcquisitionService` (домен downloadagent).
 ```java
-payload: SearchFilesTaskDto {
-  String conversationId,
-  String releaseId,
-  String artist,
-  String title,
-  DownloadEngine source
+FilesSearchTaskEvent(SearchFilesTask payload)
+
+shared.task.SearchFilesTask {
+  String conversationId, String releaseId,
+  String artist, String title, DownloadEngine source
 }
 ```
 
 ### `FileSearchResultEvent`
 downloadagent → mainagent. Результати пошуку.
 ```java
-payload: SearchFilesResultDto {
-  String conversationId,
-  String releaseId,
-  DownloadEngine source,
-  List<DownloadOption> results
-}
+FileSearchResultEvent(String conversationId, String releaseId,
+                      DownloadEngine source, List<DownloadOption> results)
 ```
 
 ### `FilesDownloadTaskEvent`
-mainagent → downloadagent. Юзер вибрав варіант, починаємо качати.
+mainagent → downloadagent. Юзер вибрав варіант, починаємо качати. Payload — спільний контракт,
+бо його читає `DownloadService` (домен downloadagent).
 ```java
-payload: DownloadFilesTaskDto {
-  String conversationId,
-  String releaseId,
-  DownloadOption downloadOption
+FilesDownloadTaskEvent(DownloadFilesTask payload)
+
+shared.task.DownloadFilesTask {
+  String conversationId, String releaseId, DownloadOption downloadOption
 }
 ```
 
 ### `DownloadCompleteEvent`
-downloadagent → mainagent. Один файл завантажено (Soulseek per-file).
+downloadagent → mainagent. Один файл завантажено (Soulseek per-file, з webhook).
 ```java
-payload: DownloadCompleteDto { conversationId, releaseId, filename, localPath }
+DownloadCompleteEvent(String conversationId, String filename, long sizeMB)
+// DownloadCompleteEvent.of(conversationId, filename, sizeBytes) конвертує байти → MB
 ```
 
 ### `DownloadBatchCompleteEvent`
 downloadagent → mainagent. Весь batch завантажено.
 ```java
-payload: DownloadBatchCompleteDto {
-  String conversationId,
-  String releaseId,
-  String directoryPath,
-  List<String> allLocalFiles
-}
+DownloadBatchCompleteEvent(String conversationId, String releaseId,
+                           String directoryPath, List<String> allFiles)
+// totalFiles() — похідний від allFiles.size(), окремо не зберігається
 ```
-Тригерить: `ProcessLibraryTaskEvent` → libraryagent (авто-обробка після завантаження).
+Тригерить `ProcessFolderFlowService.process(...)` → авто-обробка після завантаження.
 
 ### `DownloadErrorEvent`
 downloadagent → mainagent. Помилка завантаження.
 ```java
-payload: DownloadErrorDto { String conversationId, String errorMessage }
+DownloadErrorEvent(String conversationId, String errorMessage)
 ```
 `DownloadErrorListener` показує: `"🤡 не получилосі скачати:\n{errorMessage}"`.
-
-### `DownloadCancelTaskEvent`
-mainagent → downloadagent. Юзер натиснув cancel.
-```java
-payload: DownloadCancelTaskDto { String conversationId, String releaseId }
-```
 
 ---
 
 ## Library processing events
 
 ### `ProcessLibraryTaskEvent`
-mainagent → libraryagent.
+mainagent → libraryagent. Payload — спільний контракт, бо його читають `LibraryProcessingService`
+і `FileValidator` (домен libraryagent).
 ```java
-payload: ProcessLibraryTaskDto {
-  String conversationId,
-  String releaseId,
-  String folderPath,
-  ReleaseMetadata metadata
+ProcessLibraryTaskEvent(ProcessLibraryTask payload)
+
+shared.task.ProcessLibraryTask {
+  String conversationId, String directoryPath,
+  List<String> downloadedFiles, ReleaseMetadata metadata
 }
 ```
 
 ### `LibraryProcessingCompleteEvent`
 libraryagent → mainagent.
 ```java
-payload: LibraryProcessingCompleteDto {
-  String conversationId,
-  String releaseId,
-  boolean success,
-  String message,         // "✅ оброблено 10 треків"
-  String processedPath
-}
+LibraryProcessingCompleteEvent(String conversationId, String masterId, String directoryPath,
+                               List<ProcessedFile> processedFiles, boolean success,
+                               String message, List<String> errors)
 ```
 
-### `ReprocessReleaseTaskEvent` / `ReprocessReleaseCompleteEvent`
-Аналогічно, для `/reprocess` команди.
+### `ReprocessReleaseTaskEvent`
+mainagent → libraryagent. Для `/reprocess`.
+```java
+ReprocessReleaseTaskEvent(String conversationId, String directoryPath, ReleaseMetadata metadata,
+                          int newMetadataVersion, ReprocessOptions options)
+```
+
+### `ReprocessReleaseCompleteEvent`
+```java
+ReprocessReleaseCompleteEvent(String conversationId, String directoryPath, boolean success,
+                              String message, int filesProcessed, int errors)
+```
 
 ---
 
 ## Tagging events
 
+Усі п'ять task-подій обробляє один слухач — `libraryagent.messaging.consumer.TrackTagUpdateListener`
+(спільний `apply(...)` + `RateTrackService`), і всі вони відповідають `TrackUpdateResultEvent`.
+
 ### `RateTrackTaskEvent`
 ```java
-payload: RateTrackTaskDto { String conversationId, String trackId, int rating }
+RateTrackTaskEvent(Long trackId, int rating, String conversationId)
 ```
 rating: 1–5 (зберігається як WMP: rating * 20).
 
 ### `SetEnergyTaskEvent`
 ```java
-payload: SetEnergyTaskDto { String conversationId, String trackId, int energy }
+SetEnergyTaskEvent(Long trackId, String energy, String conversationId)
 ```
-energy: 1–5.
+energy: `E1`–`E5`.
 
 ### `SetFunctionTaskEvent`
 ```java
-payload: SetFunctionTaskDto { String conversationId, String trackId, String function }
+SetFunctionTaskEvent(Long trackId, String function, String conversationId)
 ```
-function: "intro" | "tool" | "banger" | "closer".
+function: `intro` | `tool` | `banger` | `closer`.
 
-### `AddCommentTaskEvent`
+### `AddCommentTaskEvent` / `ReplaceCommentTaskEvent`
 ```java
-payload: AddCommentTaskDto { String conversationId, String trackId, String comment }
+AddCommentTaskEvent(Long trackId, String comment, String conversationId)
+ReplaceCommentTaskEvent(Long trackId, String comment, String conversationId)
 ```
+Різні дії, не різні поля: add дописує, replace перезаписує.
 
 ### `TrackUpdateResultEvent`
 libraryagent → mainagent. Підтвердження збереження тегу.
 ```java
-payload: TrackUpdateResultDto { String conversationId, boolean success, String summary }
+TrackUpdateResultEvent(Long trackId, String fieldUpdated, String value,
+                       boolean success, String message, String conversationId)
 ```
+`fieldUpdated`: `rating` | `energy` | `function` | `comment`.
 
 ### `TagChangesNotificationEvent`
-libraryagent → mainagent. Diff тегів коли зміни батчуються.
+libraryagent → mainagent. Diff тегів, коли зміни батчуються.
 ```java
-payload: TagChangesNotificationDto {
-  String conversationId,
-  String trackId,
-  Map<String, String> oldTags,   // tagName → oldValue
-  Map<String, String> newTags    // tagName → newValue
+TagChangesNotificationEvent(TagChangesNotification payload)
+
+shared.task.TagChangesNotification {
+  List<TrackChanges> tracks, int totalChanges, LocalDateTime timestamp
 }
+TrackChanges  { Long trackId, String trackTitle, String artistName, List<TagChangeInfo> changes }
+TagChangeInfo { String tagName, String oldValue, String newValue, boolean isNew }
 ```
+Не має `conversationId` — йде в лог-канал, не в конкретний чат.
 
 ---
 
 ## Audio analysis (REST, не Spring event)
 
-**Java → Python:**
+**Java → Python** — `libraryagent.client.AudioAnalyzerClient`, fire-and-forget (WebClient):
 ```
 POST {AUDIO_ANALYZER_URL}/analyze
-{
-  "filePath": "/library/Burial/Untrue/01 - Archangel.flac",
-  "releaseId": "mb-xxxx",
-  "conversationId": "-1003551198668"
-}
+{ "trackId": 42, "localPath": "/library/Burial/Untrue/01 - Archangel.flac",
+  "releaseId": 7, "releaseTitle": "Untrue", "trackTitle": "Archangel" }
 ```
-Fire-and-forget (WebClient, non-blocking).
 
-**Python → Java:**
+**Python → Java** — `libraryagent.api.AudioAnalyzerCallbackController`:
 ```
 POST /internal/audio-analysis-complete
-{
-  "releaseId": "mb-xxxx",
-  "conversationId": "-1003551198668",
-  "results": [{ "filePath": "...", "bpm": 138.5, "loudness": -8.2, "danceability": 0.7 }]
-}
+{ "trackId": 42, "jsonResultPath": "/analysis/42.json", "success": true, "errorMessage": null }
 ```
 → `TrackAnalysisCompleteEvent` → `TrackAnalysisCompleteListener` → upsert `track_analysis`.
+
+Імена полів у `AnalyzeTrackRequest` / `TrackAnalysisCompleteRequest` — це дротовий контракт з
+Python. Перейменування поля ламає інтеграцію.
 
 ---
 
 ## Rules for all events
 
-1. Всі `@EventListener` методи **обов'язково** `@Async` — не блокують publisher
-2. Listener ідемпотентний — перевіряє стан перед дією
-3. Payload несе `conversationId` (рядок) — async відповіді потрапляють в правильний Telegram topic
-4. Нова подія → новий record-клас в `com.sashkomusic.events` + рядок в цьому файлі
+1. Всі `@EventListener` методи — `@Async("asyncExecutor")`, щоб не блокувати publisher.
+   Виняток: `ChatContextClearedEvent` / `ChatHardResetEvent` синхронні навмисно (відповідь
+   оркестратора чекає на завершення очистки).
+2. Listener ідемпотентний — перевіряє стан перед дією.
+3. Подія несе `conversationId` і реалізує `ConversationScoped` — async відповіді потрапляють
+   у правильний Telegram topic.
+4. Нова подія → новий плаский record в `com.sashkomusic.events` + рядок у цьому файлі
+   + рядок у Spring Event Map в `CLAUDE.md`. Продюсер-бін не створювати.

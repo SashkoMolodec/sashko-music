@@ -1,7 +1,7 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
-import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService.ReprocessOptions;
+import com.sashkomusic.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.task.ReprocessOptions;
 import com.sashkomusic.libraryagent.domain.model.TrackMatch;
 import com.sashkomusic.libraryagent.domain.service.ReleaseService;
 import lombok.RequiredArgsConstructor;

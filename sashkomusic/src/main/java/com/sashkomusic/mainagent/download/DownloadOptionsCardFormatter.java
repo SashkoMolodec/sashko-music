@@ -1,7 +1,7 @@
 package com.sashkomusic.mainagent.download;
 
 import com.sashkomusic.mainagent.download.DownloadFlowHandler.OptionReport;
-import com.sashkomusic.mainagent.download.DownloadOption;
+import com.sashkomusic.shared.download.DownloadOption;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -89,8 +89,18 @@ public class DownloadOptionsCardFormatter {
         String format = detectFormat(option);
         List<DownloadOption.FileItem> files = option.files();
         sb.append("**[%s]** • %d ф. • %d MB\n\n".formatted(format, files.size(), option.totalSize()));
-        for (int i = 0; i < files.size(); i++) {
-            sb.append("`%d. %s`\n".formatted(i + 1, files.get(i).displayName()));
+
+        int shown = 0;
+        for (DownloadOption.FileItem file : files) {
+            String line = "`%d. %s`\n".formatted(shown + 1, file.displayName());
+            if (sb.length() + line.length() > TELEGRAM_MAX_LENGTH) {
+                break;
+            }
+            sb.append(line);
+            shown++;
+        }
+        if (shown < files.size()) {
+            sb.append("... _та ще %d файлів_\n".formatted(files.size() - shown));
         }
         return sb.toString();
     }

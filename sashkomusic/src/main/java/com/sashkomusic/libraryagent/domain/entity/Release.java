@@ -2,7 +2,7 @@ package com.sashkomusic.libraryagent.domain.entity;
 
 import com.sashkomusic.libraryagent.domain.model.ReleaseFormat;
 import com.sashkomusic.libraryagent.domain.model.ReleaseType;
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.SearchEngine;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

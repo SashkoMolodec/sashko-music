@@ -1,7 +1,7 @@
 package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.SmartlistDeletedEvent;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

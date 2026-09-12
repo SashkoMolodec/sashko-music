@@ -2,9 +2,9 @@ package com.sashkomusic.mainagent.download;
 
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
 import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.download.DownloadOption;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,11 +1,12 @@
 package com.sashkomusic.downloadagent.domain;
 
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.download.DownloadOption;
-import com.sashkomusic.mainagent.download.messaging.dto.SearchFilesTaskDto;
-import com.sashkomusic.downloadagent.messaging.producer.SearchResultProducer;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
+import com.sashkomusic.shared.task.SearchFilesTask;
+import com.sashkomusic.events.FileSearchResultEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,9 +18,9 @@ import java.util.Map;
 public class AcquisitionService {
 
     private final Map<DownloadEngine, MusicSourcePort> musicSources;
-    private final SearchResultProducer searchResultProducer;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public void search(SearchFilesTaskDto task) {
+    public void search(SearchFilesTask task) {
         String artist = task.artist();
         String title = task.title();
 
@@ -28,7 +29,9 @@ public class AcquisitionService {
 
         List<DownloadOption> results = source.search(artist, title, task.conversationId());
 
-        searchResultProducer.sendResults(task.conversationId(), task.releaseId(), task.source(), results);
+        log.info("Sending {} results from {} back to conversationId={}", results.size(), task.source(), task.conversationId());
+        eventPublisher.publishEvent(new FileSearchResultEvent(
+                task.conversationId(), task.releaseId(), task.source(), results));
     }
 }
 

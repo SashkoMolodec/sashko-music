@@ -1,9 +1,9 @@
 package com.sashkomusic.mainagent.process;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

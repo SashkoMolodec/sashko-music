@@ -2,7 +2,7 @@ package com.sashkomusic.downloadagent.messaging.consumer;
 
 import com.sashkomusic.downloadagent.domain.DownloadService;
 import com.sashkomusic.events.FilesDownloadTaskEvent;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
+import com.sashkomusic.shared.task.DownloadFilesTask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -17,9 +17,9 @@ public class DownloadTaskListener {
     private final DownloadService downloadService;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleDownloadTask(FilesDownloadTaskEvent event) {
-        DownloadFilesTaskDto dto = event.payload();
+        DownloadFilesTask dto = event.payload();
         log.info("Received download task: chatId={}, releaseId={}", dto.chatId(), dto.releaseId());
         downloadService.download(dto);
     }

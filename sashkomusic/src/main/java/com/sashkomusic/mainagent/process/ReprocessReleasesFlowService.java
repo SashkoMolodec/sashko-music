@@ -1,15 +1,16 @@
 package com.sashkomusic.mainagent.process;
 
+import com.sashkomusic.shared.task.ReprocessOptions;
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.ReprocessReleaseTaskEvent;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.processFolder.ReleaseMetadataReader;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
-import com.sashkomusic.mainagent.process.messaging.ReprocessReleaseTaskProducer;
-import com.sashkomusic.mainagent.process.messaging.dto.ReprocessReleaseTaskDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -32,23 +33,23 @@ public class ReprocessReleasesFlowService {
     @Value("${processing.version}")
     private int processingVersion;
 
+    private final ApplicationEventPublisher eventPublisher;
     private final LibraryConfig libraryConfig;
     private final ReleaseMetadataReader metadataReader;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
-    private final ReprocessReleaseTaskProducer taskProducer;
     private final PathMappingService pathMappingService;
     private final LibrarySearchService librarySearchService;
 
     public ReprocessReleasesFlowService(LibraryConfig libraryConfig,
                                         ReleaseMetadataReader metadataReader,
                                         Map<SearchEngine, SearchEngineService> searchEngines,
-                                        ReprocessReleaseTaskProducer taskProducer,
+                                        ApplicationEventPublisher eventPublisher,
                                         PathMappingService pathMappingService,
                                         LibrarySearchService librarySearchService) {
         this.libraryConfig = libraryConfig;
         this.metadataReader = metadataReader;
         this.searchEngines = searchEngines;
-        this.taskProducer = taskProducer;
+        this.eventPublisher = eventPublisher;
         this.pathMappingService = pathMappingService;
         this.librarySearchService = librarySearchService;
     }
@@ -161,14 +162,12 @@ public class ReprocessReleasesFlowService {
 
             ReleaseMetadata metadata = getMetadata(options, metadataFile);
 
-            ReprocessReleaseTaskDto task = new ReprocessReleaseTaskDto(
+            eventPublisher.publishEvent(new ReprocessReleaseTaskEvent(
                     ctx.conversationId(),
                     releaseDir.toString(),
                     metadata,
                     processingVersion,
-                    options
-            );
-            taskProducer.send(task);
+                    options));
 
             log.debug("Queued reprocess task for: {} (options={})", releaseDir, options);
             return QueueResult.QUEUED;
@@ -262,21 +261,6 @@ public class ReprocessReleasesFlowService {
                 metadataFile.tags() != null ? metadataFile.tags() : List.of(),
                 metadataFile.label() != null ? metadataFile.label() : ""
         );
-    }
-
-    public record ReprocessOptions(
-            boolean skipRetag,
-            boolean force
-    ) {
-        public static ReprocessOptions parse(String argument) {
-            boolean skipRetag = argument.contains("--skip-retag");
-            boolean force = argument.contains("--force");
-            return new ReprocessOptions(skipRetag, force);
-        }
-
-        public static ReprocessOptions defaults() {
-            return new ReprocessOptions(false, false);
-        }
     }
 
     public record ReprocessResult(

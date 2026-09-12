@@ -1,5 +1,7 @@
 package com.sashkomusic.agents.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.MoveReleaseTaskEvent;
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.entity.Artist;
@@ -13,7 +15,6 @@ import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
-import com.sashkomusic.mainagent.library.messaging.MoveReleaseTaskProducer;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
 import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService;
 import dev.langchain4j.agent.tool.P;
@@ -36,11 +37,11 @@ public class LibraryAgentTools {
             "", "this", "this release", "оцей", "цей", "цього", "цей реліз", "оцей реліз",
             "щойно", "last", "the last one", "поточний");
 
+    private final ApplicationEventPublisher eventPublisher;
     private final LibrarySearchService librarySearchService;
     private final TrackRepository trackRepository;
     private final LibraryConfig libraryConfig;
     private final LastReleaseContextHolder lastReleaseContextHolder;
-    private final MoveReleaseTaskProducer moveTaskProducer;
     private final RemoveReleaseFlowService removeReleaseFlowService;
     private final ChatResponseAccumulator accumulator;
     private final ProcessFolderFlowService processFolderFlowService;
@@ -114,7 +115,7 @@ public class LibraryAgentTools {
         if (ref == null) {
             return "не знайшов реліз — уточни назву";
         }
-        moveTaskProducer.send(mainId, ref.id(), sublibrary);
+        eventPublisher.publishEvent(new MoveReleaseTaskEvent(mainId, ref.id(), sublibrary));
         return "переношу " + ref.label() + " у " + sublibrary;
     }
 

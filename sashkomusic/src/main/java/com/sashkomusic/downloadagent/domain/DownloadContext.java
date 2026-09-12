@@ -2,7 +2,7 @@ package com.sashkomusic.downloadagent.domain;
 
 import com.sashkomusic.downloadagent.config.SlskdPathConfig;
 import com.sashkomusic.downloadagent.domain.model.DownloadBatch;
-import com.sashkomusic.mainagent.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

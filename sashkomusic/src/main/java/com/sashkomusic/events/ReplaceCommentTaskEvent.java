@@ -1,5 +1,8 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
-
-public record ReplaceCommentTaskEvent(ReplaceCommentTaskDto payload) {}
+import com.sashkomusic.shared.ConversationScoped;
+public record ReplaceCommentTaskEvent(
+        Long trackId,
+        String comment,
+        String conversationId
+) implements ConversationScoped {}

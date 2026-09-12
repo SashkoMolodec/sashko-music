@@ -69,7 +69,7 @@ public class SoulseekProgressPoller {
 
     @EventListener
     public void onBatchComplete(DownloadBatchCompleteEvent event) {
-        unregister(event.payload().releaseId());
+        unregister(event.releaseId());
     }
 
     @Scheduled(fixedDelay = POLL_INTERVAL_MS, initialDelay = POLL_INTERVAL_MS)

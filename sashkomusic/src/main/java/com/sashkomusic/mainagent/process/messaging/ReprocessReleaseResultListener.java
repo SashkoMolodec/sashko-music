@@ -3,7 +3,6 @@ package com.sashkomusic.mainagent.process.messaging;
 import com.sashkomusic.events.ReprocessReleaseCompleteEvent;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
-import com.sashkomusic.libraryagent.messaging.producer.dto.ReprocessReleaseResultDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -18,33 +17,32 @@ public class ReprocessReleaseResultListener {
     private final TelegramChatBot chatBot;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleReprocessResult(ReprocessReleaseCompleteEvent event) {
-        ReprocessReleaseResultDto result = event.payload();
         log.info("Received reprocess result: conversationId={}, success={}, filesProcessed={}",
-                result.conversationId(), result.success(), result.filesProcessed());
+                event.conversationId(), event.success(), event.filesProcessed());
 
-        String message = buildResultMessage(result);
-        chatBot.sendMessage(ConversationContext.from(result.conversationId()), message);
+        String message = buildResultMessage(event);
+        chatBot.sendMessage(ConversationContext.from(event.conversationId()), message);
     }
 
-    private String buildResultMessage(ReprocessReleaseResultDto result) {
-        String[] artistAndRelease = extractArtistAndRelease(result.directoryPath());
+    private String buildResultMessage(ReprocessReleaseCompleteEvent event) {
+        String[] artistAndRelease = extractArtistAndRelease(event.directoryPath());
         String artist = artistAndRelease[0];
         String releaseFolder = artistAndRelease[1];
 
-        if (result.success()) {
+        if (event.success()) {
             return String.format("""
                     ✅ репроцеснуто!
                     📁 _%s_ → _%s_
                     🎵 %d файлів оновлено
-                    """, artist, releaseFolder, result.filesProcessed()).trim();
+                    """, artist, releaseFolder, event.filesProcessed()).trim();
         } else {
             return String.format("""
                     ❌ помилка репроцесингу!(
                     📁 _%s_ → _%s_
                     %s
-                    """, artist, releaseFolder, result.message()).trim();
+                    """, artist, releaseFolder, event.message()).trim();
         }
     }
 

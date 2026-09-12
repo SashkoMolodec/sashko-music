@@ -2,7 +2,7 @@ package com.sashkomusic.libraryagent.domain.service.sync;
 
 import com.sashkomusic.events.TagChangesNotificationEvent;
 import com.sashkomusic.libraryagent.domain.model.TrackTagChanges;
-import com.sashkomusic.libraryagent.messaging.producer.dto.TagChangesNotificationDto;
+import com.sashkomusic.shared.task.TagChangesNotification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -56,7 +56,7 @@ public class TagChangeBatchCollector {
         }
 
         try {
-            TagChangesNotificationDto notification = TagChangesNotificationDto.create(changesToSend);
+            TagChangesNotification notification = TagChangesNotification.create(changesToSend);
             log.info("Sending tag changes notification: {} tracks, {} total changes", notification.tracks().size(), notification.totalChanges());
             eventPublisher.publishEvent(new TagChangesNotificationEvent(notification));
             log.debug("Tag changes notification published");

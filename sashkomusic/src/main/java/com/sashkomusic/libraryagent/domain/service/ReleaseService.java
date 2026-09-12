@@ -6,7 +6,7 @@ import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Tag;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.ReleaseFormat;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.ReleaseType;
 import com.sashkomusic.libraryagent.domain.repository.ArtistRepository;
 import com.sashkomusic.libraryagent.domain.repository.LabelRepository;
@@ -14,8 +14,8 @@ import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.libraryagent.domain.repository.TagRepository;
 import com.sashkomusic.libraryagent.domain.service.utils.AudioTagExtractor;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FileOrganizer;
-import com.sashkomusic.libraryagent.messaging.producer.AnalyzeTrackProducer;
-import com.sashkomusic.libraryagent.messaging.producer.dto.AnalyzeTrackTaskDto;
+import com.sashkomusic.libraryagent.client.AudioAnalyzerClient;
+import com.sashkomusic.libraryagent.client.dto.AnalyzeTrackRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,7 +34,7 @@ public class ReleaseService {
     private final TagRepository tagRepository;
     private final LabelRepository labelRepository;
     private final AudioTagExtractor tagExtractor;
-    private final AnalyzeTrackProducer analyzeTrackProducer;
+    private final AudioAnalyzerClient audioAnalyzerClient;
     private final LibrarySearchService librarySearchService;
 
     @Transactional(readOnly = true)
@@ -223,7 +223,7 @@ public class ReleaseService {
 
         for (Track track : release.getTracks()) {
             try {
-                AnalyzeTrackTaskDto task = new AnalyzeTrackTaskDto(
+                AnalyzeTrackRequest request = new AnalyzeTrackRequest(
                         track.getId(),
                         track.getLocalPath(),
                         release.getId(),
@@ -231,7 +231,7 @@ public class ReleaseService {
                         track.getTitle()
                 );
 
-                analyzeTrackProducer.sendAnalysisTask(task);
+                audioAnalyzerClient.requestAnalysis(request);
 
             } catch (Exception ex) {
                 log.error("Failed to send analysis task for track {}: {}",

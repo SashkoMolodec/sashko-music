@@ -1,8 +1,8 @@
 package com.sashkomusic.libraryagent.domain.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 
 import java.time.LocalDateTime;
 import java.util.List;

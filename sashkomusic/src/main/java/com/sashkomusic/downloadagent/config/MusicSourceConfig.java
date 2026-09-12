@@ -1,7 +1,7 @@
 package com.sashkomusic.downloadagent.config;
 
 import com.sashkomusic.downloadagent.domain.MusicSourcePort;
-import com.sashkomusic.mainagent.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
 import com.sashkomusic.downloadagent.infrastructure.client.applemusic.AppleMusicClient;
 import com.sashkomusic.downloadagent.infrastructure.client.bandcamp.BandcampDownloadClient;
 import com.sashkomusic.downloadagent.infrastructure.client.qobuz.QobuzClient;

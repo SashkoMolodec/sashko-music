@@ -1,18 +1,19 @@
 package com.sashkomusic.mainagent.process;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.ProcessLibraryTaskEvent;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderAudioScanner;
 import com.sashkomusic.libraryagent.domain.service.processFolder.ReleaseIdentifierService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.download.DownloadContextHolder;
-import com.sashkomusic.mainagent.process.messaging.ProcessLibraryTaskProducer;
-import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
+import com.sashkomusic.shared.task.ProcessLibraryTask;
 import com.sashkomusic.mainagent.search.MetadataUrlFetcher;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.Language;
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.Language;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,9 +24,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static com.sashkomusic.mainagent.search.SearchEngine.BANDCAMP;
-import static com.sashkomusic.mainagent.search.SearchEngine.DISCOGS;
-import static com.sashkomusic.mainagent.search.SearchEngine.MUSICBRAINZ;
+import static com.sashkomusic.shared.model.SearchEngine.BANDCAMP;
+import static com.sashkomusic.shared.model.SearchEngine.DISCOGS;
+import static com.sashkomusic.shared.model.SearchEngine.MUSICBRAINZ;
 
 /**
  * Orchestrates the {@code /process <folder>} Telegram dialogue:
@@ -43,6 +44,7 @@ import static com.sashkomusic.mainagent.search.SearchEngine.MUSICBRAINZ;
 @RequiredArgsConstructor
 public class ProcessFolderFlowService {
 
+    private final ApplicationEventPublisher eventPublisher;
     private final FolderAudioScanner audioScanner;
     private final ProcessFolderSearcher searcher;
     private final ProcessOptionsFormatter optionsFormatter;
@@ -51,7 +53,6 @@ public class ProcessFolderFlowService {
     private final SearchContextService searchContextService;
     private final MetadataUrlFetcher metadataUrlFetcher;
     private final ProcessFolderContextHolder contextHolder;
-    private final ProcessLibraryTaskProducer libraryTaskProducer;
     private final PathMappingService pathMappingService;
     private final DownloadContextHolder downloadContextHolder;
 
@@ -196,8 +197,8 @@ public class ProcessFolderFlowService {
         }
 
         var folderState = state.get();
-        libraryTaskProducer.send(ProcessLibraryTaskDto.of(
-                ctx.conversationId(), folderState.directoryPath(), folderState.audioFiles(), metadata));
+        eventPublisher.publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(
+                ctx.conversationId(), folderState.directoryPath(), folderState.audioFiles(), metadata)));
         contextHolder.clear(ctx.conversationId());
 
         log.info("Sent library processing task: conversationId={}, directory={}",
@@ -226,8 +227,8 @@ public class ProcessFolderFlowService {
 
         var release = metadata.get();
         var state = stateOpt.get();
-        libraryTaskProducer.send(ProcessLibraryTaskDto.of(
-                ctx.conversationId(), state.directoryPath(), state.audioFiles(), release));
+        eventPublisher.publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(
+                ctx.conversationId(), state.directoryPath(), state.audioFiles(), release)));
         contextHolder.clear(ctx.conversationId());
 
         log.info("Sent library processing task from URL: conversationId={}, directory={}, url={}",

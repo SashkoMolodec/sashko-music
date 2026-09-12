@@ -1,10 +1,11 @@
 package com.sashkomusic.mainagent.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.MoveReleaseTaskEvent;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.library.messaging.MoveReleaseTaskProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,8 +19,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class SublibraryAssignmentHandler {
 
+    private final ApplicationEventPublisher eventPublisher;
     private final ReleaseRepository releaseRepository;
-    private final MoveReleaseTaskProducer moveTaskProducer;
 
     @Transactional(readOnly = true)
     public List<BotResponse> handle(ConversationContext ctx, String data) {
@@ -46,7 +47,7 @@ public class SublibraryAssignmentHandler {
             return List.of(BotResponse.text("✅ залишаємо у " + sublibrary));
         }
 
-        moveTaskProducer.send(ctx.conversationId(), releaseId, sublibrary);
+        eventPublisher.publishEvent(new MoveReleaseTaskEvent(ctx.conversationId(), releaseId, sublibrary));
         return List.of(BotResponse.text("🚚 переношу '" + release.getTitle() + "' у " + sublibrary + "..."));
     }
 }

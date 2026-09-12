@@ -1,8 +1,8 @@
 package com.sashkomusic.mainagent.download;
 
 import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.download.DownloadOption;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
 
 import java.util.List;
 

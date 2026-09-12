@@ -19,7 +19,7 @@ public class RemoveReleaseListener {
     private final ApplicationEventPublisher eventPublisher;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handle(RemoveReleaseTaskEvent event) {
         log.info("Received remove release task: conversationId={}, releaseId={}",
                 event.conversationId(), event.releaseId());

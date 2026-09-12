@@ -29,8 +29,7 @@ User: /np
 User clicks ⭐⭐⭐ (3 stars)
   └─ NowPlayingFlowService.handleRate(ctx, "RATE:3")
        ├─ DjTagContextHolder.get(conversationId) → track
-       ├─ SetEnergyTaskProducer?  — No, це рейтинг
-       ├─ RateTrackTaskProducer.send(RateTrackTaskDto { trackId, rating:3 })
+       ├─ publishEvent(new RateTrackTaskEvent(trackId, 3, conversationId))
        └─ return "⭐⭐⭐ (3/5)"
 
 RateTrackTaskEvent → libraryagent RateTrackListener
@@ -60,7 +59,7 @@ User clicks [↕ DJ теги]
 User clicks [3] для енергії
   └─ DjTagFlowService.handleEnergyRate(ctx, "ENERGY_RATE:3")
        ├─ DjTagContextHolder.get(conversationId) → track
-       ├─ SetEnergyTaskProducer.send(SetEnergyTaskDto { trackId, energy:3 })
+       ├─ publishEvent(new SetEnergyTaskEvent(trackId, "E3", conversationId))
        └─ return "⚡ енергія: 3/5"
 
 SetEnergyTaskEvent → libraryagent SetEnergyListener
@@ -75,7 +74,7 @@ SetEnergyTaskEvent → libraryagent SetEnergyListener
 ```
 User clicks [banger]
   └─ DjTagFlowService.handleFunctionRate(ctx, "FUNCTION_RATE:banger")
-       ├─ SetFunctionTaskProducer.send(SetFunctionTaskDto { trackId, function:"banger" })
+       ├─ publishEvent(new SetFunctionTaskEvent(trackId, "banger", conversationId))
        └─ return "🔥 функція: banger"
 
 SetFunctionTaskEvent → libraryagent SetFunctionListener
@@ -97,7 +96,7 @@ User types "dark and heavy, good for peak"
   └─ CommentInputOngoingFlow.handle(ctx, "dark and heavy, good for peak")
        ├─ appliesTo(): DjTagContextHolder.isWaitingForComment(conversationId)
        ├─ DjTagContextHolder.setWaitingForComment(conversationId, false)
-       ├─ AddCommentTaskProducer.send(AddCommentTaskDto { trackId, comment })
+       ├─ publishEvent(new AddCommentTaskEvent(trackId, comment, conversationId))
        └─ return "💬 коментар збережено"
 
 AddCommentTaskEvent → libraryagent AddCommentListener

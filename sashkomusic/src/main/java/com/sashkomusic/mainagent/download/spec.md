@@ -37,7 +37,7 @@ FileSearchResultEvent (async, від downloadagent)
 1. `contextService.getReleaseMetadata(releaseId, ctx.conversationId())` — спочатку in-memory кеш,
    при промаху підтягує `SearchState` з `ChatStateStore` і перебудовує кеш.
    Завдяки цьому кнопки DL на старих картках працюють після перезапуску JVM.
-2. `SearchFilesTaskProducer.send(SearchFilesTaskDto)` → `FilesSearchTaskEvent` → downloadagent.
+2. `eventPublisher.publishEvent(new FilesSearchTaskEvent(new SearchFilesTask(...)))` → downloadagent.
 3. Повертає `"🔎 шукаю опції завантаження (qobuz): ..."`.
 
 ### `handleSearchAlternative(ctx, "SEARCH_ALT:<releaseId>:<ENGINE>")`
@@ -48,7 +48,7 @@ FileSearchResultEvent (async, від downloadagent)
 4. Повертає той самий прогрес-текст що і `handleDownload`, але з назвою обраного движка.
 
 ### `handleDownloadCancel(ctx, "CANCEL_DL:<releaseId>")`
-1. `DownloadCancelTaskProducer.send(...)` → `DownloadCancelTaskEvent` → downloadagent.
+1. Скасування йде через `ActiveDownloadRegistry.cancel(releaseId)` напряму — окремої події немає.
 2. Повертає `"⏳ скасовую..."`.
 
 ---
@@ -82,7 +82,7 @@ dto → flowHandler.analyzeAll(options, releaseId, conversationId)
 
 ### `handleDownloadOptionCallback(ctx, "DLOPT:<payload>")`
 - `payload = "cancel"` → `clearSession`, `"❌ скасовано"`.
-- `payload = "<N>"` → `reports.get(N)`, `DownloadTaskProducer.send(...)`, `clearSession`, повертає `formatDownloadConfirmation(option)`.
+- `payload = "<N>"` → `reports.get(N)`, `publishEvent(new FilesDownloadTaskEvent(new DownloadFilesTask(...)))`, `clearSession`, повертає `formatDownloadConfirmation(option)`.
 - Невідомий index → `"❌ невідомий варіант"`.
 
 ---
@@ -220,7 +220,7 @@ record DownloadContext(String chosenReleaseId, List<DownloadFlowHandler.OptionRe
 
 Це спрацьовує "безкоштовно" для всього, що йде після першого кліку, бо:
 1. `conversationId` наскрізно проходить рядком через увесь event-пайплайн
-   (`SearchFilesTaskDto` → `FileSearchResultEvent`/`DownloadCompleteEvent`/`DownloadBatchCompleteEvent`
+   (`SearchFilesTask` → `FileSearchResultEvent`/`DownloadCompleteEvent`/`DownloadBatchCompleteEvent`
    → `ConversationContext.from(dto.conversationId())` у відповідних listener-ах);
 2. колбеки (`DLOPT:`, `DLNEXT:`, `SLSK_*`) отримують `ctx` від Telegram — з того топіку, де
    фізично лежить повідомлення з кнопками, тобто вже download-топік, без додаткової маршрутизації.

@@ -6,7 +6,6 @@ import com.sashkomusic.libraryagent.domain.entity.TrackAnalysis;
 import com.sashkomusic.libraryagent.domain.repository.TrackAnalysisRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.service.processFolder.TrackAnalysisJsonReader;
-import com.sashkomusic.libraryagent.messaging.consumer.dto.TrackAnalysisCompleteDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -26,42 +25,41 @@ public class TrackAnalysisCompleteListener {
     private final TrackAnalysisJsonReader jsonReader;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     @Transactional
     public void handleAnalysisComplete(TrackAnalysisCompleteEvent event) {
-        TrackAnalysisCompleteDto message = event.payload();
         log.info("Received analysis complete for trackId={}, success={}, jsonPath={}",
-                message.trackId(), message.success(), message.jsonResultPath());
+                event.trackId(), event.success(), event.jsonResultPath());
 
         try {
-            Track track = trackRepository.findById(message.trackId())
-                    .orElseThrow(() -> new IllegalStateException("Track not found: " + message.trackId()));
+            Track track = trackRepository.findById(event.trackId())
+                    .orElseThrow(() -> new IllegalStateException("Track not found: " + event.trackId()));
 
-            TrackAnalysis analysis = analysisRepository.findByTrackId(message.trackId())
+            TrackAnalysis analysis = analysisRepository.findByTrackId(event.trackId())
                     .orElseGet(() -> new TrackAnalysis(track));
 
-            if (message.success() && message.jsonResultPath() != null) {
+            if (event.success() && event.jsonResultPath() != null) {
                 try {
-                    TrackAnalysis parsedAnalysis = jsonReader.readAnalysisFromJson(message.jsonResultPath(), track);
+                    TrackAnalysis parsedAnalysis = jsonReader.readAnalysisFromJson(event.jsonResultPath(), track);
                     copyAnalysisFields(parsedAnalysis, analysis);
                     log.info("Successfully loaded analysis from JSON for trackId={} (BPM: {}, Danceability: {})",
-                            message.trackId(), analysis.getBpm(), analysis.getDanceability());
+                            event.trackId(), analysis.getBpm(), analysis.getDanceability());
                 } catch (Exception e) {
-                    log.error("Failed to read JSON file {}: {}", message.jsonResultPath(), e.getMessage(), e);
+                    log.error("Failed to read JSON file {}: {}", event.jsonResultPath(), e.getMessage(), e);
                     analysis.setErrorMessage("Failed to read JSON: " + e.getMessage());
                 }
             } else {
-                String errorMsg = message.errorMessage() != null ? message.errorMessage() : "Unknown error during analysis";
+                String errorMsg = event.errorMessage() != null ? event.errorMessage() : "Unknown error during analysis";
                 analysis.setErrorMessage(errorMsg);
-                log.warn("Analysis failed for trackId={}: {}", message.trackId(), errorMsg);
+                log.warn("Analysis failed for trackId={}: {}", event.trackId(), errorMsg);
             }
 
             analysis.setAnalyzedAt(LocalDateTime.now());
             analysisRepository.save(analysis);
-            log.info("Saved track analysis for trackId={}, hasError={}", message.trackId(), analysis.hasError());
+            log.info("Saved track analysis for trackId={}, hasError={}", event.trackId(), analysis.hasError());
 
         } catch (Exception ex) {
-            log.error("Failed to process analysis result for trackId={}: {}", message.trackId(), ex.getMessage(), ex);
+            log.error("Failed to process analysis result for trackId={}: {}", event.trackId(), ex.getMessage(), ex);
         }
     }
 

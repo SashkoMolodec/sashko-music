@@ -1,8 +1,8 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.domain.model.ValidationResult;
-import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.task.ProcessLibraryTask;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +21,7 @@ public class FileValidator {
             "mp3", "flac", "m4a", "ogg", "wav", "opus", "aac"
     );
 
-    public ValidationResult validate(ProcessLibraryTaskDto task) {
+    public ValidationResult validate(ProcessLibraryTask task) {
         List<String> errors = new ArrayList<>();
 
         Path directory = Paths.get(task.directoryPath());

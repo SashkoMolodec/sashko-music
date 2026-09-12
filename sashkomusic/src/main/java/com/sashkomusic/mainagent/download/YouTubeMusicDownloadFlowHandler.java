@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import org.springframework.stereotype.Component;
 

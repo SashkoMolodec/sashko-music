@@ -1,7 +1,7 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.domain.model.ProcessedFile;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 

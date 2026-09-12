@@ -1,6 +1,6 @@
 package com.sashkomusic.agents.contract;
 
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.SearchEngine;
 
 public record DiscoverRequest(
         String conversationId,

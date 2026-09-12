@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.download.config;
 
-import com.sashkomusic.mainagent.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
 import com.sashkomusic.mainagent.download.AppleMusicDownloadFlowHandler;
 import com.sashkomusic.mainagent.download.BandcampDownloadFlowHandler;
 import com.sashkomusic.mainagent.download.DownloadFlowHandler;

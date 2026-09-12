@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.search.config;
 
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

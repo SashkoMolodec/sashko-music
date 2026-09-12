@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.search;
 
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
 
 import java.util.List;
 

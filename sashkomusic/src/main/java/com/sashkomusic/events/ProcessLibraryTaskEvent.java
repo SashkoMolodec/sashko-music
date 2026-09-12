@@ -1,5 +1,5 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
+import com.sashkomusic.shared.task.ProcessLibraryTask;
 
-public record ProcessLibraryTaskEvent(ProcessLibraryTaskDto payload) {}
+public record ProcessLibraryTaskEvent(ProcessLibraryTask payload) {}

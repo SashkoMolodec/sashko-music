@@ -1,6 +1,6 @@
 package com.sashkomusic.downloadagent.domain.model;
 
-import com.sashkomusic.mainagent.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadEngine;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 

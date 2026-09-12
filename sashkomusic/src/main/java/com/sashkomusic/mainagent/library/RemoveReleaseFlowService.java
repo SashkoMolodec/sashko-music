@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.RemoveReleaseTaskEvent;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.entity.TrackTag;
@@ -10,7 +12,6 @@ import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.TrackRemovalService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.library.messaging.RemoveReleaseTaskProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,9 +36,9 @@ public class RemoveReleaseFlowService {
     private static final String CB_SELECT_CANCEL = "RM_SEL_CANCEL";
     private static final String CB_CANCEL = "RM_NO:";
 
+    private final ApplicationEventPublisher eventPublisher;
     private final LibrarySearchService librarySearchService;
     private final ReleaseRepository releaseRepository;
-    private final RemoveReleaseTaskProducer taskProducer;
     private final TrackRemovalService trackRemovalService;
     private final TrackRemovalContextHolder trackRemovalContextHolder;
     private final TrackTagRepository trackTagRepository;
@@ -89,7 +90,7 @@ public class RemoveReleaseFlowService {
             return List.of(BotResponse.text("❌ реліз вже не існує в базі"));
         }
 
-        taskProducer.send(ctx.conversationId(), releaseId);
+        eventPublisher.publishEvent(new RemoveReleaseTaskEvent(ctx.conversationId(), releaseId));
         return List.of(BotResponse.text("🗑️ переношу у trash: " + releaseOpt.get().getTitle() + "..."));
     }
 

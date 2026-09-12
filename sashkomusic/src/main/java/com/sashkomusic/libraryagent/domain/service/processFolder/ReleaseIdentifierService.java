@@ -1,9 +1,9 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderNameParser;
-import com.sashkomusic.mainagent.shared.model.DateRange;
-import com.sashkomusic.mainagent.shared.model.Language;
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.DateRange;
+import com.sashkomusic.shared.model.Language;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jaudiotagger.audio.AudioFile;

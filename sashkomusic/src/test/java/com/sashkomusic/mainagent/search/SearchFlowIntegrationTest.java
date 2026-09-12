@@ -1,15 +1,16 @@
 package com.sashkomusic.mainagent.search;
 
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import com.sashkomusic.mainagent.search.FileIdCacheService;
-import com.sashkomusic.mainagent.shared.model.DateRange;
-import com.sashkomusic.mainagent.shared.model.Language;
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.DateRange;
+import com.sashkomusic.shared.model.Language;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,9 +1,10 @@
 package com.sashkomusic.mainagent.search;
 
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.client.bandcamp.BandcampClient;
 import com.sashkomusic.mainagent.search.client.discogs.DiscogsClient;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

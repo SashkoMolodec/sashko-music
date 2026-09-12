@@ -3,7 +3,7 @@ package com.sashkomusic.libraryagent.domain.service.processFolder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

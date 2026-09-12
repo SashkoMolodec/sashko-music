@@ -1,7 +1,6 @@
 package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.TrackUpdateResultEvent;
-import com.sashkomusic.libraryagent.messaging.producer.dto.TrackUpdateResultDto;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
 import lombok.RequiredArgsConstructor;
@@ -18,13 +17,12 @@ public class TrackUpdateResultListener {
     private final TelegramChatBot chatBot;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleTrackUpdateResult(TrackUpdateResultEvent event) {
-        TrackUpdateResultDto result = event.payload();
         log.info("Received track update result: trackId={}, field={}, value={}, success={}",
-                result.trackId(), result.fieldUpdated(), result.value(), result.success());
+                event.trackId(), event.fieldUpdated(), event.value(), event.success());
 
-        String message = result.success() ? "✅ оновлено" : "❌ помилка: " + result.message();
-        chatBot.sendMessage(ConversationContext.from(result.conversationId()), message);
+        String message = event.success() ? "✅ оновлено" : "❌ помилка: " + event.message();
+        chatBot.sendMessage(ConversationContext.from(event.conversationId()), message);
     }
 }

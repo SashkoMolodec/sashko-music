@@ -1,5 +1,16 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
+import com.sashkomusic.shared.ConversationScoped;
+import com.sashkomusic.libraryagent.domain.model.ProcessedFile;
 
-public record LibraryProcessingCompleteEvent(LibraryProcessingCompleteDto payload) {}
+import java.util.List;
+
+public record LibraryProcessingCompleteEvent(
+        String conversationId,
+        String masterId,
+        String directoryPath,
+        List<ProcessedFile> processedFiles,
+        boolean success,
+        String message,
+        List<String> errors
+) implements ConversationScoped {}

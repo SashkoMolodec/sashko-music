@@ -1,19 +1,19 @@
 package com.sashkomusic.mainagent.library;
 
-import com.sashkomusic.libraryagent.messaging.producer.dto.TagChangesNotificationDto;
+import com.sashkomusic.shared.task.TagChangesNotification;
 import org.springframework.stereotype.Component;
 
-/** Pure formatter — turns a TagChangesNotificationDto into a Telegram-ready Markdown message. */
+/** Pure formatter — turns a TagChangesNotification into a Telegram-ready Markdown message. */
 @Component
 public class TagChangeNotificationFormatter {
 
-    public String format(TagChangesNotificationDto notification) {
+    public String format(TagChangesNotification notification) {
         StringBuilder sb = new StringBuilder();
         sb.append("🎵 **оновлено теги треків**\n\n");
-        for (TagChangesNotificationDto.TrackChanges track : notification.tracks()) {
+        for (TagChangesNotification.TrackChanges track : notification.tracks()) {
             sb.append("📀 _").append(track.artistName().toLowerCase())
                     .append(" — ").append(track.trackTitle().toLowerCase()).append("_\n");
-            for (TagChangesNotificationDto.TagChangeInfo change : track.changes()) {
+            for (TagChangesNotification.TagChangeInfo change : track.changes()) {
                 String tag = formatTagName(change.tagName());
                 String oldVal = formatTagValue(change.tagName(), change.oldValue());
                 String newVal = formatTagValue(change.tagName(), change.newValue());

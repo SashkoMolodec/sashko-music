@@ -1,5 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.AddCommentTaskEvent;
 import com.sashkomusic.libraryagent.domain.entity.Marker;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.MarkerRepository;
@@ -7,8 +9,6 @@ import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.SmartlistLabelContextHolder.LabelContext;
-import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,9 +26,9 @@ public class SmartlistLabelFlowService {
     private static final int PAGE_SIZE = 10;
     private static final int ROW_SIZE = 5;
 
+    private final ApplicationEventPublisher eventPublisher;
     private final MarkerRepository markerRepository;
     private final TrackRepository trackRepository;
-    private final AddCommentTaskProducer addCommentTaskProducer;
     private final SmartlistLabelContextHolder holder;
     private final DjTagContextHolder djTagContextHolder;
     private final AlbumCommentContextHolder albumCommentContextHolder;
@@ -114,13 +114,13 @@ public class SmartlistLabelFlowService {
 
         if (LabelContext.MODE_TRACK.equals(lctx.mode())) {
             djTagContextHolder.deactivateCommentMode(ctx.conversationId());
-            addCommentTaskProducer.send(new AddCommentTaskDto(lctx.targetId(), label, ctx.conversationId()));
+            eventPublisher.publishEvent(new AddCommentTaskEvent(lctx.targetId(), label, ctx.conversationId()));
             return List.of(BotResponse.text("🏷 мітка " + label + " додається до треку"));
         } else {
             albumCommentContextHolder.clear(ctx.conversationId());
             List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(lctx.targetId());
             for (Track track : tracks) {
-                addCommentTaskProducer.send(new AddCommentTaskDto(track.getId(), label, ctx.conversationId()));
+                eventPublisher.publishEvent(new AddCommentTaskEvent(track.getId(), label, ctx.conversationId()));
             }
             return List.of(BotResponse.text("🏷 мітка " + label + " додається до " + tracks.size() + " треків альбому"));
         }

@@ -17,7 +17,7 @@ public class AppleMusicDbidPersistenceListener {
     private final TrackRepository trackRepository;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     @Transactional
     public void handle(AppleMusicSyncCompleteEvent event) {
         for (AppleMusicSyncCompleteEvent.TrackDbid mapping : event.tracks()) {

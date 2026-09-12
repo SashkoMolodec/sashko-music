@@ -19,10 +19,9 @@ public class SearchFilesResultListener {
     private final TelegramChatBot telegramBot;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleSearchResults(FileSearchResultEvent event) {
-        var dto = event.payload();
-        var response = musicDownloadFlowService.handleSearchResults(dto);
-        response.forEach(res -> telegramBot.sendResponse(ConversationContext.from(dto.conversationId()), res));
+        var response = musicDownloadFlowService.handleSearchResults(event);
+        response.forEach(res -> telegramBot.sendResponse(ConversationContext.from(event.conversationId()), res));
     }
 }

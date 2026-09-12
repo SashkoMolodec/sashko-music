@@ -4,8 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor;
 import com.sashkomusic.events.AppleMusicSyncCompleteEvent;
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
-import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
-import com.sashkomusic.mainagent.library.config.AppleMusicSyncConfig;
+import com.sashkomusic.libraryagent.config.AppleMusicSyncConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -26,19 +25,17 @@ public class AppleMusicSyncListener {
     private final AppleMusicSyncConfig config;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
         if (!config.isEnabled()) {
             return;
         }
-
-        LibraryProcessingCompleteDto dto = event.payload();
-        if (!dto.success()) {
+        if (!event.success()) {
             log.debug("Skipping Apple Music sync - library processing was not successful");
             return;
         }
 
-        String directoryPath = dto.directoryPath();
+        String directoryPath = event.directoryPath();
         if (directoryPath == null || directoryPath.isEmpty()) {
             log.warn("Skipping Apple Music sync - directory path is empty");
             return;

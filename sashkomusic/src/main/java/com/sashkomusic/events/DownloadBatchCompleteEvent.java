@@ -1,5 +1,16 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadBatchCompleteDto;
+import com.sashkomusic.shared.ConversationScoped;
+import java.util.List;
 
-public record DownloadBatchCompleteEvent(DownloadBatchCompleteDto payload) {}
+public record DownloadBatchCompleteEvent(
+        String conversationId,
+        String releaseId,
+        String directoryPath,
+        List<String> allFiles
+) implements ConversationScoped {
+
+    public int totalFiles() {
+        return allFiles.size();
+    }
+}

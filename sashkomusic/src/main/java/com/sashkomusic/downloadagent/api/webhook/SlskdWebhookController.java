@@ -3,11 +3,9 @@ package com.sashkomusic.downloadagent.api.webhook;
 import com.sashkomusic.downloadagent.api.webhook.dto.SlskdDownloadCompleteWebhook;
 import com.sashkomusic.downloadagent.domain.model.DownloadBatch;
 import com.sashkomusic.downloadagent.domain.DownloadContext;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadBatchCompleteDto;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadCompleteDto;
-import com.sashkomusic.downloadagent.messaging.producer.DownloadBatchCompleteProducer;
-import com.sashkomusic.downloadagent.messaging.producer.DownloadCompleteProducer;
-import com.sashkomusic.downloadagent.messaging.producer.DownloadErrorProducer;
+import com.sashkomusic.events.DownloadBatchCompleteEvent;
+import com.sashkomusic.events.DownloadCompleteEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -22,9 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class SlskdWebhookController {
 
-    private final DownloadCompleteProducer downloadCompleteProducer;
-    private final DownloadBatchCompleteProducer batchCompleteProducer;
-    private final DownloadErrorProducer errorProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final DownloadContext downloadContext;
 
     @PostMapping("/download-complete")
@@ -49,18 +45,16 @@ public class SlskdWebhookController {
                 return ResponseEntity.ok().build();
             }
 
-            var fileDto = DownloadCompleteDto.of(batch.getConversationId(), webhook.remoteFilename(), webhook.transfer().size());
-            downloadCompleteProducer.sendComplete(fileDto);
+            eventPublisher.publishEvent(DownloadCompleteEvent.of(
+                    batch.getConversationId(), webhook.remoteFilename(), webhook.transfer().size()));
 
             if (batch.isComplete()) {
                 log.info("All files downloaded for release: {}", batch.getReleaseId());
-                var batchDto = DownloadBatchCompleteDto.of(
+                eventPublisher.publishEvent(new DownloadBatchCompleteEvent(
                         batch.getConversationId(),
                         batch.getReleaseId(),
                         batch.getLocalDirectoryPath(),
-                        batch.getLocalFilenames()
-                );
-                batchCompleteProducer.sendBatchComplete(batchDto);
+                        batch.getLocalFilenames()));
             }
 
         } catch (Exception e) {

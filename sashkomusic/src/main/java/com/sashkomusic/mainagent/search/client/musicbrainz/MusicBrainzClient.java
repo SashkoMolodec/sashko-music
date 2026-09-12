@@ -1,10 +1,10 @@
 package com.sashkomusic.mainagent.search.client.musicbrainz;
 
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.TrackMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.TrackMetadata;
 import com.sashkomusic.mainagent.search.SearchEngineService;
 import com.sashkomusic.mainagent.search.client.musicbrainz.exception.SearchNotCompleteException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;

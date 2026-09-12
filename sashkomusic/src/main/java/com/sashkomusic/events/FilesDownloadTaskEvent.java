@@ -1,5 +1,5 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
+import com.sashkomusic.shared.task.DownloadFilesTask;
 
-public record FilesDownloadTaskEvent(DownloadFilesTaskDto payload) {}
+public record FilesDownloadTaskEvent(DownloadFilesTask payload) {}

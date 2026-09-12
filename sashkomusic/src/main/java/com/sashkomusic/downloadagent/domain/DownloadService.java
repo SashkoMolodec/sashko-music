@@ -2,13 +2,13 @@ package com.sashkomusic.downloadagent.domain;
 
 import com.sashkomusic.downloadagent.domain.exception.MusicDownloadException;
 import com.sashkomusic.downloadagent.domain.model.DownloadBatch;
-import com.sashkomusic.mainagent.download.DownloadEngine;
-import com.sashkomusic.mainagent.download.DownloadOption;
-import com.sashkomusic.mainagent.download.messaging.dto.DownloadFilesTaskDto;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadErrorDto;
-import com.sashkomusic.downloadagent.messaging.producer.DownloadErrorProducer;
+import com.sashkomusic.shared.download.DownloadEngine;
+import com.sashkomusic.shared.download.DownloadOption;
+import com.sashkomusic.shared.task.DownloadFilesTask;
+import com.sashkomusic.events.DownloadErrorEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,10 +20,10 @@ import java.util.Map;
 public class DownloadService {
 
     private final Map<DownloadEngine, MusicSourcePort> musicSources;
-    private final DownloadErrorProducer errorProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final DownloadContext downloadContext;
 
-    public void download(DownloadFilesTaskDto task) {
+    public void download(DownloadFilesTask task) {
         try {
             DownloadOption option = task.downloadOption();
 
@@ -44,10 +44,10 @@ public class DownloadService {
 
         } catch (MusicDownloadException e) {
             log.error("Download failed for conversationId={}: {}", task.conversationId(), e.getMessage());
-            errorProducer.sendError(DownloadErrorDto.of(task.conversationId(), e.getMessage()));
+            eventPublisher.publishEvent(new DownloadErrorEvent(task.conversationId(), e.getMessage()));
         } catch (Exception e) {
             log.error("Unexpected error during download for conversationId={}: {}", task.conversationId(), e.getMessage(), e);
-            errorProducer.sendError(DownloadErrorDto.of(task.conversationId(), "шось не то, пупупу... " + e.getMessage()));
+            eventPublisher.publishEvent(new DownloadErrorEvent(task.conversationId(), "шось не то, пупупу... " + e.getMessage()));
         }
     }
 

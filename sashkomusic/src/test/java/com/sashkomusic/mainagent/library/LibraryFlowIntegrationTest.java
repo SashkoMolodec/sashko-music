@@ -8,9 +8,8 @@ import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import com.sashkomusic.mainagent.library.client.IcecastClient;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import com.sashkomusic.mainagent.library.config.IcecastConfig;
-import com.sashkomusic.mainagent.library.messaging.RateTrackTaskProducer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +31,7 @@ import static org.mockito.Mockito.when;
 
 @SpringJUnitConfig
 @RecordApplicationEvents
-@Import({NowPlayingFlowService.class, RateTrackTaskProducer.class,
+@Import({NowPlayingFlowService.class,
         DjTagContextHolder.class, LibraryFlowIntegrationTest.TestConfig.class})
 class LibraryFlowIntegrationTest {
 
@@ -94,10 +93,10 @@ class LibraryFlowIntegrationTest {
         verify(navidromeClient).setRating(eq("nav-1"), eq(5));
         var published = events.stream(RateTrackTaskEvent.class).toList();
         assertThat(published).hasSize(1);
-        var payload = published.get(0).payload();
-        assertThat(payload.trackId()).isEqualTo(42L);
-        assertThat(payload.rating()).isEqualTo(5);
-        assertThat(payload.chatId()).isEqualTo(CHAT_ID);
+        var event = published.get(0);
+        assertThat(event.trackId()).isEqualTo(42L);
+        assertThat(event.rating()).isEqualTo(5);
+        assertThat(event.chatId()).isEqualTo(CHAT_ID);
     }
 
     @Configuration

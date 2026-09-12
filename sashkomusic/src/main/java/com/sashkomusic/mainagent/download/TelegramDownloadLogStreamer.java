@@ -60,17 +60,17 @@ public class TelegramDownloadLogStreamer {
 
     @EventListener
     public void onBatchComplete(DownloadBatchCompleteEvent event) {
-        flushOne(event.payload().conversationId(), "✅ batch complete");
+        flushOne(event.conversationId(), "✅ batch complete");
     }
 
     @EventListener
     public void onDownloadComplete(DownloadCompleteEvent event) {
-        flushOne(event.payload().conversationId(), "✅ download complete");
+        flushOne(event.conversationId(), "✅ download complete");
     }
 
     @EventListener
     public void onDownloadError(DownloadErrorEvent event) {
-        flushOne(event.payload().conversationId(), "❌ " + event.payload().errorMessage());
+        flushOne(event.conversationId(), "❌ " + event.errorMessage());
     }
 
     @Scheduled(fixedDelay = FLUSH_INTERVAL_MS)

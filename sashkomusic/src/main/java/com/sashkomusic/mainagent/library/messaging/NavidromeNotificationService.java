@@ -2,8 +2,7 @@ package com.sashkomusic.mainagent.library.messaging;
 
 import com.sashkomusic.events.LibraryProcessingCompleteEvent;
 import com.sashkomusic.events.RemoveReleaseCompleteEvent;
-import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
-import com.sashkomusic.mainagent.library.client.NavidromeClient;
+import com.sashkomusic.libraryagent.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,18 +27,17 @@ public class NavidromeNotificationService {
     private String navidromeLibraryPath;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
-        LibraryProcessingCompleteDto dto = event.payload();
         log.debug("Received library-processing-complete event: conversationId={}, masterId={}, success={}, directoryPath={}",
-                dto.conversationId(), dto.masterId(), dto.success(), dto.directoryPath());
+                event.conversationId(), event.masterId(), event.success(), event.directoryPath());
 
-        if (!dto.success()) {
+        if (!event.success()) {
             log.debug("Skipping Navidrome scan - library processing was not successful");
             return;
         }
 
-        String directoryPath = dto.directoryPath();
+        String directoryPath = event.directoryPath();
         if (directoryPath == null || directoryPath.isEmpty()) {
             log.warn("Skipping Navidrome scan - directory path is empty");
             return;
@@ -67,7 +65,7 @@ public class NavidromeNotificationService {
      * searchable/playable 10+ minutes after a scoped scan completed).
      */
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handleReleaseRemoved(RemoveReleaseCompleteEvent event) {
         if (!event.success()) {
             return;

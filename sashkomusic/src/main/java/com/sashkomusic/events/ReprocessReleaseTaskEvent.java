@@ -1,5 +1,13 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.process.messaging.dto.ReprocessReleaseTaskDto;
+import com.sashkomusic.shared.ConversationScoped;
+import com.sashkomusic.shared.task.ReprocessOptions;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 
-public record ReprocessReleaseTaskEvent(ReprocessReleaseTaskDto payload) {}
+public record ReprocessReleaseTaskEvent(
+        String conversationId,
+        String directoryPath,
+        ReleaseMetadata metadata,
+        int newMetadataVersion,
+        ReprocessOptions options
+) implements ConversationScoped {}

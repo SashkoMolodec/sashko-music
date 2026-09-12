@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.shared.util;
 
-import com.sashkomusic.mainagent.shared.model.Language;
+import com.sashkomusic.shared.model.Language;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;

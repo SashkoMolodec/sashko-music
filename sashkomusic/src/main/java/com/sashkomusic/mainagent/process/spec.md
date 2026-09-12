@@ -64,7 +64,7 @@ ProcessFolderFlowService.process()
 - `payload = "cancel"` → `contextHolder.clear(conversationId)`, `"❌ скасовано"`.
 - `payload = "<N>"` → `contextHolder.getReleaseIdByOption(conversationId, N)` →
   `searchContextService.getMetadataWithTracks(releaseId, conversationId)` →
-  `ProcessLibraryTaskProducer.send(ProcessLibraryTaskDto)` → `contextHolder.clear()` → `"🚀 опрацьовую..."`.
+  `publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(...)))` → `contextHolder.clear()` → `"🚀 опрацьовую..."`.
 - Невідомий index → `"❌ невірний варіант"`.
 - Протухла сесія → `"❌ сесія закінчилась. спробуй ще раз"`.
 

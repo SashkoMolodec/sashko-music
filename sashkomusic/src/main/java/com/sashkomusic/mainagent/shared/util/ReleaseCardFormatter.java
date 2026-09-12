@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.shared.util;
 
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 
 public class ReleaseCardFormatter {
 

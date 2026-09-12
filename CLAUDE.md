@@ -36,11 +36,12 @@ The project is a single Gradle module `sashkomusic` — one Spring Boot applicat
 |---|---|---|
 | `com.sashkomusic` (root) | `SashkoMusicApplication` — single `@SpringBootApplication`, `@EnableAsync`, `@EnableScheduling` | Any business logic |
 | `com.sashkomusic.config` | Cross-cutting Spring config (`AsyncConfig` — `asyncExecutor` `ThreadPoolTaskExecutor`) | Domain logic, feature wiring |
-| `com.sashkomusic.events` | Spring Application Event records (one per former Kafka topic + `TrackAnalysisCompleteEvent`) | Logic — events are pure data |
+| `com.sashkomusic.events` | Spring Application Event records — **flat**: fields live on the event itself, no `XxxDto payload` envelope. Events carrying a conversation implement `shared.ConversationScoped` for `chatId()`. | Logic — events are pure data; envelope records; `*Producer` beans |
+| `com.sashkomusic.shared` | Shared kernel — types more than one package owns: `model` (`ReleaseMetadata`, `TrackMetadata`, `MetadataSearchRequest`, `SearchEngine`, `Language`, `DateRange`), `download` (`DownloadEngine`, `DownloadOption`), `task` (cross-package task payloads consumed by domain services), `ConversationScoped`. | Spring beans, logic, anything owned by exactly one package |
 | `com.sashkomusic.agents` | LLM agents (`main`, `discovery`) + deterministic agent services (`download`, `library`). Shared `contract` records + `bridge` accumulator. | Telegram I/O outside `bridge`; direct DB access |
 | `com.sashkomusic.mainagent` | Telegram bot entry, slash commands, FlowServices (search / download / library / streaming / process — orchestration only), session state, AI extractors that fit mainagent's concerns (`SearchRequestExtractor`, `DownloadBatchAnalyzer`). The `process` sub-package keeps **only** the Telegram-facing orchestration for `/process` and `/reprocess` (Flow / ContextHolder / OngoingFlow / messaging). All filesystem inspection + `.release-metadata.json` IO + folder-name LLM extraction belongs in libraryagent. | Direct DB access, file system ops |
 | `com.sashkomusic.downloadagent` | Soulseek/Bandcamp/Qobuz/Apple Music/YouTube Music download coordination, MusicSourcePort implementations | Telegram logic, user session state |
-| `com.sashkomusic.libraryagent` | File system watching, audio metadata extraction, DB persistence (Track/Release/Artist/Tag), tag-change detection, audio-analyzer REST bridge, `.release-metadata.json` read/write (Reader+Writer live together), folder-name LLM extraction (`FolderNameParser`), filesystem-based release identification (`ReleaseIdentifierService`) | Download coordination, Telegram |
+| `com.sashkomusic.libraryagent` | File system watching, audio metadata extraction, DB persistence (Track/Release/Artist/Tag), tag-change detection, audio-analyzer REST bridge, `.release-metadata.json` read/write (Reader+Writer live together), folder-name LLM extraction (`FolderNameParser`), filesystem-based release identification (`ReleaseIdentifierService`). Owns the outbound clients its domain calls: `client/` — `NavidromeClient`, `ITunesAgentClient`, `AudioAnalyzerClient` (+ their `config/`). | Download coordination, Telegram |
 | `com.sashkomusic.api` | Read-only REST API over the music DB — `TrackController`, `TrackService`, DTOs, exceptions. Reads from libraryagent repositories. | Write operations, agent logic, Telegram I/O |
 | `sm-audio-analyzer` | Python / Essentia: audio feature extraction (BPM, MFCC, danceability, loudness). HTTP in, HTTP callback out | Any Java/Spring concerns |
 
@@ -183,6 +184,16 @@ LOGICAL boundaries (enforce via code review, not the compiler):
   mainagent orchestrates flows, delegates to downloadagent and libraryagent via events
   api package reads from libraryagent repositories directly (same JVM)
   downloadagent and libraryagent do not call each other
+  downloadagent and libraryagent do not import mainagent AT ALL — currently zero imports, keep it that way
+  anything two packages need goes to com.sashkomusic.shared, never into mainagent
+```
+
+If you are about to add an `import com.sashkomusic.mainagent.…` inside `downloadagent` or
+`libraryagent`, that is the signal to move the type into `shared` instead. Verify with:
+
+```bash
+grep -rl "import com.sashkomusic.mainagent" --include=*.java \
+  sashkomusic/src/main/java/com/sashkomusic/{downloadagent,libraryagent}/   # must print nothing
 ```
 
 ## Internal Layer Rules (per package)
@@ -196,7 +207,7 @@ FlowService  →  domain Service  →  Port / Repository
 - `*FlowService` — orchestrates one user-facing workflow. Calls services + publishers. No DB access, no AI calls.
 - `*Service` (domain) — owns one domain concern. No Telegram, no messaging plumbing.
 - `*ContextHolder` — per-chat/session state for one workflow only. Singleton bean, persisted through `ChatStateStore` (one `FLOW_KEY` per holder). Survives JVM restart. Do NOT use in-process `Map<Long, T>` for any state that the user would notice after a restart.
-- `*Producer` / `*Listener` — event transport only. No business decisions.
+- `*Listener` — event transport only. No business decisions. There are no `*Producer` classes: publishers inject `ApplicationEventPublisher` and call `publishEvent(new SomeEvent(...))` directly. Do not reintroduce a bean whose only job is to log and republish.
 - `*Handler` (e.g. `DownloadFlowHandler`) — one strategy implementation. Injected via `Map<Engine, Handler>`.
 - LangChain4j agent interface (`MainAgent`, `DiscoveryAgent`) — system prompt is a `String` constant in a sibling `*Prompts` class; tools are a sibling `*Tools` Spring component; built in a `*Config` via `AiServices.builder()`.
 - Agent contracts (`AgentRequest` / `AgentResponse`) live in `agents.contract`. Sub-agents return their typed `*Result` record; transports may be swapped (in-process → A2A HTTP) without changing callers.
@@ -290,7 +301,7 @@ When adding a new flow test, mirror one of the above — do NOT introduce `@Spri
 Типові зміни що зачіпають кілька модулів — виконуй у цьому порядку, оновлюй spec до коду.
 
 ### Нове джерело завантаження (новий `DownloadEngine`)
-1. `mainagent/download/DownloadEngine.java` — додати enum value
+1. `shared/download/DownloadEngine.java` — додати enum value
 2. `downloadagent/infrastructure/client/<source>/` — новий клас що імплементує `MusicSourcePort`
 3. `downloadagent/config/MusicSourceConfig.java` — зареєструвати в map
 4. `mainagent/download/<Source>DownloadFlowHandler.java` — новий `DownloadFlowHandler`
@@ -316,10 +327,14 @@ When adding a new flow test, mirror one of the above — do NOT introduce `@Spri
 3. Якщо новий sub-agent — новий `*AgentService` + `agents/*/spec.md`
 
 ### Нова Spring подія між пакетами
-1. `events/` — новий record-клас події
+1. `events/` — новий **плаский** record-клас події (поля прямо на події, без `XxxDto payload`).
+   Якщо подія адресована чату — `implements ConversationScoped`, і `chatId()` приходить безкоштовно.
 2. Spring Event Map вище — додати рядок
-3. `@EventListener @Async` listener у пакеті-отримувачі
-4. Publisher у пакеті-відправнику через `ApplicationEventPublisher`
+3. `@EventListener @Async("asyncExecutor")` listener у пакеті-отримувачі
+4. Publisher у пакеті-відправнику: інжектити `ApplicationEventPublisher` і викликати `publishEvent(...)`
+   прямо з місця події. **Не** створювати `*Producer`-бін під це.
+5. Якщо payload споживає доменний сервіс (а не лише слухач) — винести його в `shared/task/`,
+   щоб домен не залежав від пакета-відправника.
 
 ---
 

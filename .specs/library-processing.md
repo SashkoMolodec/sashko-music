@@ -32,7 +32,7 @@ User вводить "1", "2", або "3" (або уточнення):
   └─ ProcessFolderFlowService.handleMetadataSelection(ctx, "1")
        ├─ ProcessFolderContextHolder.get(conversationId) → context
        ├─ selectedMetadata = context.searchResults[0]   // MusicBrainz result
-       ├─ ProcessLibraryTaskProducer.send(ProcessLibraryTaskDto {
+       ├─ publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(
        │      conversationId, path, releaseMetadata
        │    })
        ├─ ProcessFolderContextHolder.clear(conversationId)

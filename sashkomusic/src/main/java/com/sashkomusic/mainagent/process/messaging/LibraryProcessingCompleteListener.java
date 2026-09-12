@@ -5,7 +5,6 @@ import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.model.ProcessedFile;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
-import com.sashkomusic.libraryagent.messaging.producer.dto.LibraryProcessingCompleteDto;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.bot.TelegramChatBot;
@@ -33,39 +32,38 @@ public class LibraryProcessingCompleteListener {
     private final LastReleaseContextHolder lastReleaseContextHolder;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     @Transactional(readOnly = true)
     public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
-        LibraryProcessingCompleteDto result = event.payload();
         log.info("Received library processing result: conversationId={}, success={}, processedFiles={}",
-                result.conversationId(), result.success(), result.processedFiles().size());
+                event.conversationId(), event.success(), event.processedFiles().size());
 
-        String text = buildResultText(result);
+        String text = buildResultText(event);
 
-        if (!result.success()) {
-            chatBot.sendMessage(ConversationContext.from(result.conversationId()), text);
+        if (!event.success()) {
+            chatBot.sendMessage(ConversationContext.from(event.conversationId()), text);
             return;
         }
 
-        Optional<Release> releaseOpt = releaseRepository.findByDirectoryPath(result.directoryPath());
+        Optional<Release> releaseOpt = releaseRepository.findByDirectoryPath(event.directoryPath());
         if (releaseOpt.isPresent()) {
             Release release = releaseOpt.get();
             String artist = release.getArtists().isEmpty()
                     ? null
                     : release.getArtists().iterator().next().getName();
-            lastReleaseContextHolder.set(result.conversationId(), release.getId(), release.getTitle(), artist);
+            lastReleaseContextHolder.set(event.conversationId(), release.getId(), release.getTitle(), artist);
 
             Map<String, String> buttons = buildSublibButtons(release);
             if (buttons.isEmpty()) {
-                chatBot.sendMessage(ConversationContext.from(result.conversationId()), text);
+                chatBot.sendMessage(ConversationContext.from(event.conversationId()), text);
             } else {
                 String prompt = text + "\n\n📦 куди покласти?";
                 BotResponse response = BotResponse.withButtons(prompt, buttons);
-                chatBot.sendResponse(ConversationContext.from(result.conversationId()), response);
+                chatBot.sendResponse(ConversationContext.from(event.conversationId()), response);
             }
         } else {
-            log.warn("Could not resolve release entity for directoryPath={}", result.directoryPath());
-            chatBot.sendMessage(ConversationContext.from(result.conversationId()), text);
+            log.warn("Could not resolve release entity for directoryPath={}", event.directoryPath());
+            chatBot.sendMessage(ConversationContext.from(event.conversationId()), text);
         }
     }
 
@@ -87,13 +85,13 @@ public class LibraryProcessingCompleteListener {
         };
     }
 
-    private String buildResultText(LibraryProcessingCompleteDto result) {
-        String[] artistAndRelease = extractArtistAndRelease(result.directoryPath());
+    private String buildResultText(LibraryProcessingCompleteEvent event) {
+        String[] artistAndRelease = extractArtistAndRelease(event.directoryPath());
         String artist = artistAndRelease[0];
         String releaseFolder = artistAndRelease[1];
 
-        if (result.success()) {
-            String tracks = formatProcessedFiles(result.processedFiles());
+        if (event.success()) {
+            String tracks = formatProcessedFiles(event.processedFiles());
             return "✅ додано в лібку!\n\n📁 _%s_ → _%s_\n%s".formatted(artist, releaseFolder, tracks);
         }
         return String.format("""
@@ -102,8 +100,8 @@ public class LibraryProcessingCompleteListener {
                         %s
                         %s
                         """,
-                artist, releaseFolder, result.message(),
-                result.errors().isEmpty() ? "" : "помилки:\n" + String.join("\n", result.errors())
+                artist, releaseFolder, event.message(),
+                event.errors().isEmpty() ? "" : "помилки:\n" + String.join("\n", event.errors())
         );
     }
 

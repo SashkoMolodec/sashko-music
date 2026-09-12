@@ -1,5 +1,8 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.mainagent.library.messaging.dto.RateTrackTaskDto;
-
-public record RateTrackTaskEvent(RateTrackTaskDto payload) {}
+import com.sashkomusic.shared.ConversationScoped;
+public record RateTrackTaskEvent(
+        Long trackId,
+        int rating,
+        String conversationId
+) implements ConversationScoped {}

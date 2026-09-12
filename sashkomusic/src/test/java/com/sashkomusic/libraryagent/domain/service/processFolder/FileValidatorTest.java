@@ -1,10 +1,10 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.domain.model.ValidationResult;
-import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
-import com.sashkomusic.mainagent.shared.model.TrackMetadata;
+import com.sashkomusic.shared.task.ProcessLibraryTask;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.TrackMetadata;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -57,7 +57,7 @@ class FileValidatorTest {
     void validate_checksAudioFileCountAgainstExpectedTrackCount(int fileCount, int trackCount, boolean expectedValid,
                                                                   @TempDir Path tempDir) throws IOException {
         List<String> files = createAudioFiles(tempDir, fileCount);
-        var task = new ProcessLibraryTaskDto("1:conv", tempDir.toString(), files, metadataWithTracks(trackCount));
+        var task = new ProcessLibraryTask("1:conv", tempDir.toString(), files, metadataWithTracks(trackCount));
 
         ValidationResult result = validator.validate(task);
 
@@ -70,7 +70,7 @@ class FileValidatorTest {
     @Test
     void validate_exceedsCount_usesMinTracksFallback_whenNoTrackListProvided(@TempDir Path tempDir) throws IOException {
         List<String> files = createAudioFiles(tempDir, 4);
-        var task = new ProcessLibraryTaskDto("1:conv", tempDir.toString(), files, metadataWithoutTrackList(3));
+        var task = new ProcessLibraryTask("1:conv", tempDir.toString(), files, metadataWithoutTrackList(3));
 
         ValidationResult result = validator.validate(task);
 
@@ -81,7 +81,7 @@ class FileValidatorTest {
     @Test
     void validate_passes_whenNoExpectedTrackCountIsKnown(@TempDir Path tempDir) throws IOException {
         List<String> files = createAudioFiles(tempDir, 5);
-        var task = new ProcessLibraryTaskDto("1:conv", tempDir.toString(), files, metadataWithoutTrackList(0));
+        var task = new ProcessLibraryTask("1:conv", tempDir.toString(), files, metadataWithoutTrackList(0));
 
         ValidationResult result = validator.validate(task);
 
@@ -90,7 +90,7 @@ class FileValidatorTest {
 
     @Test
     void validate_fails_whenNoAudioFilesFound(@TempDir Path tempDir) {
-        var task = new ProcessLibraryTaskDto("1:conv", tempDir.toString(), List.of(), metadataWithTracks(3));
+        var task = new ProcessLibraryTask("1:conv", tempDir.toString(), List.of(), metadataWithTracks(3));
 
         ValidationResult result = validator.validate(task);
 
@@ -101,7 +101,7 @@ class FileValidatorTest {
     @Test
     void validate_fails_whenMetadataMissing(@TempDir Path tempDir) throws IOException {
         List<String> files = createAudioFiles(tempDir, 3);
-        var task = new ProcessLibraryTaskDto("1:conv", tempDir.toString(), files, null);
+        var task = new ProcessLibraryTask("1:conv", tempDir.toString(), files, null);
 
         ValidationResult result = validator.validate(task);
 
@@ -111,7 +111,7 @@ class FileValidatorTest {
 
     @Test
     void validate_fails_whenDirectoryDoesNotExist() {
-        var task = new ProcessLibraryTaskDto("1:conv", "/nonexistent/path/xyz", List.of("a.mp3"), metadataWithTracks(3));
+        var task = new ProcessLibraryTask("1:conv", "/nonexistent/path/xyz", List.of("a.mp3"), metadataWithTracks(3));
 
         ValidationResult result = validator.validate(task);
 

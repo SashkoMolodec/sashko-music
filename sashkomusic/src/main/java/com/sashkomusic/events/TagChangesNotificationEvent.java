@@ -1,5 +1,5 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.libraryagent.messaging.producer.dto.TagChangesNotificationDto;
+import com.sashkomusic.shared.task.TagChangesNotification;
 
-public record TagChangesNotificationEvent(TagChangesNotificationDto payload) {}
+public record TagChangesNotificationEvent(TagChangesNotification payload) {}

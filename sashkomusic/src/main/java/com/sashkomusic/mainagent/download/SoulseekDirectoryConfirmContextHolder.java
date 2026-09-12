@@ -1,5 +1,6 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadOption;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import lombok.RequiredArgsConstructor;

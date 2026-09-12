@@ -1,7 +1,7 @@
 package com.sashkomusic.agents.contract;
 
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 
 import java.util.List;
 

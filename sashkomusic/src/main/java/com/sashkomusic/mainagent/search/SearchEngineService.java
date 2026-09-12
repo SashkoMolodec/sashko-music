@@ -1,10 +1,10 @@
 package com.sashkomusic.mainagent.search;
 
-import com.sashkomusic.mainagent.shared.model.MetadataSearchRequest;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.MetadataSearchRequest;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
-import com.sashkomusic.mainagent.search.SearchEngine;
-import com.sashkomusic.mainagent.shared.model.TrackMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.shared.model.TrackMetadata;
 
 import java.util.List;
 

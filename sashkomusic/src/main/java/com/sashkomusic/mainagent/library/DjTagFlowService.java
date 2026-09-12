@@ -1,16 +1,13 @@
 package com.sashkomusic.mainagent.library;
 
+import org.springframework.context.ApplicationEventPublisher;
+import com.sashkomusic.events.AddCommentTaskEvent;
+import com.sashkomusic.events.SetFunctionTaskEvent;
+import com.sashkomusic.events.SetEnergyTaskEvent;
+import com.sashkomusic.events.ReplaceCommentTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.api.dto.TrackDto;
-import com.sashkomusic.mainagent.library.messaging.AddCommentTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.ReplaceCommentTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.SetEnergyTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.SetFunctionTaskProducer;
-import com.sashkomusic.mainagent.library.messaging.dto.AddCommentTaskDto;
-import com.sashkomusic.mainagent.library.messaging.dto.ReplaceCommentTaskDto;
-import com.sashkomusic.mainagent.library.messaging.dto.SetEnergyTaskDto;
-import com.sashkomusic.mainagent.library.messaging.dto.SetFunctionTaskDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,10 +21,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DjTagFlowService {
 
-    private final SetEnergyTaskProducer setEnergyTaskProducer;
-    private final SetFunctionTaskProducer setFunctionTaskProducer;
-    private final AddCommentTaskProducer addCommentTaskProducer;
-    private final ReplaceCommentTaskProducer replaceCommentTaskProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final DjTagContextHolder djTagContextHolder;
 
     public boolean isWaitingForComment(ConversationContext ctx) {
@@ -51,7 +45,7 @@ public class DjTagFlowService {
         }
 
         djTagContextHolder.deactivateCommentMode(ctx.conversationId());
-        replaceCommentTaskProducer.send(new ReplaceCommentTaskDto(tagCtx.trackId(), commentText, ctx.conversationId()));
+        eventPublisher.publishEvent(new ReplaceCommentTaskEvent(tagCtx.trackId(), commentText, ctx.conversationId()));
         return List.of(BotResponse.text("🗿 крутий"));
     }
 
@@ -188,22 +182,19 @@ public class DjTagFlowService {
 
     public List<BotResponse> setDjEnergy(ConversationContext ctx, Long trackId, String energyLevel) {
         log.info("Setting DJ energy {} for track {} from conversationId={}", energyLevel, trackId, ctx.conversationId());
-        SetEnergyTaskDto task = new SetEnergyTaskDto(trackId, energyLevel, ctx.conversationId());
-        setEnergyTaskProducer.send(task);
+        eventPublisher.publishEvent(new SetEnergyTaskEvent(trackId, energyLevel, ctx.conversationId()));
         return Collections.emptyList();
     }
 
     public List<BotResponse> setDjFunction(ConversationContext ctx, Long trackId, String functionType) {
         log.info("Setting DJ function {} for track {} from conversationId={}", functionType, trackId, ctx.conversationId());
-        SetFunctionTaskDto task = new SetFunctionTaskDto(trackId, functionType, ctx.conversationId());
-        setFunctionTaskProducer.send(task);
+        eventPublisher.publishEvent(new SetFunctionTaskEvent(trackId, functionType, ctx.conversationId()));
         return List.of(BotResponse.text("⏳ маркуємо як " + functionType + "..."));
     }
 
     public List<BotResponse> addComment(ConversationContext ctx, Long trackId, String comment) {
         log.info("Adding comment for track {} from conversationId={}: {}", trackId, ctx.conversationId(), comment);
-        AddCommentTaskDto task = new AddCommentTaskDto(trackId, comment, ctx.conversationId());
-        addCommentTaskProducer.send(task);
+        eventPublisher.publishEvent(new AddCommentTaskEvent(trackId, comment, ctx.conversationId()));
         return List.of(BotResponse.text("🗿 крутий"));
     }
 }

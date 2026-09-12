@@ -1,8 +1,8 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.TrackMatch;
-import com.sashkomusic.mainagent.shared.model.TrackMetadata;
+import com.sashkomusic.shared.model.TrackMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.jaudiotagger.audio.AudioFile;
 import org.jaudiotagger.audio.AudioFileIO;

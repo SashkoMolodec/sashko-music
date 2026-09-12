@@ -19,7 +19,7 @@ public class MoveReleaseCompleteListener {
     private final LastReleaseContextHolder lastReleaseContextHolder;
 
     @EventListener
-    @Async
+    @Async("asyncExecutor")
     public void handle(MoveReleaseCompleteEvent event) {
         log.info("Received move release result: conversationId={}, success={}, releaseId={}, target={}",
                 event.conversationId(), event.success(), event.releaseId(), event.targetSublibrary());

@@ -1,5 +1,11 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.libraryagent.messaging.producer.dto.ReprocessReleaseResultDto;
-
-public record ReprocessReleaseCompleteEvent(ReprocessReleaseResultDto payload) {}
+import com.sashkomusic.shared.ConversationScoped;
+public record ReprocessReleaseCompleteEvent(
+        String conversationId,
+        String directoryPath,
+        boolean success,
+        String message,
+        int filesProcessed,
+        int errors
+) implements ConversationScoped {}

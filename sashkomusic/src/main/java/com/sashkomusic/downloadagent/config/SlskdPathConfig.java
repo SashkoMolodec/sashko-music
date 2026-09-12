@@ -19,7 +19,7 @@ public class SlskdPathConfig {
         }
 
         if (containerFilePath.startsWith(containerPath)) {
-            return containerFilePath.replace(containerPath, localPath);
+            return localPath + containerFilePath.substring(containerPath.length());
         }
 
         return containerFilePath;

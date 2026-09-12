@@ -2,9 +2,9 @@ package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.model.*;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.service.ReleaseService;
-import com.sashkomusic.mainagent.process.messaging.dto.ProcessLibraryTaskDto;
+import com.sashkomusic.shared.task.ProcessLibraryTask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +35,7 @@ public class LibraryProcessingService {
     private final LibraryConfig libraryConfig;
     private final ReleaseMetadataWriter metadataWriter;
 
-    public ProcessingResult processLibrary(ProcessLibraryTaskDto task) {
+    public ProcessingResult processLibrary(ProcessLibraryTask task) {
         log.info("Starting library processing for chatId={}, directory={}",
                 task.chatId(), task.directoryPath());
 
@@ -54,7 +54,7 @@ public class LibraryProcessingService {
         return processFiles(task, metadata, coverArt);
     }
 
-    private ProcessingResult processFiles(ProcessLibraryTaskDto task, ReleaseMetadata metadata, byte[] coverArt) {
+    private ProcessingResult processFiles(ProcessLibraryTask task, ReleaseMetadata metadata, byte[] coverArt) {
         List<String> errors = new ArrayList<>();
 
         List<Path> audioFiles = collectAudioFiles(task.downloadedFiles());
@@ -180,7 +180,7 @@ public class LibraryProcessingService {
     }
 
     private OrganizationContext organizeIntoLibrary(List<ProcessedFile> processedFiles, ReleaseMetadata metadata,
-                                                    ProcessLibraryTaskDto task, byte[] coverArt, List<String> errors) {
+                                                    ProcessLibraryTask task, byte[] coverArt, List<String> errors) {
         String directoryPath = task.directoryPath();
         String coverPath = null;
         List<FileOrganizer.OrganizedFile> organizedFiles;

@@ -1,20 +1,19 @@
 package com.sashkomusic.mainagent.download;
 
+import com.sashkomusic.shared.download.DownloadEngine;
 import com.sashkomusic.events.FilesSearchTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.CallbackDispatcher;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.download.messaging.DownloadTaskProducer;
-import com.sashkomusic.mainagent.download.messaging.SearchFilesTaskProducer;
 import com.sashkomusic.mainagent.library.DjTagFlowService;
 import com.sashkomusic.mainagent.library.NowPlayingFlowService;
 import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.bot.state.InMemoryChatStateStore;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.search.SearchEngine;
+import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
-import com.sashkomusic.mainagent.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.mainagent.streaming.StreamingFlowService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +37,6 @@ import static org.mockito.Mockito.when;
 @SpringJUnitConfig
 @RecordApplicationEvents
 @Import({CallbackDispatcher.class, MusicDownloadFlowService.class,
-        SearchFilesTaskProducer.class, DownloadTaskProducer.class,
         SearchContextService.class, DownloadContextHolder.class,
         SoulseekDirectoryConfirmContextHolder.class, DownloadTopicResolver.class,
         DownloadFlowIntegrationTest.TestConfig.class})

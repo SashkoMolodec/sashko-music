@@ -1,5 +1,8 @@
 package com.sashkomusic.events;
 
-import com.sashkomusic.libraryagent.messaging.consumer.dto.TrackAnalysisCompleteDto;
-
-public record TrackAnalysisCompleteEvent(TrackAnalysisCompleteDto payload) {}
+public record TrackAnalysisCompleteEvent(
+        Long trackId,
+        String jsonResultPath,
+        boolean success,
+        String errorMessage
+) {}

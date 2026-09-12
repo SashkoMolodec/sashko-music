@@ -1,11 +1,10 @@
 package com.sashkomusic.downloadagent.domain;
 
-import com.sashkomusic.downloadagent.messaging.producer.DownloadBatchCompleteProducer;
-import com.sashkomusic.downloadagent.messaging.producer.DownloadErrorProducer;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadBatchCompleteDto;
-import com.sashkomusic.downloadagent.messaging.producer.dto.DownloadErrorDto;
+import com.sashkomusic.events.DownloadBatchCompleteEvent;
+import com.sashkomusic.events.DownloadErrorEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -38,8 +37,7 @@ public class DownloadMonitorService {
     private static final Duration NO_FILES_TIMEOUT = Duration.ofMinutes(2);
     private static final Duration STALL_TIMEOUT = Duration.ofMinutes(5);
 
-    private final DownloadBatchCompleteProducer batchCompleteProducer;
-    private final DownloadErrorProducer errorProducer;
+    private final ApplicationEventPublisher eventPublisher;
     private final ActiveDownloadRegistry downloadRegistry;
     private final Map<String, DownloadMonitorTask> activeTasks = new ConcurrentHashMap<>();
 
@@ -99,10 +97,8 @@ public class DownloadMonitorService {
                     if (task.isFolderCreationTimedOut()) {
                         log.warn("Folder creation timed out after 6h: taskId={}, artist={}, title={}",
                                 taskId, artist, title);
-                        errorProducer.sendError(DownloadErrorDto.of(
-                                task.conversationId(),
-                                "не вдалося знайти папку завантаження за 6 годин: «" + artist + " — " + title + "»"
-                        ));
+                        publishError(task.conversationId(),
+                                "не вдалося знайти папку завантаження за 6 годин: «" + artist + " — " + title + "»");
                         return true;
                     }
                     log.info("Album folder not yet created for: {} - {}", artist, title);
@@ -117,10 +113,8 @@ public class DownloadMonitorService {
                 if (currentCount == 0 && task.isTimedOut()) {
                     log.warn("Download timed out with 0 audio files: taskId={}, artist={}, title={}",
                             taskId, artist, title);
-                    errorProducer.sendError(DownloadErrorDto.of(
-                            task.conversationId(),
-                            "не вдалося завантажити «" + artist + " — " + title + "»: жоден трек не доступний"
-                    ));
+                    publishError(task.conversationId(),
+                            "не вдалося завантажити «" + artist + " — " + title + "»: жоден трек не доступний");
                     return true;
                 }
 
@@ -128,10 +122,8 @@ public class DownloadMonitorService {
                 if (task.isStalled(currentCount)) {
                     log.warn("Download stalled (no new files for 5min): taskId={}, count={}", taskId, currentCount);
                     downloadRegistry.cancel(task.releaseId());
-                    errorProducer.sendError(DownloadErrorDto.of(
-                            task.conversationId(),
-                            "скачування зависло без прогресу > 5 хв, скасовую: «" + artist + " — " + title + "»"
-                    ));
+                    publishError(task.conversationId(),
+                            "скачування зависло без прогресу > 5 хв, скасовую: «" + artist + " — " + title + "»");
                     return true;
                 }
 
@@ -145,14 +137,12 @@ public class DownloadMonitorService {
                 // Check if files are stable (not changing for 6 seconds)
                 if (task.isStable(currentCount)) {
                     log.info("Download complete (stable): taskId={}, files={}", taskId, currentCount);
-                    batchCompleteProducer.sendBatchComplete(
-                            DownloadBatchCompleteDto.of(
-                                    task.conversationId(),
-                                    task.releaseId(),
-                                    downloadDir.toString(),
-                                    audioFiles
-                            )
-                    );
+                    eventPublisher.publishEvent(new DownloadBatchCompleteEvent(
+                            task.conversationId(),
+                            task.releaseId(),
+                            downloadDir.toString(),
+                            audioFiles
+                    ));
 
                     return true; // Remove from active tasks
                 }
@@ -163,6 +153,10 @@ public class DownloadMonitorService {
 
             return false; // Keep monitoring
         });
+    }
+
+    private void publishError(String conversationId, String message) {
+        eventPublisher.publishEvent(new DownloadErrorEvent(conversationId, message));
     }
 
     private List<String> findAudioFiles(Path directory) throws IOException {
