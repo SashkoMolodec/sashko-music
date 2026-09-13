@@ -22,6 +22,10 @@ import lombok.RequiredArgsConstructor;
 public class TrackMatcher {
 
     public Map<String, TrackMatch> match(List<Path> audioFiles, ReleaseMetadata metadata) {
+        return dedupeTitles(matchInternal(audioFiles, metadata));
+    }
+
+    private Map<String, TrackMatch> matchInternal(List<Path> audioFiles, ReleaseMetadata metadata) {
         log.info("Starting matching process for {} files", audioFiles.size());
 
         List<Path> sortedFiles = audioFiles.stream()
@@ -51,6 +55,35 @@ public class TrackMatcher {
         }
 
         return matches;
+    }
+
+    /**
+     * Appends a " N" suffix to any track title that collides with another track's title on the
+     * same release (e.g. an untagged vinyl rip where the source metadata literally has three
+     * tracks named "Untitled"). Without this, Navidrome shows indistinguishable tracks, and
+     * NowPlayingFlowService.findByArtistAndTitle() can't tell them apart either — it always
+     * resolves to whichever same-titled row the DB query happens to return first, so /np's rating
+     * panel silently applies to the wrong track regardless of which one is actually playing.
+     */
+    private Map<String, TrackMatch> dedupeTitles(Map<String, TrackMatch> matches) {
+        Map<String, Long> titleCounts = matches.values().stream()
+                .collect(Collectors.groupingBy(m -> normalizeTitle(m.trackTitle()), Collectors.counting()));
+
+        Map<String, TrackMatch> result = new HashMap<>();
+        matches.forEach((path, match) -> {
+            String normalized = normalizeTitle(match.trackTitle());
+            if (titleCounts.getOrDefault(normalized, 0L) > 1) {
+                result.put(path, new TrackMatch(match.trackNumber(), match.artist(),
+                        match.trackTitle() + " " + match.trackNumber()));
+            } else {
+                result.put(path, match);
+            }
+        });
+        return result;
+    }
+
+    private String normalizeTitle(String title) {
+        return title == null ? "" : title.trim().toLowerCase();
     }
 
     private boolean hasDuplicateTrackNumbers(List<Path> files, Map<String, TrackMatch> existingMatches,
