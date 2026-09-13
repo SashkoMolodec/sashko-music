@@ -138,7 +138,10 @@ public class ReleaseService {
             }
         }
 
-        Release savedRelease = releaseRepository.save(release);
+        // saveAndFlush, not save: indexRelease reads release_artists / release_tags over raw JDBC,
+        // which does not trigger a Hibernate auto-flush. Without the flush those join-table rows are
+        // still pending and the release gets indexed without its artist or genre tags.
+        Release savedRelease = releaseRepository.saveAndFlush(release);
         log.info("Successfully saved release with ID: {}", savedRelease.getId());
 
         librarySearchService.indexRelease(savedRelease.getId());
