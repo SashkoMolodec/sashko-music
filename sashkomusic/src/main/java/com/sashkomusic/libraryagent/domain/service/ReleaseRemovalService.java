@@ -53,6 +53,11 @@ public class ReleaseRemovalService {
                 .filter(Objects::nonNull)
                 .toList();
 
+        if (appleMusicDbids.isEmpty() && !release.getTracks().isEmpty()) {
+            log.warn("Removing release id={} title='{}' — none of its {} track(s) have an Apple Music dbid, skipping iTunes agent removal",
+                    releaseId, title, release.getTracks().size());
+        }
+
         log.info("Removing release id={} title='{}' dir='{}'", releaseId, title, directoryPath);
 
         MoveResult move = moveToTrash(directoryPath);

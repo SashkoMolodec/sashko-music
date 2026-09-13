@@ -20,6 +20,13 @@ public class AsyncConfig {
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("async-");
         executor.setTaskDecorator(mdcPropagatingDecorator());
+        // Without this, a redeploy's shutdown hook tears the pool down immediately, killing any
+        // in-flight @Async listener mid-run — e.g. the Apple Music sync pipeline can finish the
+        // external sync but never get to persist Track.appleMusicDbid, permanently orphaning that
+        // release from later removal-sync. 55s leaves headroom under docker-compose's 60s
+        // stop_grace_period for this service before SIGKILL.
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(55);
         executor.initialize();
         return executor;
     }

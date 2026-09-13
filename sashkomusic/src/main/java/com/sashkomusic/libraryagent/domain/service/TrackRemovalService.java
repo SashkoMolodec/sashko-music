@@ -81,6 +81,8 @@ public class TrackRemovalService {
             }
             if (track.getAppleMusicDbid() != null) {
                 iTunesAgentClient.removeTrack(track.getAppleMusicDbid());
+            } else {
+                log.warn("Track id={} '{}' has no Apple Music dbid — skipping iTunes agent removal", track.getId(), track.getTitle());
             }
             trackRepository.delete(track);
             log.info("Removed track id={} '{}' from release {}", track.getId(), track.getTitle(), releaseId);

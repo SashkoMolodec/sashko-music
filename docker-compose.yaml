@@ -108,6 +108,10 @@ services:
     extra_hosts:
       - "host.containers.internal:host-gateway"
     restart: unless-stopped
+    # Default 10s grace is shorter than AsyncConfig's shutdown wait below — a redeploy could
+    # SIGKILL mid-sync (e.g. the Apple Music dbid pipeline) before Spring's own graceful drain
+    # finishes, silently dropping an in-flight async task on every restart.
+    stop_grace_period: 60s
 
   sm-scraper:
     build:
