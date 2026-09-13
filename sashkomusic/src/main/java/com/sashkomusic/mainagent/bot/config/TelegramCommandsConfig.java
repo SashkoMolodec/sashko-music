@@ -26,6 +26,8 @@ public class TelegramCommandsConfig {
             List<BotCommand> commands = List.of(
                     new BotCommand("np", "шо наразі грає"),
                     new BotCommand("npalbum", "інфо про поточний альбом"),
+                    new BotCommand("process", "обробити нові папки в бібліотеці"),
+                    new BotCommand("reprocess", "переобробити реліз"),
                     new BotCommand("markers", "список міток"),
                     new BotCommand("smartlists", "список смартлистів"),
                     new BotCommand("library", "команда для бібліотеки (вкажи запит)"),
