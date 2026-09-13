@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -88,7 +91,16 @@ public class SmartlistLabelFlowService {
         if (lctx == null) {
             return List.of(BotResponse.text("контекст не знайдено — тисни 🏷 знову."));
         }
-        List<Marker> all = markerRepository.findAllById(lctx.markerIds());
+        // findAllById does not preserve input order, so re-fetching directly would render this
+        // page's tag list out of sync with the order captured in markerIds() — button "N" would
+        // apply whatever marker sits at index N-1 in markerIds(), not the one displayed as "N."
+        // here. Re-map into markerIds()'s original order so displayed index == selection index.
+        Map<Long, Marker> byId = markerRepository.findAllById(lctx.markerIds()).stream()
+                .collect(Collectors.toMap(Marker::getId, m -> m));
+        List<Marker> all = lctx.markerIds().stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .toList();
         holder.set(ctx.conversationId(), new LabelContext(lctx.mode(), lctx.targetId(), lctx.markerIds(), page));
         return buildPage(all, page);
     }
