@@ -28,7 +28,7 @@ cd sm-audio-analyzer && pip install -r requirements.txt && python src/main.py
 
 The project is a single Gradle module `sashkomusic` — one Spring Boot application. The Python `sm-audio-analyzer` is built/deployed via Docker and communicates via REST.
 
-**Key dependencies:** LangChain4j 1.8.0-beta15 (Anthropic), Resilience4j, WireMock (test), Flyway, JAudioTagger, spring-boot-starter-webflux.
+**Key dependencies:** LangChain4j 1.10.0-beta18 (Anthropic), Resilience4j, WireMock (test), Flyway, JAudioTagger, spring-boot-starter-webflux.
 
 ## Module Map
 

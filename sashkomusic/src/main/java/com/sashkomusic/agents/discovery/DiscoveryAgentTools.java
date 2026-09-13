@@ -1,14 +1,11 @@
 package com.sashkomusic.agents.discovery;
 
-import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
-import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzClient;
 import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzSimilarArtistsResponse;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.mainagent.search.SearchEngineService;
-import com.sashkomusic.mainagent.search.WebSearchService;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.MetadataSearchRequest;
 import com.sashkomusic.shared.model.ReleaseMetadata;
@@ -37,8 +34,6 @@ public class DiscoveryAgentTools {
     private final Map<SearchEngine, SearchEngineService> engines;
     private final SearchContextService searchContextService;
     private final SearchRequestExtractor searchRequestExtractor;
-    private final WebSearchService webSearchService;
-    private final ChatResponseAccumulator accumulator;
     private final MusicBrainzClient musicBrainzClient;
     private final ListenBrainzClient listenBrainzClient;
 
@@ -205,22 +200,10 @@ public class DiscoveryAgentTools {
         }
     }
 
-    @Tool("""
-            Search the web for artist biography, discography, label history, or any factual music info.
-            Use for: "розкажи про X", "хто такий X", "що за лейбл Y", "коли заснований Z", "дискографія X",
-            "який жанр у X", "що відомо про реліз Y", or any research/info question that catalog search can't answer.
-            Do NOT use for finding releases to download — use search() for that.
-            """)
-    public String webSearch(
-            @P("search query, e.g. 'Miles Davis biography', 'Warp Records history', 'Burial discography'") String query,
-            @ToolMemoryId String conversationId) {
-        String mainId = conversationId.endsWith(":d")
-                ? conversationId.substring(0, conversationId.length() - 2)
-                : conversationId;
-        accumulator.push(mainId, BotResponse.text("🌐 виходимо у світ божий…"));
-        log.info("Web search: query='{}'", query);
-        return webSearchService.search(query);
-    }
+    // Research/factual questions ("розкажи про X", "хто такий X", "що за лейбл Y") are no longer a
+    // local @Tool — DiscoveryAgent's model bean (discoveryChatModel, see AgentModelsConfig) carries
+    // Anthropic's server-side web_search tool, which the model calls directly with results returned
+    // in the same API response. No client-side execution, no jsoup/DuckDuckGo scraping needed.
 
     private MetadataSearchRequest extractRequest(String query) {
         try {

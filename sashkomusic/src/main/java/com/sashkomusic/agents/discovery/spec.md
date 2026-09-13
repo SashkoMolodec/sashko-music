@@ -35,11 +35,14 @@ public interface DiscoveryAgent {
 | Параметр      | Значення |
 |---------------|----------|
 | Модель        | `claude-haiku-4-5-20251001` (override: `agents.discovery.model-name`) |
+| ChatModel bean| `discoveryChatModel` (`AgentModelsConfig`) — **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool |
 | maxTokens     | 1024 |
 | Memory window | 16 messages |
 | Memory store  | `PostgresChatMemoryStore`, ключ: `conversationId + ":d"` |
 
 Memory **не очищається** між викликами `handle()` — тому `digDeeper` може читати попередній контекст пошуку (engine + results) з `:d` history.
+
+**Web search — server-side, не local `@Tool`:** `discoveryChatModel` будується з `.serverTools(List.of(AnthropicServerTool.builder().type("web_search_20250305").name("web_search")...build()))`. Модель викликає `web_search` напряму на інфраструктурі Anthropic — результат приходить у **тій самій** відповіді API (`web_search_tool_result` content block), без жодного client-side виконання. Замінює колишній local `@Tool webSearch()` + `WebSearchService` (jsoup-скрапінг `html.duckduckgo.com`, крихкий: капчі, відсутність URL у відповіді). Верифіковано живим викликом до `claude-haiku-4-5-20251001` перед вмиканням.
 
 ---
 
@@ -64,12 +67,14 @@ Inside MusicBrainz itself, a BROWSE-shaped request additionally tries `/release-
 5. `searchContextService.saveSearchContext(conversationId, MUSICBRAINZ, "схоже на <seed>", null, combined)` — same context slot `search()` uses, so card-building/pagination/DL work identically on the result.
 Tригер: "хочу схоже", "порадь щось подібне", "similar to X", "recommend something like this". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via ListenBrainz, not what the user already owns.
 
-### `webSearch(query, conversationId)`
-Research tool for artist bio, discography, label history, and factual music questions.
-1. Pushes `BotResponse.text("🌐 виходимо у світ божий…")` into `ChatResponseAccumulator` under the **main** conversationId (strips `:d` suffix).
-2. Calls `WebSearchService.search(query)` → jsoup POST to `https://html.duckduckgo.com/html/`, parses `.result__snippet` + `a.result__a` elements, returns top-4 results as text, each with its **real source URL** in `[brackets]` — DDG's HTML endpoint wraps links in a `/l/?uddg=<encoded>` redirect; `resolveRealUrl()` decodes it back. Previously the href was discarded entirely, so results had no verifiable source.
-3. LangChain4j agent synthesizes into 3-5 Ukrainian sentences, optionally citing the single best source URL.
-Тригер: "розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X", будь-яке дослідницьке питання.
+### Web search — no longer a local tool
+Research questions ("розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X") are handled by
+Anthropic's server-side `web_search` tool attached to `discoveryChatModel` (see above), not a
+`DiscoveryAgentTools` method. `DiscoveryAgentPrompts.SYSTEM` tells the model it has this capability
+and to use it for any factual/research question instead of answering from memory. There is no
+`ChatResponseAccumulator` push for this anymore (was `"🌐 виходимо у світ божий…"`) — the search runs
+inside the same API call, so there's no client-side moment to hook a progress message into;
+`MainAgentTools.discoverMusic()`'s generic `"🔍 шукаю..."` progress ping still covers this case.
 
 ### `digDeeper(conversationId)`
 Читає попередній `rawInput` і `source` з `:d` контексту, переходить до наступного движку по колу (`(ordinal + 1) % values.length`).
@@ -102,7 +107,7 @@ Research tool for artist bio, discography, label history, and factual music ques
 - Для TRACKLIST-запитів: **завжди** викликати `getTrackList` — ніколи не відповідати з пам'яті.
 - Для "ще копай"/"dig deeper": викликати `digDeeper`, не `search`.
 - Для "хочу схоже"/similarity-запитів: **завжди** викликати `findSimilar`, ніколи не вигадувати артистів самому.
-- Для дослідницьких питань (bio, discography, label info): **завжди** викликати `webSearch`.
+- Для дослідницьких питань (bio, discography, label info): використати вбудований web search, не відповідати з пам'яті.
 - Якщо `getTrackList` повернув треки — вивести **повний** пронумерований список дослівно.
 
 ---

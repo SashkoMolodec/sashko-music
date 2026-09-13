@@ -12,11 +12,11 @@ public class DiscoveryAgentConfig {
 
     @Bean
     public DiscoveryAgent discoveryAgent(
-            @Qualifier("haikuChatModel") ChatModel haikuChatModel,
+            @Qualifier("discoveryChatModel") ChatModel discoveryChatModel,
             @Qualifier("discoveryMemoryProvider") ChatMemoryProvider memoryProvider,
             DiscoveryAgentTools tools) {
         return AiServices.builder(DiscoveryAgent.class)
-                .chatModel(haikuChatModel)
+                .chatModel(discoveryChatModel)
                 .chatMemoryProvider(memoryProvider)
                 .tools(tools)
                 .build();
