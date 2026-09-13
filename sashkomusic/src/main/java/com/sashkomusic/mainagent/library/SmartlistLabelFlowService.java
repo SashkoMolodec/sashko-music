@@ -60,7 +60,7 @@ public class SmartlistLabelFlowService {
 
         List<Long> ids = all.stream().map(Marker::getId).toList();
         holder.set(ctx.conversationId(), new LabelContext(mode, targetId, ids, 0));
-        return buildPage(all, 0);
+        return buildPage(all, 0, null);
     }
 
     public boolean isSelecting(ConversationContext ctx) {
@@ -86,7 +86,7 @@ public class SmartlistLabelFlowService {
         return select(ctx, number - 1);
     }
 
-    public List<BotResponse> goToPage(ConversationContext ctx, int page) {
+    public List<BotResponse> goToPage(ConversationContext ctx, int page, Integer messageId) {
         LabelContext lctx = holder.get(ctx.conversationId()).orElse(null);
         if (lctx == null) {
             return List.of(BotResponse.text("контекст не знайдено — тисни 🏷 знову."));
@@ -102,7 +102,7 @@ public class SmartlistLabelFlowService {
                 .filter(Objects::nonNull)
                 .toList();
         holder.set(ctx.conversationId(), new LabelContext(lctx.mode(), lctx.targetId(), lctx.markerIds(), page));
-        return buildPage(all, page);
+        return buildPage(all, page, messageId);
     }
 
     @Transactional
@@ -138,7 +138,7 @@ public class SmartlistLabelFlowService {
         }
     }
 
-    private List<BotResponse> buildPage(List<Marker> all, int page) {
+    private List<BotResponse> buildPage(List<Marker> all, int page, Integer messageId) {
         int from = page * PAGE_SIZE;
         int to = Math.min(from + PAGE_SIZE, all.size());
         List<Marker> pageItems = all.subList(from, to);
@@ -165,6 +165,9 @@ public class SmartlistLabelFlowService {
 
         rows.add(List.of(BotResponse.ButtonDto.callback("❌", "LBL_CANCEL")));
 
-        return List.of(BotResponse.withMultiRowButtons(sb.toString().stripTrailing(), rows));
+        String text = sb.toString().stripTrailing();
+        return List.of(messageId != null
+                ? BotResponse.editCard(messageId, text, null, rows)
+                : BotResponse.withMultiRowButtons(text, rows));
     }
 }
