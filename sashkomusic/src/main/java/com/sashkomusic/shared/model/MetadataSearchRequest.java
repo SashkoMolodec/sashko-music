@@ -49,6 +49,17 @@ public record MetadataSearchRequest(
         );
     }
 
+    /**
+     * True when the caller has no specific release/recording title to look up — only
+     * style/year/label-type filters ("trance 1994", "German techno 90s"). Used to route
+     * to browse-friendly search strategies (MusicBrainz release-group, Discogs structured
+     * genre/style/year params) instead of title-lookup ones.
+     */
+    public boolean isBrowseQuery() {
+        return release.isEmpty() && recording.isEmpty()
+                && (!style.isEmpty() || (dateRange != null && !dateRange.isEmpty()));
+    }
+
     public String getTitle() {
         if (!release.isEmpty()) {
             return release;

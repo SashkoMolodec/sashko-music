@@ -45,18 +45,31 @@ Memory **не очищається** між викликами `handle()` — т
 
 ## Tools (`DiscoveryAgentTools`)
 
+### `search(query, conversationId)`
+1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest` — extracted **once** per call, reused across every engine in the fallback chain (not re-extracted per engine).
+2. Engine order depends on `request.isBrowseQuery()` (no `release`/`recording`, but `style` and/or `dateRange` present — e.g. "trance 1994"):
+   - **BROWSE** → Discogs → MusicBrainz → Bandcamp. Discogs carries per-release label data that MusicBrainz `/release-group` doesn't (label is a `/release`-level MB field, not `/release-group`).
+   - **LOOKUP** (has artist/release/recording) → MusicBrainz → Discogs → Bandcamp (unchanged default order).
+3. `searchContextService.saveSearchContext(conversationId, engine, query, request, releases)`
+4. Return: `"found N releases on engine"` (checked via `startsWith("found ")`, not `startsWith("no results")` — engine-not-configured and no-results messages must NOT count as success) or `"not found on any source"`.
+
+Inside MusicBrainz itself, a BROWSE-shaped request additionally tries `/release-group` (one row per album concept, dedup'd across pressings) before falling back to `/release` — see `mainagent/search/spec.md`.
+
+### `findSimilar(seedQuery, conversationId)`
+"Find something like X" — real similarity, never invented from the LLM's own knowledge:
+1. Seed resolution: if `seedQuery` blank → use the release currently in view (same `currentPage` lookup as `getTrackList`); else `seedQuery` is treated as an artist name directly (no re-parsing).
+2. `MusicBrainzClient.findArtistMbid(seedArtist)` → MBID. Empty → ask for a clearer artist name.
+3. `ListenBrainzClient.findSimilarArtists(mbid)` (labs.api.listenbrainz.org, free, no key, CC0) → top artists by co-listen score, capped at `MAX_SIMILAR_ARTISTS_TRIED` (6).
+4. For each similar artist (score-sorted), `MusicBrainzClient.searchReleases()` by artist name only — first release per artist, capped at `MAX_SIMILAR_RELEASES` (12).
+5. `searchContextService.saveSearchContext(conversationId, MUSICBRAINZ, "схоже на <seed>", null, combined)` — same context slot `search()` uses, so card-building/pagination/DL work identically on the result.
+Tригер: "хочу схоже", "порадь щось подібне", "similar to X", "recommend something like this". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via ListenBrainz, not what the user already owns.
+
 ### `webSearch(query, conversationId)`
 Research tool for artist bio, discography, label history, and factual music questions.
 1. Pushes `BotResponse.text("🌐 виходимо у світ божий…")` into `ChatResponseAccumulator` under the **main** conversationId (strips `:d` suffix).
 2. Calls `WebSearchService.search(query)` → jsoup POST to `https://html.duckduckgo.com/html/`, parses `.result__snippet` + `a.result__a` elements, returns top-4 results as text.
 3. LangChain4j agent synthesizes into 3-5 Ukrainian sentences.
 Тригер: "розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X", будь-яке дослідницьке питання.
-
-### `search(query, conversationId)`
-1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest`
-2. Перебирає `SearchEngine.values()` (MusicBrainz → Discogs → Bandcamp), зупиняється на першому hit
-3. `searchContextService.saveSearchContext(conversationId, engine, query, request, releases)`
-4. Return: `"found N releases on engine"` або `"not found on any source"`
 
 ### `digDeeper(conversationId)`
 Читає попередній `rawInput` і `source` з `:d` контексту, переходить до наступного движку по колу (`(ordinal + 1) % values.length`).
@@ -80,12 +93,15 @@ Research tool for artist bio, discography, label history, and factual music ques
    - Якщо `rawInput` не змінився (наприклад, викликано тільки `getTrackList`) → повернути summary DiscoveryAgent без форматування
 4. Якщо нічого не знайшов → `DiscoverResult.empty(summary)`
 
-`formatForMainAgent()` — формує агрегований summary для MainAgent: кількість, діапазон років, розбивка по типах (album/EP/single/other), топ-3 лейбли, топ-5 тегів. **Не перелічує кожен реліз** — MainAgent не парсить `DiscoverResult` структурно, тільки читає `.summary()`. Tracklist-відповідь (`getTrackList`) передається без агрегації — повний пронумерований список дослівно.
+`formatForMainAgent()` — формує агрегований summary для MainAgent: кількість, скільки показано карток (`showing top K as cards`), діапазон років, розбивка по типах (album/EP/single/other), топ-3 лейбли, топ-5 тегів. **Не перелічує кожен реліз** — MainAgent не парсить `DiscoverResult` структурно, тільки читає `.summary()`. Tracklist-відповідь (`getTrackList`) передається без агрегації — повний пронумерований список дослівно.
+
+Картки будуються через `ReleaseSearchFlowService.buildTopCardsResponse()` — до `search.cards.max` (дефолт 4) окремих Telegram-повідомлень замість однієї картки з пагінацією, кожне зі своїми ⬅️/➡️/🎧/⬇️ кнопками що й далі гортають повний список результатів.
 
 **`DiscoveryAgentPrompts.SYSTEM` ключові правила:**
 - Для SEARCH-запитів: передати query прямо в `search` tool.
 - Для TRACKLIST-запитів: **завжди** викликати `getTrackList` — ніколи не відповідати з пам'яті.
 - Для "ще копай"/"dig deeper": викликати `digDeeper`, не `search`.
+- Для "хочу схоже"/similarity-запитів: **завжди** викликати `findSimilar`, ніколи не вигадувати артистів самому.
 - Для дослідницьких питань (bio, discography, label info): **завжди** викликати `webSearch`.
 - Якщо `getTrackList` повернув треки — вивести **повний** пронумерований список дослівно.
 
@@ -97,6 +113,7 @@ Research tool for artist bio, discography, label history, and factual music ques
 3. `digDeeper()` читає `:d` контекст — не очищати пам'ять між викликами.
 4. Відповідь DiscoveryAgent — рядок для MainAgent (не для юзера напряму).
 5. Якщо нічого не знайшов → попросити уточнення (рік, лейбл, жанр, країна).
+6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки ListenBrainz co-listen дані.
 
 ---
 

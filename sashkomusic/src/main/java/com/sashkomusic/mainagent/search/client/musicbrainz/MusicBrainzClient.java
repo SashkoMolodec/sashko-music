@@ -45,6 +45,20 @@ public class MusicBrainzClient implements SearchEngineService {
             return self.searchByRecording(request);
         }
 
+        // BROWSE case: no specific title to look up (style/year/label-type digging).
+        // /release-group is one row per album concept instead of one row per pressing —
+        // far less noisy than /release for "give me trance from 1994" style queries.
+        boolean isBrowse = !hasRelease && !hasRecording
+                && (!request.style().isEmpty() || (request.dateRange() != null && !request.dateRange().isEmpty()));
+        if (isBrowse) {
+            log.info("Browse-style search detected (no title), trying release-group endpoint first");
+            var groupResults = self.searchByReleaseGroup(request);
+            if (!groupResults.isEmpty()) {
+                return groupResults;
+            }
+            log.info("release-group search returned nothing, falling back to /release");
+        }
+
         var results = self.searchByRelease(request);
 
         if (results.isEmpty() && hasRelease) {
@@ -92,8 +106,7 @@ public class MusicBrainzClient implements SearchEngineService {
                             .path("/release")
                             .queryParam("query", luceneQuery)
                             .queryParam("fmt", "json")
-                            .queryParam("limit", 150)
-                            .queryParam("inc", "tags")
+                            .queryParam("limit", 100) // MusicBrainz hard caps limit at 100 — 150 silently errors
                             .build())
                     .retrieve()
                     .body(MusicBrainzSearchResponse.class);
@@ -113,6 +126,50 @@ public class MusicBrainzClient implements SearchEngineService {
     protected List<ReleaseMetadata> searchByReleaseFallback(MetadataSearchRequest request, Exception e) {
         log.warn("MusicBrainz searchByRelease fallback triggered for query '{}': {}",
             toLuceneQuery(request), e.getMessage());
+        return List.of();
+    }
+
+    /**
+     * BROWSE-style search over /release-group — one row per album concept (dedup'd across
+     * pressings), used when the caller has no specific artist/title to look up, only
+     * style/year/type filters (e.g. "trance 1994").
+     */
+    @CircuitBreaker(name = "musicBrainzClient", fallbackMethod = "searchByReleaseGroupFallback")
+    @Retry(name = "musicBrainzClient")
+    @RateLimiter(name = "musicBrainzClient")
+    protected List<ReleaseMetadata> searchByReleaseGroup(MetadataSearchRequest request) {
+        String luceneQuery = toReleaseGroupLuceneQuery(request);
+        log.info("Searching MusicBrainz release-group endpoint with query: {}", luceneQuery);
+
+        try {
+            var response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/release-group")
+                            .queryParam("query", luceneQuery)
+                            .queryParam("fmt", "json")
+                            .queryParam("limit", 100)
+                            .build())
+                    .retrieve()
+                    .body(MusicBrainzReleaseGroupSearchResponse.class);
+
+            if (response == null || response.releaseGroups() == null || response.releaseGroups().isEmpty()) {
+                return List.of();
+            }
+
+            return response.releaseGroups().stream()
+                    .map(this::mapReleaseGroup)
+                    .filter(Objects::nonNull)
+                    .toList();
+
+        } catch (Exception ex) {
+            log.warn("MusicBrainz release-group API error (will retry): {}", ex.getMessage());
+            throw new SearchNotCompleteException("Search failed due to API error.");
+        }
+    }
+
+    protected List<ReleaseMetadata> searchByReleaseGroupFallback(MetadataSearchRequest request, Exception e) {
+        log.warn("MusicBrainz searchByReleaseGroup fallback triggered for query '{}': {}",
+            toReleaseGroupLuceneQuery(request), e.getMessage());
         return List.of();
     }
 
@@ -282,6 +339,40 @@ public class MusicBrainzClient implements SearchEngineService {
         return value.replace("\"", "\\\"");
     }
 
+    /**
+     * Lucene query for /release-group. Indexed fields differ from /release: no
+     * country/label/catno on release-group, and the date field is "firstreleasedate"
+     * rather than "date".
+     */
+    private String toReleaseGroupLuceneQuery(MetadataSearchRequest request) {
+        List<String> conditions = new ArrayList<>();
+
+        if (!request.artist().isEmpty()) {
+            conditions.add("artist:\"" + escapeLucene(request.artist()) + "\"");
+        }
+
+        if (!request.style().isEmpty()) {
+            conditions.add("tag:\"" + escapeLucene(request.style()) + "\"");
+        }
+
+        var dateRange = request.dateRange();
+        if (dateRange != null && !dateRange.isEmpty()) {
+            conditions.add(dateRange.isSingleYear()
+                    ? "firstreleasedate:" + dateRange.from()
+                    : "firstreleasedate:[" + dateRange.from() + " TO " + dateRange.to() + "]");
+        }
+
+        if (!request.type().isEmpty()) {
+            conditions.add("primarytype:\"" + escapeLucene(request.type()) + "\"");
+        }
+
+        if (!request.status().isEmpty()) {
+            conditions.add("status:" + request.status());
+        }
+
+        return conditions.isEmpty() ? "*" : String.join(" AND ", conditions);
+    }
+
     private List<ReleaseMetadata> mapToGroupedDomain(List<MusicBrainzSearchResponse.Release> releases) {
         Map<String, List<MusicBrainzSearchResponse.Release>> grouped = releases.stream()
                 .filter(r -> r.releaseGroup() != null)
@@ -365,6 +456,75 @@ public class MusicBrainzClient implements SearchEngineService {
                 tags,
                 label
         );
+    }
+
+    @Nullable
+    private ReleaseMetadata mapReleaseGroup(MusicBrainzReleaseGroupSearchResponse.ReleaseGroup rg) {
+        // Need a concrete release MBID to lazily fetch tracks later (getTracks/getReleaseById
+        // both hit /release/{id}) — release-group search returns the underlying releases inline.
+        var representativeRelease = (rg.releases() == null ? List.<MusicBrainzReleaseGroupSearchResponse.Release>of() : rg.releases()).stream()
+                .filter(r -> "Official".equals(r.status()))
+                .findFirst()
+                .or(() -> rg.releases() == null || rg.releases().isEmpty()
+                        ? Optional.empty()
+                        : Optional.of(rg.releases().getFirst()))
+                .orElse(null);
+        if (representativeRelease == null) {
+            return null;
+        }
+
+        String artist = clean(getArtistNameFromCredit(rg.artistCredit()));
+        String title = clean(rg.title());
+
+        List<String> years = rg.firstReleaseDate() != null && !rg.firstReleaseDate().isBlank()
+                ? List.of(extractYear(rg.firstReleaseDate()))
+                : List.of();
+
+        List<String> types = new ArrayList<>();
+        if (rg.primaryType() != null) types.add(rg.primaryType());
+        if (rg.secondaryTypes() != null) types.addAll(rg.secondaryTypes());
+
+        List<String> tags = rg.tags() != null
+                ? rg.tags().stream()
+                    .sorted(Comparator.comparingInt(MusicBrainzSearchResponse.Tag::count).reversed())
+                    .map(t -> t.name().toLowerCase())
+                    .distinct()
+                    .toList()
+                : List.of();
+
+        String coverUrl = "https://coverartarchive.org/release-group/" + rg.id() + "/front-500";
+
+        return new ReleaseMetadata(
+                representativeRelease.id(),
+                rg.id(),
+                SearchEngine.MUSICBRAINZ,
+                artist,
+                title,
+                rg.score(),
+                years,
+                types,
+                0,
+                0,
+                rg.releases() != null ? rg.releases().size() : 1,
+                List.of(),
+                coverUrl,
+                tags,
+                ""
+        );
+    }
+
+    private String getArtistNameFromCredit(List<MusicBrainzSearchResponse.ArtistCredit> artistCredit) {
+        if (artistCredit == null || artistCredit.isEmpty()) {
+            return "Unknown Artist";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (var credit : artistCredit) {
+            sb.append(credit.name());
+            if (credit.joinphrase() != null && !credit.joinphrase().isEmpty()) {
+                sb.append(credit.joinphrase());
+            }
+        }
+        return sb.toString().trim();
     }
 
     @Nullable
@@ -490,6 +650,32 @@ public class MusicBrainzClient implements SearchEngineService {
         log.warn("MusicBrainz getReleaseById fallback triggered for release ID '{}': {}",
             releaseId, e.getMessage());
         return null;
+    }
+
+    /** Resolves an artist name to an MBID — needed as input to ListenBrainz's similar-artists lookup. */
+    @CircuitBreaker(name = "musicBrainzClient", fallbackMethod = "findArtistMbidFallback")
+    @Retry(name = "musicBrainzClient")
+    @RateLimiter(name = "musicBrainzClient")
+    public Optional<String> findArtistMbid(String artistName) {
+        var response = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/artist")
+                        .queryParam("query", "artist:\"" + escapeLucene(artistName) + "\"")
+                        .queryParam("fmt", "json")
+                        .queryParam("limit", 1)
+                        .build())
+                .retrieve()
+                .body(MusicBrainzArtistSearchResponse.class);
+
+        if (response == null || response.artists() == null || response.artists().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(response.artists().getFirst().id());
+    }
+
+    public Optional<String> findArtistMbidFallback(String artistName, Exception e) {
+        log.warn("MusicBrainz findArtistMbid fallback triggered for artist '{}': {}", artistName, e.getMessage());
+        return Optional.empty();
     }
 
     @Override

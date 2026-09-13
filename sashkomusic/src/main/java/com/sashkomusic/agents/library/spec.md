@@ -56,6 +56,7 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 |------|---------|--------|
 | `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X" | `LibrarySearchService.search(query, 5)`; updates `LastReleaseContextHolder` |
 | `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease`; reads tracks from `TrackRepository` ordered by track number; returns formatted list |
+| `findSimilarInLibrary(releaseQuery)` | "маю щось схоже?", "що в мене є схоже на X", "similar in my library" — similarity within the OWN collection | Resolves release → `LibrarySimilarityService.pickRepresentativeTrack` + `.findSimilarToTrack` — pure audio-feature (BPM/MFCC/timbre) cosine similarity over `tracks_analyzed`, z-score normalized. No external API, no LLM guessing. |
 | `moveReleaseToSublibrary(releaseQuery, sublibrary)` | "посунь / перенеси / move ... у vault / working" | Resolves release → publishes `MoveReleaseTaskEvent` |
 | `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → pushes confirmation card (RM_OK/RM_NO buttons) into accumulator |
 | `listSublibraries()` | "які vaults", "куди можна перенести" | Returns config list `library.sublibraries` |

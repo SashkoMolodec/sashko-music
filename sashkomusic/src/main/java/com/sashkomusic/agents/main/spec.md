@@ -53,8 +53,8 @@ Sub-агенти юзають той самий `PostgresChatMemoryStore` під
 
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
-| `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів; треклист релізу якого **немає** в бібліотеці | `DiscoveryAgentService` → LLM path (Haiku) |
-| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist") | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів; треклист релізу якого **немає** в бібліотеці; "хочу схоже на X" / рекомендації для **нової** музики | `DiscoveryAgentService` → LLM path (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist"); "маю щось схоже на X?" — similarity **в межах власної бібліотеки** | `LibraryAgentService` → `LibraryAgent` (Haiku) |
 | `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
@@ -67,8 +67,10 @@ Side-effect пошуку: release cards → `ChatResponseAccumulator` → Telegr
 
 Tools пушать `BotResponse` в accumulator під час `chat()`. Після завершення:
 ```
-drain(conversationId) → drained cards  +  aiText(summary)  →  Telegram
+drain(conversationId) → aiText(summary)  +  drained cards  →  Telegram
 ```
+Коментар йде **перед** картками — так MainAgent пояснює що показує (напр. "знайшов 47, топ-4")
+до того як юзер побачить самі картки, а не після.
 `ProgressNotifier` надсилає "шукаю..." напряму (обходить accumulator) до завершення LLM.
 
 ---
