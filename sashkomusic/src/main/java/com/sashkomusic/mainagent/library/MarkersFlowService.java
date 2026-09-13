@@ -82,11 +82,10 @@ public class MarkersFlowService {
         return List.of(BotResponse.text("✅ мітка «" + trimmed + "» створена" + createMatchingSmartlist(trimmed)));
     }
 
-    /** Every marker gets a matching smartlist: tagged with it and rated above 1 star. */
+    /** Every marker gets a matching smartlist: tracks tagged with it. */
     private String createMatchingSmartlist(String markerName) {
         SmartlistDsl dsl = new SmartlistDsl(List.of(
-                new SmartlistDsl.ContainsCondition("comment", "(" + markerName + ")"),
-                new SmartlistDsl.GtCondition("rating", 1)
+                new SmartlistDsl.ContainsCondition("comment", "(" + markerName + ")")
         ));
         try {
             smartlistService.create(markerName, dsl);
