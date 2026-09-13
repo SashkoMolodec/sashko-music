@@ -167,7 +167,7 @@ public class ReleaseSearchFlowService {
             case BANDCAMP -> "bandcamp";
         };
         String releaseUrl = buildReleaseUrlForSource(release);
-        String origin = releaseUrl == null ? source : source + " 🔗 " + releaseUrl;
+        String origin = releaseUrl == null ? source : source + " [🔗](" + releaseUrl + ")";
         return "📍 %d/%d (%s)\n%s".formatted(index + 1, total, origin, body);
     }
 

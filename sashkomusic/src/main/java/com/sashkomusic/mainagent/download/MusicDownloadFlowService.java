@@ -184,7 +184,7 @@ public class MusicDownloadFlowService {
         if (!row.isEmpty()) allRows.add(List.copyOf(row));
         if (appendCancelRow) allRows.add(List.of(new BotResponse.ButtonDto("❌", "DLOPT:cancel")));
 
-        return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false);
+        return new BotResponse(sourceCard.text(), sourceCard.imageUrl(), null, allRows, null, false, null);
     }
 
     public List<BotResponse> handleNextPage(ConversationContext ctx, String data) {
@@ -217,7 +217,7 @@ public class MusicDownloadFlowService {
         rows.add(List.of(new BotResponse.ButtonDto(
                 "➡️ ще %d".formatted(Math.min(DownloadContextHolder.PAGE_SIZE, total - shown)),
                 "DLNEXT:" + releaseId)));
-        return new BotResponse(response.text(), response.imageUrl(), null, rows, null, false);
+        return new BotResponse(response.text(), response.imageUrl(), null, rows, null, false, null);
     }
 
     private static String indexIcon(int i) {

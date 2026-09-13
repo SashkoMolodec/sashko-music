@@ -1,5 +1,6 @@
 package com.sashkomusic.mainagent.bot;
 
+import com.sashkomusic.mainagent.bot.state.ChatStateStore;
 import com.sashkomusic.mainagent.search.FileIdCacheService;
 import com.sashkomusic.mainagent.search.SearchSessionExpiredException;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +61,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
 
     private final UserInteractionOrchestrator orchestrator;
     private final FileIdCacheService fileIdCacheService;
+    private final ChatStateStore chatStateStore;
     private final TelegramClient client;
     private final String botToken;
     private final Long allowedGroupId;
@@ -70,11 +72,13 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                            @Value("${telegram.default-chat-id:0}") Long defaultChatId,
                            UserInteractionOrchestrator orchestrator,
                            FileIdCacheService fileIdCacheService,
+                           ChatStateStore chatStateStore,
                            TelegramClient telegramClient) {
         this.botToken = token;
         this.client = telegramClient;
         this.orchestrator = orchestrator;
         this.fileIdCacheService = fileIdCacheService;
+        this.chatStateStore = chatStateStore;
         this.allowedGroupId = allowedGroupIdStr.isBlank() ? null : Long.parseLong(allowedGroupIdStr);
         this.defaultChatId = defaultChatId;
     }
@@ -167,8 +171,14 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         boolean hasImage = response.imageUrl() != null && !response.imageUrl().isBlank();
 
         if (response.editMessageId() != null) {
-            editExistingMessage(ctx, response, formattedText, hasImage, keyboardMarkup);
-            return;
+            boolean edited = editExistingMessage(ctx, response, formattedText, hasImage, keyboardMarkup);
+            // A remembered message can be deleted by the user or age out of Telegram's edit window;
+            // falling through to a fresh send keeps the reply from vanishing silently.
+            if (edited || response.rememberAs() == null) {
+                return;
+            }
+            log.info("Could not edit remembered message {} in [{}] — sending a new one",
+                    response.editMessageId(), ctx.conversationId());
         }
 
         if (hasImage) {
@@ -202,7 +212,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
             if (ctx.isGroupTopic()) {
                 msgBuilder.messageThreadId(ctx.topicId());
             }
-            client.execute(msgBuilder.build());
+            remember(ctx, response, client.execute(msgBuilder.build()));
         } catch (TelegramApiException e) {
             log.error("❌ Failed to send with HTML parsing to [{}]: {}. Retrying as plain text",
                     ctx.conversationId(), e.getMessage());
@@ -216,7 +226,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                 if (ctx.isGroupTopic()) {
                     plainBuilder.messageThreadId(ctx.topicId());
                 }
-                client.execute(plainBuilder.build());
+                remember(ctx, response, client.execute(plainBuilder.build()));
                 log.info("✅ Successfully sent as plain text");
             } catch (TelegramApiException ex) {
                 log.error("❌ Failed to send even as plain text to [{}]: {}", ctx.conversationId(), ex.getMessage());
@@ -224,9 +234,9 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         }
     }
 
-    private void editExistingMessage(ConversationContext ctx, BotResponse response,
-                                     String formattedText, boolean hasImage,
-                                     InlineKeyboardMarkup keyboardMarkup) {
+    private boolean editExistingMessage(ConversationContext ctx, BotResponse response,
+                                        String formattedText, boolean hasImage,
+                                        InlineKeyboardMarkup keyboardMarkup) {
         int messageId = response.editMessageId();
         try {
             if (hasImage) {
@@ -257,10 +267,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .replyMarkup(keyboardMarkup)
                         .build());
             }
+            return true;
         } catch (TelegramApiException e) {
             String msg = e.getMessage() == null ? "" : e.getMessage();
             if (msg.contains("message is not modified")) {
-                return;
+                return true;
             }
             log.warn("Failed to edit message {} in [{}]: {}. Falling back to caption edit.",
                     messageId, ctx.conversationId(), msg);
@@ -272,6 +283,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .parseMode("HTML")
                         .replyMarkup(keyboardMarkup)
                         .build());
+                return true;
             } catch (TelegramApiException ex) {
                 log.warn("Failed to edit caption for message {} in [{}]: {}. Falling back to text edit.",
                         messageId, ctx.conversationId(), ex.getMessage());
@@ -284,12 +296,19 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                             .disableWebPagePreview(true)
                             .replyMarkup(keyboardMarkup)
                             .build());
+                    return true;
                 } catch (TelegramApiException ex2) {
                     log.error("❌ Failed to edit message {} in [{}]: {}",
                             messageId, ctx.conversationId(), ex2.getMessage());
                 }
             }
         }
+        return false;
+    }
+
+    private void remember(ConversationContext ctx, BotResponse response, Message sent) {
+        if (response.rememberAs() == null || sent == null) return;
+        chatStateStore.put(ctx.conversationId(), response.rememberAs(), sent.getMessageId());
     }
 
     private InputFile buildInputFile(String imageUrl) {
