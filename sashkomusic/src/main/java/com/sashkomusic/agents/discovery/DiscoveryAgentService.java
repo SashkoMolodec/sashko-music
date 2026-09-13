@@ -10,6 +10,7 @@ import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.shared.model.ReleaseMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -27,6 +28,9 @@ public class DiscoveryAgentService {
     private final SearchContextService searchContextService;
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final ChatResponseAccumulator accumulator;
+
+    @Value("${search.cards.max:4}")
+    private int maxCards;
 
     public DiscoverResult handle(DiscoverRequest request) {
         log.info("Discovery agent handling request: conversationId={}, query='{}', preferred={}",
@@ -73,11 +77,11 @@ public class DiscoveryAgentService {
             if (newSearch || rawInputBefore == null) {
                 searchContextService.copySearchContext(discoveryMemoryId, conversationId);
                 accumulator.replaceAll(conversationId,
-                        releaseSearchFlowService.buildPageResponse(ConversationContext.from(conversationId), 0));
-                return DiscoverResult.found(formatForMainAgent(releases, engine), releases, engine);
+                        releaseSearchFlowService.buildTopCardsResponse(ConversationContext.from(conversationId)));
+                return DiscoverResult.found(formatForMainAgent(releases, engine, Math.min(maxCards, releases.size())), releases, engine);
             } else {
                 // No new search (e.g. getTrackList call) — use DiscoveryAgent's summary directly
-                return DiscoverResult.found(summary != null ? summary : formatForMainAgent(releases, engine), releases, engine);
+                return DiscoverResult.found(summary != null ? summary : formatForMainAgent(releases, engine, Math.min(maxCards, releases.size())), releases, engine);
             }
         } catch (Exception ex) {
             log.debug("No search context: {}", ex.getMessage());
@@ -101,7 +105,7 @@ public class DiscoveryAgentService {
         }
     }
 
-    private static String formatForMainAgent(List<ReleaseMetadata> releases, SearchEngine engine) {
+    private static String formatForMainAgent(List<ReleaseMetadata> releases, SearchEngine engine, int shownCount) {
         String engineName = engine != null ? engine.getName() : "unknown";
 
         // year range
@@ -151,7 +155,8 @@ public class DiscoveryAgentService {
                 .collect(Collectors.joining(", "));
 
         var sb = new StringBuilder();
-        sb.append("Found ").append(releases.size()).append(" releases on ").append(engineName).append(".");
+        sb.append("Found ").append(releases.size()).append(" releases on ").append(engineName)
+                .append(", showing top ").append(shownCount).append(" as cards.");
         if (!yearsStr.isEmpty()) sb.append(" Years: ").append(yearsStr).append(".");
         if (!typesStr.isEmpty()) sb.append(" Types: ").append(typesStr).append(".");
         if (!labelsStr.isEmpty()) sb.append(" Labels: ").append(labelsStr).append(".");

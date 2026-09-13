@@ -17,7 +17,8 @@ public record DiscogsReleaseResponse(
         List<String> styles,
         List<Format> formats,
         List<Label> labels,
-        List<Image> images
+        List<Image> images,
+        List<Video> videos
 ) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Artist(
@@ -48,6 +49,15 @@ public record DiscogsReleaseResponse(
     public record Label(
             String name,
             String catno
+    ) {
+    }
+
+    // Community-curated YouTube links for the release — free, no extra API, no scraping.
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Video(
+            String uri,
+            String title,
+            Integer duration
     ) {
     }
 

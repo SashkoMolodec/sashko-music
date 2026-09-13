@@ -15,6 +15,12 @@ final class LibraryAgentPrompts {
                 - getTrackListFromLibrary(releaseQuery): get track list from the local DB for a release in the library.
                   Use when the user asks "трекліст X", "які треки на X", "tracklist", "track list".
                   releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.
+                - findSimilarInLibrary(releaseQuery): find releases already OWNED that sound like a given release —
+                  pure audio-feature similarity (BPM, timbre, danceability), not genre tags.
+                  Use ONLY when the user wants something from THEIR OWN library ("маю щось схоже?", "що в мене є
+                  схоже на X", "similar in my library"). If they want to discover something NEW, that's discoverMusic
+                  (MainAgent), not this tool.
+                  releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.
                 - moveReleaseToSublibrary(releaseQuery, sublibrary): move a release between physical sub-libraries
                   ("working" / "vault" / ...).
                   Triggers: "посунь / перенеси / move ... у vault / working".

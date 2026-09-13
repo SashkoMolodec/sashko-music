@@ -19,6 +19,7 @@ import java.util.Map;
 public class StreamingFlowService {
 
     private final SearchContextService searchContextService;
+    private final ListenLinkResolver listenLinkResolver;
 
     public List<BotResponse> handleStreamingPlatforms(ConversationContext ctx, String callbackData) {
         try {
@@ -78,7 +79,18 @@ public class StreamingFlowService {
             log.warn("No metadata found for releaseId={} in conversation={}", releaseId, conversationId);
             return Map.of("▶️", "URL:https://youtube.com");
         }
-        return buildPlatformSearchLinks(metadata.artist(), metadata.title());
+        Map<String, String> buttons = buildPlatformSearchLinks(metadata.artist(), metadata.title());
+
+        // A resolved direct link (Discogs video, Bandcamp page, or a real yt-music match) beats
+        // every generic per-platform search link above — put it first.
+        listenLinkResolver.resolve(metadata).ifPresent(url -> {
+            Map<String, String> withDirectLink = new LinkedHashMap<>();
+            withDirectLink.put("🎯", "URL:" + url);
+            withDirectLink.putAll(buttons);
+            buttons.clear();
+            buttons.putAll(withDirectLink);
+        });
+        return buttons;
     }
 
     private Map<String, String> buildPlatformSearchLinks(String artist, String title) {

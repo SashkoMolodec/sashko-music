@@ -9,6 +9,7 @@ import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
+import com.sashkomusic.libraryagent.domain.service.LibrarySimilarityService;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
@@ -48,6 +49,7 @@ public class LibraryAgentTools {
     private final ReprocessReleasesFlowService reprocessReleasesFlowService;
     private final SmartlistCreationFlowService smartlistCreationFlowService;
     private final SmartlistService smartlistService;
+    private final LibrarySimilarityService librarySimilarityService;
 
     // ───────────────── catalog ops ─────────────────
 
@@ -95,6 +97,38 @@ public class LibraryAgentTools {
         for (Track t : tracks) {
             if (t.getTrackNumber() != null) sb.append(t.getTrackNumber()).append(". ");
             sb.append(t.getTitle()).append("\n");
+        }
+        return sb.toString().strip();
+    }
+
+    @Tool("""
+            Find releases already in the user's OWN library that sound like a given release — pure audio-feature
+            similarity (BPM, danceability, timbre/MFCC, loudness) from analyzed tracks, not genre tags or metadata.
+            Use for: "маю схоже?", "що в мене є схоже на X", "similar to X in my library", when the user wants
+            something they already own rather than something new to find/download.
+            releaseQuery: the release name, or 'this'/'оцей'/'цей' to use the last-referenced release.
+            """)
+    public String findSimilarInLibrary(
+            @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
+            @ToolMemoryId String conversationId) {
+        String mainId = mainConversationId(conversationId);
+        ReleaseRef ref = resolveRelease(releaseQuery, mainId);
+        if (ref == null) {
+            return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
+        }
+        Optional<Long> seedTrack = librarySimilarityService.pickRepresentativeTrack(ref.id());
+        if (seedTrack.isEmpty()) {
+            return "реліз знайдено (%s), але він ще не проаналізований — нема аудіо-фіч для порівняння".formatted(ref.label());
+        }
+        var similar = librarySimilarityService.findSimilarToTrack(seedTrack.get(), 5);
+        if (similar.isEmpty()) {
+            return "не знайшов нічого схожого на %s у бібліотеці (замало проаналізованих треків)".formatted(ref.label());
+        }
+        var sb = new StringBuilder("Схоже на ").append(ref.label()).append(" (за звучанням, з твоєї бібліотеки):\n");
+        for (var s : similar) {
+            sb.append("- ");
+            if (s.artists() != null && !s.artists().isBlank()) sb.append(s.artists()).append(" — ");
+            sb.append(s.releaseTitle()).append(" [").append(s.title()).append("]\n");
         }
         return sb.toString().strip();
     }

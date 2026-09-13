@@ -10,6 +10,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriBuilder;
@@ -23,23 +24,25 @@ public class DiscogsClient implements SearchEngineService {
 
     private final RestClient client;
     private final String apiToken;
+    private final DiscogsClient self;
 
-    public DiscogsClient(RestClient.Builder builder, @Value("${discogs.api.token:}") String apiToken) {
+    public DiscogsClient(RestClient.Builder builder, @Value("${discogs.api.token:}") String apiToken, @Lazy DiscogsClient self) {
         this.apiToken = apiToken;
         this.client = builder
                 .baseUrl("https://api.discogs.com")
                 .defaultHeader("User-Agent", "SashkoMusicBot/1.0")
                 .build();
+        this.self = self;
     }
 
     @Override
     public List<ReleaseMetadata> searchReleases(MetadataSearchRequest request) {
-        log.info("Searching Discogs with parameters: artist={}, release={}, year={}, format={}",
+        log.info("Searching Discogs with parameters: artist={}, release={}, year={}, format={}, style={}, label={}, country={}",
                 request.artist(), request.release(),
                 request.dateRange() != null ? request.dateRange().toDiscogsParam() : "",
-                request.format());
+                request.format(), request.style(), request.label(), request.country());
 
-        List<ReleaseMetadata> results = performSearch(request);
+        List<ReleaseMetadata> results = self.performSearch(request);
 
         if (results.isEmpty() && !request.artist().isEmpty()) {
             results = retryWithoutArtist(request);
@@ -65,13 +68,13 @@ public class DiscogsClient implements SearchEngineService {
                 request.label(),
                 request.catno()
         );
-        results = performSearch(requestWithoutArtist);
+        results = self.performSearch(requestWithoutArtist);
         return results;
     }
 
     @CircuitBreaker(name = "discogsClient", fallbackMethod = "performSearchFallback")
     @Retry(name = "discogsClient")
-    private List<ReleaseMetadata> performSearch(MetadataSearchRequest request) {
+    protected List<ReleaseMetadata> performSearch(MetadataSearchRequest request) {
         try {
             var response = client.get()
                     .uri(uriBuilder -> {
@@ -101,50 +104,57 @@ public class DiscogsClient implements SearchEngineService {
         return List.of();
     }
 
+    /**
+     * Uses Discogs' structured search filters (artist, release_title, style, genre, year, label,
+     * country, format, catno) instead of concatenating everything into the free-text 'q' param.
+     * 'q' is relevance-ranked full-text search across titles — cramming "trance 1994" into it
+     * matches releases with "trance" literally in the title, not releases tagged trance from 1994.
+     * Falls back to 'q' only when the extractor found nothing structured (e.g. a bare phrase).
+     */
     private void addDiscogsParameters(UriBuilder builder, MetadataSearchRequest request) {
         builder.path("/database/search")
-                .queryParam("type", "master,release")
+                .queryParam("type", "release")
                 .queryParam("per_page", "200");
-
-        // Build general query from all available fields
-        List<String> queryParts = new ArrayList<>();
-
-        if (!request.artist().isEmpty()) {
-            queryParts.add(request.artist());
-        }
 
         boolean hasRelease = !request.release().isEmpty();
         boolean hasRecording = !request.recording().isEmpty();
-        if (hasRelease) {
-            queryParts.add(request.release());
-        } else if (hasRecording) {
-            queryParts.add(request.recording());
-        }
+        boolean anyStructuredField = !request.artist().isEmpty() || hasRelease || hasRecording
+                || (request.dateRange() != null && !request.dateRange().isEmpty())
+                || !request.format().isEmpty() || !request.catno().isEmpty() || !request.label().isEmpty()
+                || !request.style().isEmpty() || !request.country().isEmpty();
 
+        if (!request.artist().isEmpty()) {
+            builder.queryParam("artist", request.artist());
+        }
+        if (hasRelease) {
+            builder.queryParam("release_title", request.release());
+        } else if (hasRecording) {
+            builder.queryParam("track", request.recording());
+        }
         if (request.dateRange() != null && !request.dateRange().isEmpty()) {
-            queryParts.add(request.dateRange().toDiscogsParam());
+            builder.queryParam("year", request.dateRange().toDiscogsParam());
         }
         if (!request.format().isEmpty()) {
-            queryParts.add(request.format());
+            builder.queryParam("format", request.format());
         }
         if (!request.catno().isEmpty()) {
-            queryParts.add(request.catno());
+            builder.queryParam("catno", request.catno());
         }
         if (!request.label().isEmpty()) {
-            queryParts.add(request.label());
+            builder.queryParam("label", request.label());
         }
         if (!request.style().isEmpty()) {
-            queryParts.add(request.style());
+            // Extractor's "style" field holds genre-name-like terms (e.g. "trance", "idm") which
+            // map onto Discogs' fine-grained `style` taxonomy (genre-vs-style split per Discogs'
+            // own guidelines) — not the broader `genre` param.
+            builder.queryParam("style", request.style());
         }
         if (!request.country().isEmpty()) {
-            queryParts.add(request.country());
+            builder.queryParam("country", request.country());
         }
 
-        // Combine all parts into single query
-        if (!queryParts.isEmpty()) {
-            String generalQuery = String.join(" ", queryParts);
-            log.info("Using general 'q' search with value: {}", generalQuery);
-            builder.queryParam("q", generalQuery);
+        if (!anyStructuredField) {
+            log.info("No structured fields extracted — leaving search unconstrained (type=release only)");
         }
 
         if (!apiToken.isEmpty()) {
@@ -161,19 +171,21 @@ public class DiscogsClient implements SearchEngineService {
 
         log.debug("After filtering for 'release' type, {} releases remain", releases.size());
 
+        // LinkedHashMap preserves Discogs' relevance ordering (order of first appearance in the
+        // response) across the grouping — a plain groupingBy() uses a HashMap and would scramble it.
         Map<String, List<DiscogsSearchResponse.Result>> grouped = releases.stream()
                 .collect(Collectors.groupingBy(r -> {
                     String title = extractTitle(r.title()).toLowerCase().trim();
                     return title.replaceAll("[\\p{C}\\p{Z}&&[^ ]]", "");
-                }));
+                }, LinkedHashMap::new, Collectors.toList()));
 
         log.debug("Grouped into {} unique titles", grouped.size());
 
+        // No re-sort: Discogs already returns results ordered by relevance, and every group's
+        // score is currently a flat constant (see aggregateGroup) so a numeric re-sort is a no-op
+        // that only serves to destroy that relevance order.
         return grouped.values().stream()
                 .map(this::aggregateGroup)
-                .sorted(Comparator.comparing((ReleaseMetadata m) -> m.years().stream()
-                        .max(String::compareTo)
-                        .orElse("0000")).thenComparing(Comparator.comparingInt(ReleaseMetadata::score).reversed()))
                 .toList();
     }
 
@@ -395,6 +407,44 @@ public class DiscogsClient implements SearchEngineService {
         log.warn("Discogs getReleaseById fallback triggered for release ID '{}': {}",
             releaseId, e.getMessage());
         return null;
+    }
+
+    /**
+     * First community-curated YouTube link on the Discogs release page, if any. This is free
+     * (no extra scraping) and usually points at the exact pressing rather than a generic search.
+     */
+    @CircuitBreaker(name = "discogsClient", fallbackMethod = "getPrimaryVideoUrlFallback")
+    @Retry(name = "discogsClient")
+    public Optional<String> getPrimaryVideoUrl(String releaseId) {
+        if (!releaseId.startsWith("discogs:")) {
+            return Optional.empty();
+        }
+        String[] parts = releaseId.split(":");
+        if (parts.length != 3) {
+            return Optional.empty();
+        }
+        String id = parts[2];
+
+        DiscogsReleaseResponse response = client.get()
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/releases/" + id);
+                    if (!apiToken.isEmpty()) {
+                        uriBuilder.queryParam("token", apiToken);
+                    }
+                    return uriBuilder.build();
+                })
+                .retrieve()
+                .body(DiscogsReleaseResponse.class);
+
+        if (response == null || response.videos() == null || response.videos().isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(response.videos().getFirst().uri());
+    }
+
+    public Optional<String> getPrimaryVideoUrlFallback(String releaseId, Exception e) {
+        log.warn("Discogs getPrimaryVideoUrl fallback triggered for release ID '{}': {}", releaseId, e.getMessage());
+        return Optional.empty();
     }
 
     @CircuitBreaker(name = "discogsClient", fallbackMethod = "getReleaseIdFromMarketplaceListingFallback")

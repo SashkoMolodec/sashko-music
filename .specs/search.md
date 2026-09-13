@@ -62,11 +62,19 @@ User: "які треки на цьому альбомі?"
 
 | Engine | Class | API | Used for |
 |--------|-------|-----|---------|
-| `MUSICBRAINZ` | `MusicBrainzClient` | musicbrainz.org API v2 | Default first try, повна дискографія |
-| `DISCOGS` | `DiscogsClient` | discogs.com API | Vinyl/collector, obscure releases |
+| `MUSICBRAINZ` | `MusicBrainzClient` | musicbrainz.org API v2 | Default first try, повна дискографія; `/release-group` for style+year browse queries |
+| `DISCOGS` | `DiscogsClient` | discogs.com API | Vinyl/collector, obscure releases, per-release label data |
 | `BANDCAMP` | `BandcampSearchClient` | sm-scraper `/bandcamp/search` | Independent artists, прямі посилання |
 
-**Priority order for `findMusic`:** MUSICBRAINZ → DISCOGS → BANDCAMP (stop at first hit)
+**Priority order depends on query shape** (`MetadataSearchRequest.isBrowseQuery()`):
+- **LOOKUP** (has artist/release/recording): MUSICBRAINZ → DISCOGS → BANDCAMP (stop at first hit)
+- **BROWSE** (style/year only, no title — e.g. "trance 1994"): DISCOGS → MUSICBRAINZ → BANDCAMP —
+  Discogs carries per-release `label` data that MusicBrainz's `/release-group` browse endpoint doesn't.
+
+Показ результатів: до `search.cards.max` (дефолт 4) окремих карток-повідомлень (`ReleaseSearchFlowService.buildTopCardsResponse`)
+замість однієї картки з пагінацією — кожна зі своїми ⬅️/➡️/🎧/⬇️ що й далі гортають повний список.
+
+Similarity ("хочу схоже на X"): `DiscoveryAgentTools.findSimilar()` via ListenBrainz co-listen data → related artists → MusicBrainz releases. See `agents/discovery/spec.md`.
 
 ---
 

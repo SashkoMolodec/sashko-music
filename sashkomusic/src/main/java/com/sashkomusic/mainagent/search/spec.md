@@ -45,6 +45,18 @@ List<TrackMetadata> getTracks(String releaseId);
 
 Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 
+**Engine order is intent-dependent**, not a fixed `SearchEngine.values()` walk — `MetadataSearchRequest.isBrowseQuery()` (true when there's no `release`/`recording` title, only `style`/`dateRange` filters, e.g. "trance 1994") switches the order to Discogs → MusicBrainz → Bandcamp instead of the default MusicBrainz → Discogs → Bandcamp. Reason: Discogs' structured search returns per-release `label` data that MusicBrainz `/release-group` doesn't carry. Both `DiscoveryAgentTools.search()` and `ReleaseSearchFlowService.searchDefault()` compute this the same way — see each for the concrete engine list.
+
+### `MusicBrainzClient` — BROWSE vs LOOKUP
+- **LOOKUP** (has `release` or `recording`): `/release` endpoint, as before (limit **100** — MusicBrainz hard-caps at 100; 150 silently errors).
+- **BROWSE** (`isBrowseQuery()`): tries `/release-group` FIRST (one row per album concept, dedup'd across pressings — far less noisy than `/release` for a bare style+year query), falls back to `/release` if empty. Lucene field for date differs: `firstreleasedate:` on `/release-group` vs `date:` on `/release`; `/release-group` has no `country`/`label`/`catno` fields.
+- `findArtistMbid(artistName)` — new lookup (`/artist?query=`) used by `findSimilar`.
+
+### `DiscogsClient` — structured params
+`addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). Grouping in `mapToDomain` uses a `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
+`performSearch`/`retryWithoutArtist` route through a `@Lazy self` proxy reference so `@CircuitBreaker`/`@Retry` actually apply — calling a `@CircuitBreaker`-annotated method directly (`this.performSearch(...)`) bypasses the Spring AOP proxy entirely.
+`getPrimaryVideoUrl(releaseId)` — first community-curated YouTube link from the release's `videos[]` (used by `ListenLinkResolver`).
+
 ---
 
 ## `ReleaseSearchFlowService` — ключові методи
@@ -53,8 +65,26 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 |-------|-------------|
 | `searchWithFallback(query, engines...)` | Послідовний fallback по движках |
 | `switchStrategyAndSearch(ctx)` | DIG_DEEPER: наступний engine по колу |
-| `buildPageResponse(ctx, page)` | Release картки з пагінацією; зберігає `currentPage` через `searchContextService.updateCurrentPage()` |
+| `buildTopCardsResponse(ctx)` | До `search.cards.max` (дефолт 4) окремих карток-повідомлень замість однієї з пагінацією — кожна зі своїми ⬅️/➡️/🎧/⬇️ що гортають повний список |
+| `buildPageResponse(ctx, page)` | Одна release картка з пагінацією (`CARD:`/`PAGE:` callback); зберігає `currentPage` через `searchContextService.updateCurrentPage()` |
 | `buildReleaseDownloadCard(release, engine)` | Картка для download flow |
+
+---
+
+## Listen links (`ListenLinkResolver`)
+
+`StreamingFlowService.getPlatformLinks()` prepends a resolved DIRECT listen link (🎯 button) before the generic per-platform search links, when one can be found:
+- `BANDCAMP` → `release.masterId()` (the release page itself IS the direct link)
+- `DISCOGS` → `DiscogsClient.getPrimaryVideoUrl()`, falls back to yt-music search if the release has no attached video
+- `MUSICBRAINZ` → yt-music scraper search (`YtMusicScraperClient`, `sm-scraper` `/ytmusic/search`) by artist+title
+
+No LLM, no free-text web search, no "verify" step — every source is either attached to the exact release or a structured artist+album match against a real catalog.
+
+---
+
+## Similar-music lookup (`ListenBrainzClient`)
+
+`labs.api.listenbrainz.org/similar-artists/json` — free, no API key, CC0-licensed co-listen data. Used only by `DiscoveryAgentTools.findSimilar()` (see `agents/discovery/spec.md`) via `MusicBrainzClient.findArtistMbid()` → `ListenBrainzClient.findSimilarArtists()`. Library-internal similarity (own analyzed tracks) is a separate, unrelated path — `LibrarySimilarityService` in `libraryagent`, exposed via `LibraryAgentTools.findSimilarInLibrary` — pure audio-feature cosine similarity, no external API.
 
 ---
 
@@ -64,10 +94,12 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 3. Discovery flow зберігає під `conversationId + ":d"`, потім `copySearchContext` дублює під основний ID.
 4. `DownloadContextHolder` — окремий holder з flow_key `"dl_ctx"`, не тут.
 5. `currentPage` читається `getTrackList` (DiscoveryAgent) щоб знати який реліз показати.
+6. Engine order for a given `MetadataSearchRequest` is decided once per request (`isBrowseQuery()`) — never re-decided per engine attempt.
 
 ---
 
 ## SDD checkpoints
 - Новий `SearchEngine` → `SearchEngineService` impl + реєстрація в `SearchEngineConfig`. `searchWithFallback` підхопить автоматично.
-- Змінити порядок пошуку → порядок у `SearchEngine` enum.
+- Змінити порядок пошуку → порядок у `SearchEngine` enum, або `isBrowseQuery()` branch якщо порядок має залежати від типу запиту.
 - Нове поле в `SearchContext` → оновити `SearchState` deserialization (Jackson) і всі місця де будується `SearchContext`.
+- Змінити скільки карток показується → `search.cards.max` в `application.properties` (дефолт 4).

@@ -126,10 +126,13 @@ public class UserInteractionOrchestrator {
         }
 
         List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
-        List<BotResponse> all = new ArrayList<>(drained);
+        // Comment first, then whatever cards/results the tool call produced — reads as
+        // "here's what I found and why" followed by the results, not the other way round.
+        List<BotResponse> all = new ArrayList<>();
         if (summary != null && !summary.isBlank()) {
             all.add(BotResponse.aiText(summary));
         }
+        all.addAll(drained);
         return all;
     }
 
@@ -207,8 +210,9 @@ public class UserInteractionOrchestrator {
         responseAccumulator.begin(ctx.conversationId());
         var result = discoveryAgentService.handle(DiscoverRequest.of(ctx.conversationId(), query));
         List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
-        List<BotResponse> all = new ArrayList<>(drained);
+        List<BotResponse> all = new ArrayList<>();
         if (result.summary() != null && !result.summary().isBlank()) all.add(BotResponse.aiText(result.summary()));
+        all.addAll(drained);
         String summary = result.summary() != null ? result.summary() : "";
         if (!summary.isBlank()) {
             mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/discovery " + query, summary);
