@@ -99,7 +99,7 @@ public class ProcessCommandExecutor {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("[download]") && (line.contains("ETA") || line.contains("frag "))) {
+                    if (isNoisyProgressLine(line)) {
                         log.debug("[{}] {}", logTag, line);
                         continue;
                     }
@@ -112,5 +112,20 @@ public class ProcessCommandExecutor {
                 log.error("Error reading [{}] output: {}", logTag, e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * bandcamp-dl repaints its progress bar via a bare '\r' with no trailing '\n'
+     * (see its print_clean helper) — BufferedReader.readLine() treats a lone '\r' as a line
+     * terminator too, so every one of the ~100 chunk-progress repaints per track arrives here as
+     * its own "line" (e.g. "(3/12) [==   ] :: Downloading: 03. artist - title"), flooding the
+     * Telegram logs topic far faster than TelegramDownloadLogStreamer's 10s batching can absorb.
+     * Downgraded the same way yt-dlp's ETA/frag progress ticks already are.
+     */
+    private boolean isNoisyProgressLine(String line) {
+        if (line.startsWith("[download]") && (line.contains("ETA") || line.contains("frag "))) {
+            return true;
+        }
+        return line.contains(") [") && line.contains("] :: Downloading:");
     }
 }
