@@ -1,8 +1,8 @@
 # Streaming Feature
 
 ## Purpose
-Один клік на 🎧 → одразу робочий лінк, де послухати реліз. Пошукові посилання по платформах —
-лише фолбек, коли прямий лінк не резолвнувся.
+Один клік на 🎧 → одне текстове повідомлення, з якого одразу видно де послухати: URL, треклист і
+(для discogs) решта відео релізу окремими посиланнями.
 
 ---
 
@@ -13,37 +13,35 @@ User clicks [🎧] на release card
   └─ CallbackDispatcher → StreamingFlowService.handleStreamingPlatforms(ctx, "STREAM:<releaseId>")
        ├─ SearchContextService.getReleaseMetadata(releaseId, conversationId)
        ├─ ListenLinkResolver.resolve(metadata)
-       │    ├─ знайшов → текст з URL + кнопка "▶️ слухати" першою, далі платформи
-       │    └─ ні       → "прямого лінку не знайшов" + самі лише платформи
-       └─ одне повідомлення, жодного другого кроку
+       └─ одне текстове повідомлення:
+            ▶️ artist — title (source)
+            <primary url>
+            <треклист>
+            🎬 ще з discogs: <решта відео, title + url>
 ```
 
-Треклист тут **не** тягнеться: `getMetadataWithTracks` робив живий виклик до движка і був основним
-джерелом затримки, а до задачі "дай послухати" не додавав нічого. Треки лишаються доступні через
-"які треки" (`DiscoveryAgentTools.getTrackList`).
+**Жодних кнопок у відповіді.** Ні "слухати", ні ряду платформ — URL у тексті вже клікабельний,
+кнопка-дублікат того ж посилання нічого не додавала. Пошукові посилання по платформах
+(Spotify/Apple/SoundCloud/Bandcamp/YT) прибрані повністю: це були *пошукові* URL, не прямі, тобто
+рівно той зайвий крок, який ця фіча має усувати.
+
+Треклист тягнеться через `getMetadataWithTracks` — це живий виклик до движка, тому найповільніша
+частина відповіді, але без нього незрозуміло що саме слухаєш.
 
 ---
 
-## Platforms
+## `ListenLinkResolver`
 
-| Platform | URL pattern |
-|----------|-------------|
-| Spotify | `https://open.spotify.com/search/{artist}%20{title}` |
-| Apple Music | `https://music.apple.com/search?term={artist}%20{title}` |
-| YouTube Music | `https://music.youtube.com/search?q={artist}+{title}` |
-| SoundCloud | `https://soundcloud.com/search?q={artist}%20{title}` |
-| Bandcamp | `https://bandcamp.com/search?q={artist}%20{title}` |
+Повертає `Result(source, links)` — `links` ніколи не порожній, перший елемент ведучий.
+Порядок джерел:
 
-Ці посилання лишаються search-based — немає прямої інтеграції з жодною платформою через API.
-Вони показуються як фолбек-ряд під прямим лінком, або самі, якщо прямий не знайшовся.
-
-**`ListenLinkResolver`** — прямий (не пошуковий) лінк, ставиться ПЕРШИМ як кнопка "▶️ слухати"
-і дублюється URL-ом у тексті повідомлення. Порядок джерел:
 1. `BANDCAMP` реліз → сама сторінка релізу (masterId) — це вже прямий лінк
-2. `DISCOGS` реліз → перший community YouTube video з release page (`DiscogsClient.getPrimaryVideoUrl`)
-3. Далі / `MUSICBRAINZ` → yt-music scraper пошук за artist+title (`sm-scraper` `/ytmusic/search`).
-   Сам скрапер уже деградує з альбому на **окремий трек** того ж артиста, якщо альбому нема —
-   це і є фолбек "хоча б один трек"
+2. `DISCOGS` реліз → **усі** community YouTube-відео з release page (`DiscogsClient.getVideos`):
+   перше стає ведучим лінком, решта йдуть списком "🎬 ще з discogs" — по них видно назви треків,
+   тому це найшвидший спосіб перестрибувати між окремими треками релізу
+3. Discogs без відео / `MUSICBRAINZ` → yt-music scraper пошук за artist+title
+   (`sm-scraper` `/ytmusic/search`). Сам скрапер уже деградує з альбому на **окремий трек** того ж
+   артиста, якщо альбому нема — це і є фолбек "хоча б один трек"
 4. Нічого не зматчилось → `ListenLinkWebSearch` — LLM web search на `discoveryChatModel`
 
 Пункти 1-3 структуровані: джерело або прив'язане до конкретного релізу, або це artist+album match
@@ -53,6 +51,17 @@ User clicks [🎧] на release card
 
 ---
 
+## Release card
+
+Посилання на сторінку релізу живе **в тексті картки**, не кнопкою:
+`📍 1/5 (discogs 🔗 https://...)`. Окрему 🔗-кнопку прибрано — вона займала місце в ряду
+навігації заради того самого URL.
+
+Ряд кнопок картки: `⬅️` `🎧` `⬇️` `➡️`.
+
+---
+
 ## Notes
 - `STREAM:` callback вимагає активної SearchContext (release має бути в кеші)
 - При промаху кешу після рестарту — lazy-load з `ChatStateStore` (аналогічно до `DL:`)
+- Картка "нічого не знайдено" більше не має 🎧 (нема релізу → нема що резолвити), лишились 💿 і ⛏️

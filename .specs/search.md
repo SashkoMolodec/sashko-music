@@ -109,15 +109,16 @@ In-memory `releaseMetadataCache: Map<releaseId, ReleaseMetadata>` — переб
 ## Release card format (Telegram)
 
 ```
-🎵 Artist — Title (Year)
-Label · Format · Country
-[🔗 посилання]
-[1] Track 1
-[2] Track 2
-...
+📍 1/5 (discogs 🔗 https://www.discogs.com/release/...)
+💿 title
+👤 artist
+year • type • label • N тр. • tags
 
-[📋 Деталі]  [DL]  [▶ Stream]  [⛏ Глибше]
+[⬅️]  [🎧]  [⬇️]  [➡️]
 ```
+
+Посилання на сторінку релізу — в тексті, не кнопкою (див. [streaming.md](streaming.md)).
+`🎧` віддає готовий лінк де послухати + треклист одним повідомленням.
 
 ---
 

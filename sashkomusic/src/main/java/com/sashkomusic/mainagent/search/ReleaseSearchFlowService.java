@@ -166,7 +166,9 @@ public class ReleaseSearchFlowService {
             case DISCOGS -> "discogs";
             case BANDCAMP -> "bandcamp";
         };
-        return "📍 %d/%d (%s)\n%s".formatted(index + 1, total, source, body);
+        String releaseUrl = buildReleaseUrlForSource(release);
+        String origin = releaseUrl == null ? source : source + " 🔗 " + releaseUrl;
+        return "📍 %d/%d (%s)\n%s".formatted(index + 1, total, origin, body);
     }
 
     private List<List<BotResponse.ButtonDto>> buildCardButtonRows(ReleaseMetadata release, int index, int total) {
@@ -175,10 +177,6 @@ public class ReleaseSearchFlowService {
         List<BotResponse.ButtonDto> row = new ArrayList<>();
         row.add(new BotResponse.ButtonDto("⬅️", "CARD:" + prev));
         row.add(new BotResponse.ButtonDto("🎧", "STREAM:" + release.id()));
-        String releaseUrl = buildReleaseUrlForSource(release);
-        if (releaseUrl != null) {
-            row.add(new BotResponse.ButtonDto("🔗", releaseUrl));
-        }
         row.add(new BotResponse.ButtonDto("⬇️", "DL:" + release.id()));
         row.add(new BotResponse.ButtonDto("➡️", "CARD:" + next));
         return List.of(row);
@@ -191,7 +189,7 @@ public class ReleaseSearchFlowService {
             if (service != null) {
                 String url = service.buildReleaseUrl(release);
                 if (url != null && !url.isEmpty()) {
-                    return "URL:" + url;
+                    return url;
                 }
             }
         } catch (Exception e) {
@@ -202,7 +200,6 @@ public class ReleaseSearchFlowService {
 
     private static LinkedHashMap<String, String> buildEmptyResultsButtons(MetadataSearchRequest searchRequest) {
         var buttons = new LinkedHashMap<String, String>();
-        buttons.put("🎧", "STREAM:");
         buttons.put("💿", SearchUrlUtils.buildDiscogsSearchUrl(searchRequest.artist(), searchRequest.getTitle()));
         buttons.put("⛏️", "DIG_DEEPER");
         return buttons;

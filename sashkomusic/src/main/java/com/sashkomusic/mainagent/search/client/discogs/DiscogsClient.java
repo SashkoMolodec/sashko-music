@@ -436,18 +436,19 @@ public class DiscogsClient implements SearchEngineService {
     }
 
     /**
-     * First community-curated YouTube link on the Discogs release page, if any. This is free
-     * (no extra scraping) and usually points at the exact pressing rather than a generic search.
+     * Community-curated YouTube links on the Discogs release page, in page order. Free (no extra
+     * scraping) and usually pointing at the exact pressing rather than a generic search — the first
+     * one doubles as the release's listen link, the rest as per-track jump-offs.
      */
-    @CircuitBreaker(name = "discogsClient", fallbackMethod = "getPrimaryVideoUrlFallback")
+    @CircuitBreaker(name = "discogsClient", fallbackMethod = "getVideosFallback")
     @Retry(name = "discogsClient")
-    public Optional<String> getPrimaryVideoUrl(String releaseId) {
+    public List<DiscogsReleaseResponse.Video> getVideos(String releaseId) {
         if (!releaseId.startsWith("discogs:")) {
-            return Optional.empty();
+            return List.of();
         }
         String[] parts = releaseId.split(":");
         if (parts.length != 3) {
-            return Optional.empty();
+            return List.of();
         }
         String id = parts[2];
 
@@ -462,15 +463,17 @@ public class DiscogsClient implements SearchEngineService {
                 .retrieve()
                 .body(DiscogsReleaseResponse.class);
 
-        if (response == null || response.videos() == null || response.videos().isEmpty()) {
-            return Optional.empty();
+        if (response == null || response.videos() == null) {
+            return List.of();
         }
-        return Optional.ofNullable(response.videos().getFirst().uri());
+        return response.videos().stream()
+                .filter(v -> v.uri() != null && !v.uri().isBlank())
+                .toList();
     }
 
-    public Optional<String> getPrimaryVideoUrlFallback(String releaseId, Exception e) {
-        log.warn("Discogs getPrimaryVideoUrl fallback triggered for release ID '{}': {}", releaseId, e.getMessage());
-        return Optional.empty();
+    public List<DiscogsReleaseResponse.Video> getVideosFallback(String releaseId, Exception e) {
+        log.warn("Discogs getVideos fallback triggered for release ID '{}': {}", releaseId, e.getMessage());
+        return List.of();
     }
 
     @CircuitBreaker(name = "discogsClient", fallbackMethod = "getReleaseIdFromMarketplaceListingFallback")

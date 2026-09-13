@@ -7,13 +7,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Resolves a single "go listen to this now" link, preferring a real direct link over the
- * generic per-platform search links {@link StreamingFlowService} falls back to:
+ * Resolves where to listen to a release right now. Source order:
  *   - Bandcamp: the release page itself IS the listen link (masterId).
- *   - Discogs: first community-curated YouTube video on the release page, if any.
+ *   - Discogs: community-curated YouTube links on the release page — the first is the listen link,
+ *     the rest are per-track jump-offs worth showing alongside it.
  *   - MusicBrainz / Discogs-without-video: yt-music scraper search by artist+title, which itself
  *     degrades from an album match to a single track by the same artist.
  *   - Nothing matched: an LLM web search, the only unstructured source and therefore the last one
@@ -24,7 +25,19 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ListenLinkResolver {
 
-    public record ListenLink(String url, String source) {}
+    /** {@code title} is null when the source gives a bare URL with no track name attached. */
+    public record ListenLink(String url, String title) {}
+
+    /** {@code links} is never empty; the first entry is the one to lead with. */
+    public record Result(String source, List<ListenLink> links) {
+        public ListenLink primary() {
+            return links.getFirst();
+        }
+
+        public List<ListenLink> alternates() {
+            return links.subList(1, links.size());
+        }
+    }
 
     private static final String NOT_FOUND = "NONE";
 
@@ -32,18 +45,16 @@ public class ListenLinkResolver {
     private final YtMusicScraperClient ytMusicScraperClient;
     private final ListenLinkWebSearch listenLinkWebSearch;
 
-    public Optional<ListenLink> resolve(ReleaseMetadata release) {
+    public Optional<Result> resolve(ReleaseMetadata release) {
         return fromCatalogs(release).or(() -> fromWebSearch(release));
     }
 
-    private Optional<ListenLink> fromCatalogs(ReleaseMetadata release) {
+    private Optional<Result> fromCatalogs(ReleaseMetadata release) {
         try {
             return switch (release.source()) {
                 case BANDCAMP -> Optional.ofNullable(release.masterId())
-                        .map(url -> new ListenLink(url, "bandcamp"));
-                case DISCOGS -> discogsClient.getPrimaryVideoUrl(release.id())
-                        .map(url -> new ListenLink(url, "discogs"))
-                        .or(() -> fromYtMusic(release));
+                        .map(url -> new Result("bandcamp", List.of(new ListenLink(url, null))));
+                case DISCOGS -> fromDiscogsVideos(release).or(() -> fromYtMusic(release));
                 case MUSICBRAINZ -> fromYtMusic(release);
             };
         } catch (Exception e) {
@@ -52,12 +63,19 @@ public class ListenLinkResolver {
         }
     }
 
-    private Optional<ListenLink> fromYtMusic(ReleaseMetadata release) {
-        return ytMusicScraperClient.findAlbumUrl(release.artist(), release.title())
-                .map(url -> new ListenLink(url, "yt music"));
+    private Optional<Result> fromDiscogsVideos(ReleaseMetadata release) {
+        List<ListenLink> videos = discogsClient.getVideos(release.id()).stream()
+                .map(v -> new ListenLink(v.uri(), v.title()))
+                .toList();
+        return videos.isEmpty() ? Optional.empty() : Optional.of(new Result("discogs", videos));
     }
 
-    private Optional<ListenLink> fromWebSearch(ReleaseMetadata release) {
+    private Optional<Result> fromYtMusic(ReleaseMetadata release) {
+        return ytMusicScraperClient.findAlbumUrl(release.artist(), release.title())
+                .map(url -> new Result("yt music", List.of(new ListenLink(url, null))));
+    }
+
+    private Optional<Result> fromWebSearch(ReleaseMetadata release) {
         try {
             String answer = listenLinkWebSearch.findListenUrl(release.artist(), release.title());
             if (answer == null) return Optional.empty();
@@ -66,7 +84,7 @@ public class ListenLinkResolver {
                 log.info("Web search found no listen link for '{} — {}'", release.artist(), release.title());
                 return Optional.empty();
             }
-            return Optional.of(new ListenLink(url, "web"));
+            return Optional.of(new Result("web", List.of(new ListenLink(url, null))));
         } catch (Exception e) {
             log.warn("Web search listen-link lookup failed for release {}: {}", release.id(), e.getMessage());
             return Optional.empty();
