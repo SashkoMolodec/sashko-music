@@ -90,7 +90,7 @@ public class DiscogsClient implements SearchEngineService {
                 return List.of();
             }
 
-            return mapToDomain(response.results());
+            return mapToDomain(response.results(), request);
 
         } catch (Exception ex) {
             log.error("Error searching Discogs: {}", ex.getMessage());
@@ -162,7 +162,7 @@ public class DiscogsClient implements SearchEngineService {
         }
     }
 
-    private List<ReleaseMetadata> mapToDomain(List<DiscogsSearchResponse.Result> results) {
+    private List<ReleaseMetadata> mapToDomain(List<DiscogsSearchResponse.Result> results, MetadataSearchRequest request) {
         log.debug("Mapping {} Discogs results to domain", results.size());
 
         List<DiscogsSearchResponse.Result> releases = results.stream()
@@ -170,6 +170,10 @@ public class DiscogsClient implements SearchEngineService {
                 .toList();
 
         log.debug("After filtering for 'release' type, {} releases remain", releases.size());
+
+        releases = filterByRequestedArtist(releases, request.artist());
+
+        log.debug("After filtering for requested artist '{}', {} releases remain", request.artist(), releases.size());
 
         // Group by ARTIST + TITLE, not title alone — a title-only key merges unrelated releases
         // that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known
@@ -267,6 +271,23 @@ public class DiscogsClient implements SearchEngineService {
                 tags,
                 label
         );
+    }
+
+    // Discogs' `artist=` search param is a relevance hint over its full-text index, not an exact
+    // filter — it happily returns releases from other artist entities that merely share the
+    // literal name (Discogs disambiguates same-name artists as "Alpi", "Alpi (2)", "Alpi (3)", ...
+    // and the API ranks all of them). Nothing upstream verifies the returned artist actually
+    // matches what was requested, so narrow it down here. If narrowing empties the list, trust
+    // Discogs' own ranking rather than showing nothing — better a loose result than none.
+    private List<DiscogsSearchResponse.Result> filterByRequestedArtist(List<DiscogsSearchResponse.Result> releases, String requestedArtist) {
+        if (requestedArtist == null || requestedArtist.isBlank()) {
+            return releases;
+        }
+        String normalizedRequested = requestedArtist.toLowerCase().trim();
+        List<DiscogsSearchResponse.Result> matches = releases.stream()
+                .filter(r -> extractArtist(r.title()).toLowerCase().trim().equals(normalizedRequested))
+                .toList();
+        return matches.isEmpty() ? releases : matches;
     }
 
     private String extractArtist(String fullTitle) {
