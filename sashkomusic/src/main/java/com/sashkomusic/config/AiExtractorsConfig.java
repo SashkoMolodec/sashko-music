@@ -6,6 +6,7 @@ import com.sashkomusic.mainagent.bot.newtopic.TopicNameGenerator;
 import com.sashkomusic.mainagent.bot.photo.PhotoReleaseTextExtractor;
 import com.sashkomusic.mainagent.download.DownloadBatchAnalyzer;
 import com.sashkomusic.mainagent.process.MetadataSuggester;
+import com.sashkomusic.mainagent.streaming.ListenLinkWebSearch;
 import com.sashkomusic.libraryagent.domain.service.processFolder.FolderNameParser;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistDslExtractor;
 import dev.langchain4j.model.chat.ChatModel;
@@ -59,5 +60,11 @@ public class AiExtractorsConfig {
     @Bean
     public SmartlistDslExtractor smartlistDslExtractor(@Qualifier("haikuChatModel") ChatModel haiku) {
         return AiServices.builder(SmartlistDslExtractor.class).chatModel(haiku).build();
+    }
+
+    // discoveryChatModel, not haiku — this is the only bean carrying the server-side web_search tool.
+    @Bean
+    public ListenLinkWebSearch listenLinkWebSearch(@Qualifier("discoveryChatModel") ChatModel discovery) {
+        return AiServices.builder(ListenLinkWebSearch.class).chatModel(discovery).build();
     }
 }

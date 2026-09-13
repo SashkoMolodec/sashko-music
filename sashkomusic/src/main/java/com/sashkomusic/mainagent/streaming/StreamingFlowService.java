@@ -23,74 +23,41 @@ public class StreamingFlowService {
 
     public List<BotResponse> handleStreamingPlatforms(ConversationContext ctx, String callbackData) {
         try {
-            var platforms = handleStreamingCallback(ctx, callbackData);
             String releaseId = callbackData.substring("STREAM:".length());
-            List<BotResponse> responses = new java.util.ArrayList<>();
-
-            if (!releaseId.isEmpty()) {
-                String tracklist = buildTracklistText(ctx.conversationId(), releaseId);
-                if (!tracklist.isBlank()) {
-                    responses.add(BotResponse.text(tracklist));
-                }
+            if (releaseId.isEmpty()) {
+                return List.of(BotResponse.withButtons("🤝 послухай туво", getPlatformLinksForSearch(ctx)));
             }
 
-            responses.add(BotResponse.withButtons("🤝 послухай туво", platforms));
-            return responses;
+            ReleaseMetadata metadata = searchContextService.getReleaseMetadata(releaseId, ctx.conversationId());
+            if (metadata == null) {
+                log.warn("No metadata found for releaseId={} in conversation={}", releaseId, ctx.conversationId());
+                return List.of(BotResponse.withButtons("🤝 послухай туво", getPlatformLinksForSearch(ctx)));
+            }
+
+            Map<String, String> platforms = buildPlatformSearchLinks(metadata.artist(), metadata.title());
+            return listenLinkResolver.resolve(metadata)
+                    .map(link -> List.of(BotResponse.withMultiRowButtons(
+                            "▶️ " + metadata.artist() + " — " + metadata.title()
+                                    + " (" + link.source() + ")\n" + link.url(),
+                            List.of(List.of(BotResponse.ButtonDto.callback("▶️ слухати", "URL:" + link.url())),
+                                    toButtonRow(platforms)))))
+                    .orElseGet(() -> List.of(BotResponse.withButtons(
+                            "прямого лінку не знайшов — ось де пошукати 👇", platforms)));
         } catch (Exception e) {
             log.error("Error getting streaming platforms: {}", e.getMessage(), e);
             return List.of(BotResponse.text("Не вдалося знайти стрімінгові платформи 😔"));
         }
     }
 
-    private String buildTracklistText(String conversationId, String releaseId) {
-        try {
-            var metadata = searchContextService.getMetadataWithTracks(releaseId, conversationId);
-            if (metadata == null || metadata.tracks() == null || metadata.tracks().isEmpty()) return "";
-
-            var sb = new StringBuilder();
-            sb.append("_").append(metadata.artist()).append(" — ").append(metadata.title()).append("_\n");
-            for (var track : metadata.tracks()) {
-                sb.append(track.number()).append(". ").append(track.title().toLowerCase()).append("\n");
-            }
-            return sb.toString().stripTrailing();
-        } catch (Exception e) {
-            log.warn("Could not fetch tracklist for releaseId={}: {}", releaseId, e.getMessage());
-            return "";
-        }
-    }
-
-    public Map<String, String> handleStreamingCallback(ConversationContext ctx, String callbackData) {
-        log.info("Handling streaming platforms request, callback={}", callbackData);
-
-        String releaseId = callbackData.substring("STREAM:".length());
-        return releaseId.isEmpty()
-                ? getPlatformLinksForSearch(ctx)
-                : getPlatformLinks(ctx.conversationId(), releaseId);
+    private List<BotResponse.ButtonDto> toButtonRow(Map<String, String> buttons) {
+        return buttons.entrySet().stream()
+                .map(e -> BotResponse.ButtonDto.callback(e.getKey(), e.getValue()))
+                .toList();
     }
 
     public Map<String, String> getPlatformLinksForSearch(ConversationContext ctx) {
         var searchRequest = searchContextService.getSearchRequest(ctx.conversationId());
         return buildPlatformSearchLinks(searchRequest.artist(), searchRequest.getTitle());
-    }
-
-    public Map<String, String> getPlatformLinks(String conversationId, String releaseId) {
-        ReleaseMetadata metadata = searchContextService.getReleaseMetadata(releaseId, conversationId);
-        if (metadata == null) {
-            log.warn("No metadata found for releaseId={} in conversation={}", releaseId, conversationId);
-            return Map.of("▶️", "URL:https://youtube.com");
-        }
-        Map<String, String> buttons = buildPlatformSearchLinks(metadata.artist(), metadata.title());
-
-        // A resolved direct link (Discogs video, Bandcamp page, or a real yt-music match) beats
-        // every generic per-platform search link above — put it first.
-        listenLinkResolver.resolve(metadata).ifPresent(url -> {
-            Map<String, String> withDirectLink = new LinkedHashMap<>();
-            withDirectLink.put("🎯", "URL:" + url);
-            withDirectLink.putAll(buttons);
-            buttons.clear();
-            buttons.putAll(withDirectLink);
-        });
-        return buttons;
     }
 
     private Map<String, String> buildPlatformSearchLinks(String artist, String title) {

@@ -35,7 +35,7 @@ public interface DiscoveryAgent {
 | Параметр      | Значення |
 |---------------|----------|
 | Модель        | `claude-haiku-4-5-20251001` (override: `agents.discovery.model-name`) |
-| ChatModel bean| `discoveryChatModel` (`AgentModelsConfig`) — **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool |
+| ChatModel bean| `discoveryChatModel` (`AgentModelsConfig`) — **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool. Другий споживач цього ж біна — `ListenLinkWebSearch` (`AiExtractorsConfig`), last-resort резолвер лінку "де послухати" (див. [.specs/streaming.md](../../../../../../.specs/streaming.md)) |
 | maxTokens     | 1024 |
 | Memory window | 16 messages |
 | Memory store  | `PostgresChatMemoryStore`, ключ: `conversationId + ":d"` |
