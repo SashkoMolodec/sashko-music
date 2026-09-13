@@ -19,6 +19,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class AgentTraceListener implements ChatModelListener {
 
+    // Mirrors AnthropicMapper.SERVER_TOOL_RESULTS_KEY — copied rather than imported, that class
+    // sits in langchain4j's `internal` package.
+    private static final String SERVER_TOOL_RESULTS_KEY = "server_tool_results";
+
     public record CallEntry(String agent, List<String> toolNames, int tokensIn, int tokensOut,
                              int cacheRead, int cacheWrite, double cost) {}
 
@@ -93,6 +97,13 @@ public class AgentTraceListener implements ChatModelListener {
         if (toolCalls > 0) {
             aiMessage.toolExecutionRequests().forEach(t ->
                     log.info("[agent={}]   tool={} args={}", agentName, t.name(), t.arguments()));
+        }
+        // toolCalls counts client-side @Tool calls only — Anthropic's server-side web_search runs inside
+        // the same API response, so without this it is invisible whether the model searched or answered
+        // from its own knowledge.
+        Object serverToolResults = aiMessage.attributes().get(SERVER_TOOL_RESULTS_KEY);
+        if (serverToolResults != null) {
+            log.info("[agent={}]   🌐 server-tool-results={}", agentName, truncate(String.valueOf(serverToolResults), 500));
         }
     }
 
