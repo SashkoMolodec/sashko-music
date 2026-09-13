@@ -171,12 +171,17 @@ public class DiscogsClient implements SearchEngineService {
 
         log.debug("After filtering for 'release' type, {} releases remain", releases.size());
 
+        // Group by ARTIST + TITLE, not title alone — a title-only key merges unrelated releases
+        // that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known
+        // John Cage piece with a dozen reissues AND an unrelated electronic release — grouping by
+        // title alone merged all of them into one release with mashed-together years/tags/label).
         // LinkedHashMap preserves Discogs' relevance ordering (order of first appearance in the
         // response) across the grouping — a plain groupingBy() uses a HashMap and would scramble it.
         Map<String, List<DiscogsSearchResponse.Result>> grouped = releases.stream()
                 .collect(Collectors.groupingBy(r -> {
+                    String artist = extractArtist(r.title()).toLowerCase().trim();
                     String title = extractTitle(r.title()).toLowerCase().trim();
-                    return title.replaceAll("[\\p{C}\\p{Z}&&[^ ]]", "");
+                    return (artist + "::" + title).replaceAll("[\\p{C}\\p{Z}&&[^ ]]", "");
                 }, LinkedHashMap::new, Collectors.toList()));
 
         log.debug("Grouped into {} unique titles", grouped.size());

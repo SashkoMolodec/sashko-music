@@ -11,7 +11,6 @@ import com.sashkomusic.mainagent.shared.util.ReleaseCardFormatter;
 import com.sashkomusic.mainagent.shared.util.SearchUrlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -32,9 +31,6 @@ public class ReleaseSearchFlowService {
     private final SearchContextService contextService;
     private final FileIdCacheService fileIdCacheService;
     private final MetadataUrlFetcher metadataUrlFetcher;
-
-    @Value("${search.cards.max:4}")
-    private int maxCards;
 
     public List<BotResponse> showByUrl(ConversationContext ctx, String url) {
         Optional<ReleaseMetadata> result = metadataUrlFetcher.fetch(url);
@@ -148,29 +144,6 @@ public class ReleaseSearchFlowService {
             return List.of(BotResponse.cardWithRows(text, release.getCoverArtUrl(), rows));
         }
         return List.of(BotResponse.editCard(messageId, text, imageRef, rows));
-    }
-
-    /**
-     * Shows up to {@code search.cards.max} results as separate Telegram messages instead of one
-     * card with pagination — each card keeps its own ⬅️/➡️/DL/🎧 buttons cycling through the FULL
-     * result list, so paging still works past the initially-shown cards. currentPage stays at the
-     * top result (0) so getTrackList / DL: on a fresh search resolve to the first card shown.
-     */
-    public List<BotResponse> buildTopCardsResponse(ConversationContext ctx) {
-        var releases = contextService.getSearchResults(ctx.conversationId());
-        if (releases.isEmpty()) {
-            return List.of(BotResponse.text("результатів немає."));
-        }
-        contextService.updateCurrentPage(ctx.conversationId(), 0);
-        int shown = Math.min(maxCards, releases.size());
-        List<BotResponse> cards = new ArrayList<>(shown);
-        for (int i = 0; i < shown; i++) {
-            var release = releases.get(i);
-            var rows = buildCardButtonRows(release, i, releases.size());
-            String text = buildCardText(release, i, releases.size());
-            cards.add(BotResponse.cardWithRows(text, release.getCoverArtUrl(), rows));
-        }
-        return cards;
     }
 
     public List<BotResponse> buildPageResponse(ConversationContext ctx, int page) {

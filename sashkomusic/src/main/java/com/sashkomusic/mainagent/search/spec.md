@@ -51,9 +51,10 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 - **LOOKUP** (has `release` or `recording`): `/release` endpoint, as before (limit **100** — MusicBrainz hard-caps at 100; 150 silently errors).
 - **BROWSE** (`isBrowseQuery()`): tries `/release-group` FIRST (one row per album concept, dedup'd across pressings — far less noisy than `/release` for a bare style+year query), falls back to `/release` if empty. Lucene field for date differs: `firstreleasedate:` on `/release-group` vs `date:` on `/release`; `/release-group` has no `country`/`label`/`catno` fields.
 - `findArtistMbid(artistName)` — new lookup (`/artist?query=`) used by `findSimilar`.
+- **Group sort order is SCORE first, year only a tiebreaker** (`mapToGroupedDomain`). Was year-ascending first — same-name-collision releases (a different artist who happens to share/partially-match the searched name) would outrank the actual best match purely for being older, surfacing a totally unrelated result as the top card. Score (MusicBrainz's own Lucene relevance) must dominate; year only orders among equally-relevant matches.
 
 ### `DiscogsClient` — structured params
-`addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). Grouping in `mapToDomain` uses a `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
+`addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). Grouping in `mapToDomain` keys on **artist + title**, not title alone — a title-only key merged unrelated releases that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known John Cage piece with a dozen reissues AND an unrelated electronic release; grouping by title alone mashed both into one release with garbage combined years/tags/label). Uses `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
 `performSearch`/`retryWithoutArtist` route through a `@Lazy self` proxy reference so `@CircuitBreaker`/`@Retry` actually apply — calling a `@CircuitBreaker`-annotated method directly (`this.performSearch(...)`) bypasses the Spring AOP proxy entirely.
 `getPrimaryVideoUrl(releaseId)` — first community-curated YouTube link from the release's `videos[]` (used by `ListenLinkResolver`).
 
@@ -65,8 +66,7 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 |-------|-------------|
 | `searchWithFallback(query, engines...)` | Послідовний fallback по движках |
 | `switchStrategyAndSearch(ctx)` | DIG_DEEPER: наступний engine по колу |
-| `buildTopCardsResponse(ctx)` | До `search.cards.max` (дефолт 4) окремих карток-повідомлень замість однієї з пагінацією — кожна зі своїми ⬅️/➡️/🎧/⬇️ що гортають повний список |
-| `buildPageResponse(ctx, page)` | Одна release картка з пагінацією (`CARD:`/`PAGE:` callback); зберігає `currentPage` через `searchContextService.updateCurrentPage()` |
+| `buildPageResponse(ctx, page)` | Одна release картка з пагінацією (⬅️/➡️ у самій картці, `CARD:`/`PAGE:` callback); зберігає `currentPage` через `searchContextService.updateCurrentPage()`. Це основний спосіб показу результатів — один пошук = одна картка + гортання, не список карток. |
 | `buildReleaseDownloadCard(release, engine)` | Картка для download flow |
 
 ---
@@ -102,4 +102,3 @@ No LLM, no free-text web search, no "verify" step — every source is either att
 - Новий `SearchEngine` → `SearchEngineService` impl + реєстрація в `SearchEngineConfig`. `searchWithFallback` підхопить автоматично.
 - Змінити порядок пошуку → порядок у `SearchEngine` enum, або `isBrowseQuery()` branch якщо порядок має залежати від типу запиту.
 - Нове поле в `SearchContext` → оновити `SearchState` deserialization (Jackson) і всі місця де будується `SearchContext`.
-- Змінити скільки карток показується → `search.cards.max` в `application.properties` (дефолт 4).

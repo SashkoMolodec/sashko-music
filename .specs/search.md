@@ -71,8 +71,8 @@ User: "які треки на цьому альбомі?"
 - **BROWSE** (style/year only, no title — e.g. "trance 1994"): DISCOGS → MUSICBRAINZ → BANDCAMP —
   Discogs carries per-release `label` data that MusicBrainz's `/release-group` browse endpoint doesn't.
 
-Показ результатів: до `search.cards.max` (дефолт 4) окремих карток-повідомлень (`ReleaseSearchFlowService.buildTopCardsResponse`)
-замість однієї картки з пагінацією — кожна зі своїми ⬅️/➡️/🎧/⬇️ що й далі гортають повний список.
+Показ результатів: **одна** картка з пагінацією (`ReleaseSearchFlowService.buildPageResponse`), ⬅️/➡️ гортають повний
+список знайдених релізів. Кілька окремих карток одним повідомленням-стосом навмисно не показуються для одного пошуку.
 
 Similarity ("хочу схоже на X"): `DiscoveryAgentTools.findSimilar()` via ListenBrainz co-listen data → related artists → MusicBrainz releases. See `agents/discovery/spec.md`.
 

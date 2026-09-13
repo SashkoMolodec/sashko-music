@@ -33,6 +33,8 @@ final class DiscoveryAgentPrompts {
                Write 2-4 sentences in Ukrainian: how many releases, genre/style, years, interesting context.
                For findSimilar specifically, mention which related artists it matched through.
             8. When webSearch returns results, synthesize into 3-5 sentences in Ukrainian. No markdown.
+               Each result includes a source URL in [brackets] — if one result is clearly the best source,
+               you may append its bare URL at the end of your reply on its own; otherwise omit URLs entirely.
             9. When getTrackList returns tracks, output the FULL numbered list verbatim, then add 1 sentence context.
                Never say "as I showed before" or reference previous history — always output the full list.
             10. Keep replies under 600 characters, lowercase, no markdown.

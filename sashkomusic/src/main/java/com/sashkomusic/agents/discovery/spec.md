@@ -60,15 +60,15 @@ Inside MusicBrainz itself, a BROWSE-shaped request additionally tries `/release-
 1. Seed resolution: if `seedQuery` blank → use the release currently in view (same `currentPage` lookup as `getTrackList`); else `seedQuery` is treated as an artist name directly (no re-parsing).
 2. `MusicBrainzClient.findArtistMbid(seedArtist)` → MBID. Empty → ask for a clearer artist name.
 3. `ListenBrainzClient.findSimilarArtists(mbid)` (labs.api.listenbrainz.org, free, no key, CC0) → top artists by co-listen score, capped at `MAX_SIMILAR_ARTISTS_TRIED` (6).
-4. For each similar artist (score-sorted), `MusicBrainzClient.searchReleases()` by artist name only — first release per artist, capped at `MAX_SIMILAR_RELEASES` (12).
+4. For each similar artist (score-sorted), `MusicBrainzClient.searchReleases()` by artist name only — the **highest-scoring** release per artist (not the first), capped at `MAX_SIMILAR_RELEASES` (12). An unconstrained artist-name-only query can return same-name collisions from unrelated artists; picking by MusicBrainz's own relevance score instead of list order avoids surfacing one of those collisions as the pick.
 5. `searchContextService.saveSearchContext(conversationId, MUSICBRAINZ, "схоже на <seed>", null, combined)` — same context slot `search()` uses, so card-building/pagination/DL work identically on the result.
 Tригер: "хочу схоже", "порадь щось подібне", "similar to X", "recommend something like this". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via ListenBrainz, not what the user already owns.
 
 ### `webSearch(query, conversationId)`
 Research tool for artist bio, discography, label history, and factual music questions.
 1. Pushes `BotResponse.text("🌐 виходимо у світ божий…")` into `ChatResponseAccumulator` under the **main** conversationId (strips `:d` suffix).
-2. Calls `WebSearchService.search(query)` → jsoup POST to `https://html.duckduckgo.com/html/`, parses `.result__snippet` + `a.result__a` elements, returns top-4 results as text.
-3. LangChain4j agent synthesizes into 3-5 Ukrainian sentences.
+2. Calls `WebSearchService.search(query)` → jsoup POST to `https://html.duckduckgo.com/html/`, parses `.result__snippet` + `a.result__a` elements, returns top-4 results as text, each with its **real source URL** in `[brackets]` — DDG's HTML endpoint wraps links in a `/l/?uddg=<encoded>` redirect; `resolveRealUrl()` decodes it back. Previously the href was discarded entirely, so results had no verifiable source.
+3. LangChain4j agent synthesizes into 3-5 Ukrainian sentences, optionally citing the single best source URL.
 Тригер: "розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X", будь-яке дослідницьке питання.
 
 ### `digDeeper(conversationId)`
@@ -93,9 +93,9 @@ Research tool for artist bio, discography, label history, and factual music ques
    - Якщо `rawInput` не змінився (наприклад, викликано тільки `getTrackList`) → повернути summary DiscoveryAgent без форматування
 4. Якщо нічого не знайшов → `DiscoverResult.empty(summary)`
 
-`formatForMainAgent()` — формує агрегований summary для MainAgent: кількість, скільки показано карток (`showing top K as cards`), діапазон років, розбивка по типах (album/EP/single/other), топ-3 лейбли, топ-5 тегів. **Не перелічує кожен реліз** — MainAgent не парсить `DiscoverResult` структурно, тільки читає `.summary()`. Tracklist-відповідь (`getTrackList`) передається без агрегації — повний пронумерований список дослівно.
+`formatForMainAgent()` — формує агрегований summary для MainAgent: кількість, діапазон років, розбивка по типах (album/EP/single/other), топ-3 лейбли, топ-5 тегів. **Не перелічує кожен реліз** — MainAgent не парсить `DiscoverResult` структурно, тільки читає `.summary()`. Tracklist-відповідь (`getTrackList`) передається без агрегації — повний пронумерований список дослівно.
 
-Картки будуються через `ReleaseSearchFlowService.buildTopCardsResponse()` — до `search.cards.max` (дефолт 4) окремих Telegram-повідомлень замість однієї картки з пагінацією, кожне зі своїми ⬅️/➡️/🎧/⬇️ кнопками що й далі гортають повний список результатів.
+Картка будується через `ReleaseSearchFlowService.buildPageResponse(ctx, 0)` — **одна** картка з пагінацією (⬅️/➡️ гортають повний список результатів), не список окремих повідомлень. Показ кількох карток одночасно навмисно НЕ робиться для одного пошукового запиту — тільки якщо колись з'явиться явна multi-item фіча (напр. юзер питає про кілька різних треків/релізів в одному повідомленні), і то буде окремий design, не автоматичний "топ-N" з одного пошуку.
 
 **`DiscoveryAgentPrompts.SYSTEM` ключові правила:**
 - Для SEARCH-запитів: передати query прямо в `search` tool.

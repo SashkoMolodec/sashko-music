@@ -171,10 +171,14 @@ public class DiscoveryAgentTools {
             MetadataSearchRequest request = new MetadataSearchRequest(
                     null, similar.name(), "", "", DateRange.empty(), "", "", "", "", "", "", "");
             List<ReleaseMetadata> releases = mbEngine.searchReleases(request);
-            if (!releases.isEmpty()) {
-                combined.add(releases.getFirst());
-                matchedArtists.add(similar.name());
-            }
+            // Pick the highest-scoring match, not the first — an unconstrained artist-name-only
+            // query can return same-name collisions from totally unrelated artists.
+            releases.stream()
+                    .max(Comparator.comparingInt(ReleaseMetadata::score))
+                    .ifPresent(best -> {
+                        combined.add(best);
+                        matchedArtists.add(similar.name());
+                    });
         }
 
         if (combined.isEmpty()) {

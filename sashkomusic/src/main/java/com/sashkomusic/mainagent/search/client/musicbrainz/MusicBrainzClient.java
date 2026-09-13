@@ -378,11 +378,15 @@ public class MusicBrainzClient implements SearchEngineService {
                 .filter(r -> r.releaseGroup() != null)
                 .collect(Collectors.groupingBy(r -> r.releaseGroup().id()));
 
+        // Score (MusicBrainz's own Lucene relevance to the query) must sort FIRST — year-first
+        // sorting put the oldest same-name-collision release at the top regardless of how well it
+        // actually matched the query (e.g. an unrelated 1983 release outranking the real 2023 hit
+        // just for being older). Year is only a tiebreaker among equally-relevant matches.
         return grouped.values().stream()
                 .map(this::aggregateGroup)
                 .sorted(
-                        Comparator.comparing((ReleaseMetadata m) -> m.years().isEmpty() ? "0000" : m.years().getFirst())
-                                .thenComparing(Comparator.comparingInt(ReleaseMetadata::score).reversed())
+                        Comparator.comparingInt(ReleaseMetadata::score).reversed()
+                                .thenComparing((ReleaseMetadata m) -> m.years().isEmpty() ? "9999" : m.years().getFirst())
                                 .thenComparingInt(r -> r.title().length())
                 )
                 .toList();
