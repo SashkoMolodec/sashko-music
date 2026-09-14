@@ -48,7 +48,67 @@ public class DiscogsClient implements SearchEngineService {
             results = retryWithoutArtist(request);
         }
 
-        return results;
+        return merge(textSearchForTrack(request), results);
+    }
+
+    /**
+     * Browser-parity lookup: what the user types into discogs.com's search box lands in the free-text
+     * {@code q} index, which covers the <em>tracklist</em> — artist and title of every track. The
+     * structured params do not: {@code artist=} only ever sees the release's album artist, so
+     * "Adjust (BE) - Mist" scores zero there and degrades into a bare {@code track=mist} sweep over
+     * every artist alive. Runs only for track lookups, where that failure mode lives.
+     */
+    private List<ReleaseMetadata> textSearchForTrack(MetadataSearchRequest request) {
+        if (request.artist().isEmpty() || request.recording().isEmpty()) {
+            return List.of();
+        }
+        String query = request.artist() + " " + request.recording();
+        try {
+            return self.performTextSearch(query, request);
+        } catch (Exception e) {
+            log.warn("Discogs free-text search failed for '{}': {}", query, e.getMessage());
+            return List.of();
+        }
+    }
+
+    @CircuitBreaker(name = "discogsClient", fallbackMethod = "performTextSearchFallback")
+    @Retry(name = "discogsClient")
+    protected List<ReleaseMetadata> performTextSearch(String query, MetadataSearchRequest request) {
+        var response = client.get()
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/database/search")
+                            .queryParam("type", "release")
+                            .queryParam("per_page", "50")
+                            .queryParam("q", query);
+                    if (!apiToken.isEmpty()) {
+                        uriBuilder.queryParam("token", apiToken);
+                    }
+                    var uri = uriBuilder.build();
+                    log.info("Discogs free-text request URL: {}", uri);
+                    return uri;
+                })
+                .retrieve()
+                .body(DiscogsSearchResponse.class);
+
+        if (response == null || response.results() == null || response.results().isEmpty()) {
+            return List.of();
+        }
+        // Deliberately NOT filtered by album artist: the whole point is to reach releases whose
+        // album artist is "Various" but whose tracklist carries the requested artist.
+        return mapToDomain(response.results(), request.withoutArtist());
+    }
+
+    protected List<ReleaseMetadata> performTextSearchFallback(String query, MetadataSearchRequest request, Exception e) {
+        log.warn("Discogs performTextSearch fallback triggered for '{}': {}", query, e.getMessage());
+        return List.of();
+    }
+
+    private static List<ReleaseMetadata> merge(List<ReleaseMetadata> first, List<ReleaseMetadata> second) {
+        if (first.isEmpty()) return second;
+        LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
+        first.forEach(r -> merged.put(r.id(), r));
+        second.forEach(r -> merged.putIfAbsent(r.id(), r));
+        return List.copyOf(merged.values());
     }
 
     private List<ReleaseMetadata> retryWithoutArtist(MetadataSearchRequest request) {

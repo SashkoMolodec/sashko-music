@@ -10,6 +10,14 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class DiscoveryAgentConfig {
 
+    /** No memory and no tools of its own — one question in, three release names out. */
+    @Bean
+    public ReleaseRecommender releaseRecommender(@Qualifier("discoveryChatModel") ChatModel discoveryChatModel) {
+        return AiServices.builder(ReleaseRecommender.class)
+                .chatModel(discoveryChatModel)
+                .build();
+    }
+
     @Bean
     public DiscoveryAgent discoveryAgent(
             @Qualifier("discoveryChatModel") ChatModel discoveryChatModel,

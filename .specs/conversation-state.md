@@ -42,15 +42,26 @@ chat_state (
 ### Payload
 ```java
 SearchState {
-  SearchContext context {
+  SearchContext context {              // активний (останній) стос
     SearchEngine source,
     MetadataSearchRequest request,
     String rawInput,
-    List<String> releaseIds   // порядок результатів
+    List<String> releaseIds,           // порядок результатів
+    int currentPage
   },
-  List<ReleaseMetadata> releases  // full objects
+  List<ReleaseMetadata> releases,      // активний стос, full objects
+  List<SearchStack> stacks {           // усі стоси поточного ходу
+    String id,                         // "s1", "s2" — їде в CARD:-колбеку
+    String label,                      // запит, що побудував стос
+    List<ReleaseMetadata> releases,
+    int currentPage
+  }
 }
 ```
+
+`stacks` з'явився разом із мульти-стосовими відповідями (рекомендація = стос на кожен реліз). У payload'ах,
+записаних раніше, поля немає → compact constructor нормалізує в порожній список, тому старі сесії
+десеріалізуються без помилки.
 
 ### In-memory cache
 `Map<String releaseId, ReleaseMetadata>` — прискорює lookup. Перебудовується з DB при промаху через `loadContext(conversationId)`.
@@ -58,8 +69,14 @@ SearchState {
 ### Lazy reload after restart
 `getReleaseMetadata(releaseId, conversationId)` — якщо кеш порожній, завантажує SearchState з DB → заповнює кеш → повертає метадані. Без цього `DL:` кнопки ламались би після рестарту JVM.
 
-### Merge strategy
-`saveSearchContext` зливає нові результати з існуючими (deduplicate by releaseId, нові перезаписують). Це дозволяє `DIG_DEEPER` акумулювати результати з різних джерел.
+### Lookup across stacks
+`getReleaseMetadata(releaseId, conversationId)` шукає і в активному стосі, і в усіх `stacks` — юзер тисне
+⬇️/🎧 на картці будь-якого зі стосів, у будь-якому порядку.
+
+### Межа ходу
+`beginStacks(conversationId)` чистить `stacks` на початку кожного ходу, але **лишає** активний стос —
+кнопки на вже відправлених картках мають працювати й після наступного запиту. `rememberQuery()` записує
+запит без результатів (порожній точковий пошук), щоб ⛏️ мав що розширювати.
 
 ---
 

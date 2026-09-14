@@ -1,11 +1,8 @@
 package com.sashkomusic.agents.contract;
 
-import com.sashkomusic.shared.model.SearchEngine;
-
 public record DiscoverRequest(
         String conversationId,
-        String query,
-        SearchEngine preferredEngine
+        String query
 ) implements AgentRequest {
 
     public long chatId() {
@@ -14,10 +11,6 @@ public record DiscoverRequest(
     }
 
     public static DiscoverRequest of(String conversationId, String query) {
-        return new DiscoverRequest(conversationId, query, null);
-    }
-
-    public static DiscoverRequest of(String conversationId, String query, SearchEngine engine) {
-        return new DiscoverRequest(conversationId, query, engine);
+        return new DiscoverRequest(conversationId, query);
     }
 }

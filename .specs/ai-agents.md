@@ -31,14 +31,8 @@ findMusic(query, conversationId)
   → ProgressNotifier "🔍 шукаю..." → DiscoveryAgentService.handle() → DiscoverResult
   → side-effect: release cards pushed to accumulator
 
-findMusicOnDiscogs(query, conversationId)
-findMusicOnBandcamp(query, conversationId)
-findMusicOnMusicBrainz(query, conversationId)
-  → direct path: DiscoveryAgentService.handle(preferredEngine=X) → no LLM
-  → same side-effect
-
 digDeeper(conversationId)
-  → ReleaseSearchFlowService.switchStrategyAndSearch() → tries next engine
+  → ReleaseSearchFlowService.switchStrategyAndSearch() → той самий запит без валідації
 
 downloadMusic(artist, album, conversationId)
   → ProgressNotifier "⏳ шукаю на soulseek..." → DownloadAgentService.handle()
@@ -73,21 +67,26 @@ final = drained + [aiTextResponse]
 ## DiscoveryAgent
 
 ### System prompt
-Визначає стратегію пошуку: яке джерело спробувати першим, коли зупинитись.
+Визначає стратегію: який тул, скільки пошуків за хід, коли послабити фільтри. Джерело не вибирається —
+опитуються всі три одночасно.
 
 ### Tools (в `DiscoveryAgentTools`)
 
 ```
-search(query)
+search(query)                    ← точковий пошук ОДНІЄЇ речі, свій стос карток
   → SearchRequestExtractor.extract(query) → MetadataSearchRequest
-  → пробує SearchEngine sequentially until hit
-  → SearchContextService.saveSearchContext(conversationId+":d", ...)
-  → return "found N releases on ENGINE"
+  → AggregatedSearchService.search(): MB ‖ Discogs ‖ Bandcamp + ReleaseMatchValidator
+  → SearchContextService.openStack(conversationId+":d", ...)
+  → return "found N matching releases … — card stack shown"
+  → порожньо: перелік застосованих фільтрів + вказівка повторити з меншою кількістю
 
-getPreviousSearches()
-  → SearchContextService.getSearchResults(conversationId+":d")
-  → return list of previous results (допомагає LLM не повторювати)
+exploreAndRecommend(topic)       ← research → 3 конкретні релізи → 3 стоси
+findSimilar(seedQuery)           ← ListenBrainz → споріднені артисти → стос на артиста
+digDeeper()                      ← той самий запит без валідації
+getTrackList()                   ← треки релізу, який юзер зараз дивиться
 ```
+
+Деталі: [agents/discovery/spec.md](../sashkomusic/src/main/java/com/sashkomusic/agents/discovery/spec.md)
 
 ### Two execution paths
 

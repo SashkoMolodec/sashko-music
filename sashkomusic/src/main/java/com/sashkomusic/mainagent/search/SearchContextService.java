@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -23,10 +24,15 @@ public class SearchContextService {
         this.searchEngines = searchEngines;
     }
 
+    /**
+     * Looks through every stack, not just the active one: with several stacks on screen the user can
+     * hit ⬇️ / 🎧 on a card from any of them, in any order.
+     */
     public ReleaseMetadata getReleaseMetadata(String releaseId, String conversationId) {
         return stateStore.get(conversationId, FLOW_KEY, SearchState.class)
                 .stream()
-                .flatMap(state -> state.releases().stream())
+                .flatMap(state -> Stream.concat(state.releases().stream(),
+                        state.stacks().stream().flatMap(stack -> stack.releases().stream())))
                 .filter(r -> releaseId.equals(r.id()))
                 .findFirst()
                 .orElse(null);
@@ -44,12 +50,89 @@ public class SearchContextService {
 
     public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
                                   MetadataSearchRequest request, List<ReleaseMetadata> results) {
+        List<ReleaseMetadata> releases = distinctById(results);
+        stateStore.put(conversationId, FLOW_KEY,
+                new SearchState(contextFor(source, rawInput, request, releases), releases, List.of()));
+    }
+
+    /**
+     * Starts a fresh turn: the stacks a previous turn left behind stop being part of "what was just
+     * found", so the next answer shows only its own. The active stack is kept so `DL:` / `🎧` on
+     * already-sent cards keep resolving.
+     */
+    public void beginStacks(String conversationId) {
+        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state ->
+                stateStore.put(conversationId, FLOW_KEY,
+                        new SearchState(state.context(), state.releases(), List.of())));
+    }
+
+    /**
+     * Appends one browsable pile of results and makes it the active one.
+     *
+     * @param label what this stack is an answer to — shown on its cards
+     * @return the stack id that {@code CARD:} callbacks carry
+     */
+    public String openStack(String conversationId, String rawInput, MetadataSearchRequest request,
+                            String label, List<ReleaseMetadata> results) {
+        List<ReleaseMetadata> releases = distinctById(results);
+        SearchEngine source = releases.isEmpty() ? SearchEngine.MUSICBRAINZ : releases.getFirst().source();
+
+        List<SearchStack> stacks = new ArrayList<>(
+                stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::stacks).orElse(List.of()));
+        String stackId = "s" + (stacks.size() + 1);
+        stacks.add(new SearchStack(stackId, label, releases, 0));
+
+        stateStore.put(conversationId, FLOW_KEY,
+                new SearchState(contextFor(source, rawInput, request, releases), releases, stacks));
+        return stackId;
+    }
+
+    /**
+     * Records what was asked without touching what is on screen. A pinpoint search that confirmed
+     * nothing still has to leave the query behind, otherwise ⛏️ ("покажи все") has nothing to widen —
+     * while the cards from the previous search keep working.
+     */
+    public void rememberQuery(String conversationId, String rawInput, MetadataSearchRequest request) {
+        SearchState state = stateStore.get(conversationId, FLOW_KEY, SearchState.class)
+                .orElseGet(() -> new SearchState(null, List.of(), List.of()));
+        SearchContext old = state.context();
+        SearchContext context = new SearchContext(
+                old != null ? old.source() : SearchEngine.MUSICBRAINZ,
+                request,
+                rawInput,
+                old != null ? old.releaseIds() : List.of(),
+                old != null ? old.currentPage() : 0);
+        stateStore.put(conversationId, FLOW_KEY, new SearchState(context, state.releases(), state.stacks()));
+    }
+
+    public List<SearchStack> getStacks(String conversationId) {
+        return stateStore.get(conversationId, FLOW_KEY, SearchState.class)
+                .map(SearchState::stacks)
+                .orElse(List.of());
+    }
+
+    public Optional<SearchStack> findStack(String conversationId, String stackId) {
+        return getStacks(conversationId).stream().filter(s -> s.id().equals(stackId)).findFirst();
+    }
+
+    public void updateStackPage(String conversationId, String stackId, int page) {
+        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+            List<SearchStack> updated = state.stacks().stream()
+                    .map(stack -> stack.id().equals(stackId) ? stack.withPage(page) : stack)
+                    .toList();
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), state.releases(), updated));
+        });
+    }
+
+    private static SearchContext contextFor(SearchEngine source, String rawInput,
+                                            MetadataSearchRequest request, List<ReleaseMetadata> releases) {
+        return new SearchContext(source, request, rawInput, releases.stream().map(ReleaseMetadata::id).toList(), 0);
+    }
+
+    private static List<ReleaseMetadata> distinctById(List<ReleaseMetadata> results) {
         LinkedHashMap<String, ReleaseMetadata> merged = new LinkedHashMap<>();
         results.forEach(r -> merged.put(r.id(), r));
-        List<ReleaseMetadata> mergedReleases = new ArrayList<>(merged.values());
-        List<String> releaseIds = mergedReleases.stream().map(ReleaseMetadata::id).toList();
-        SearchContext context = new SearchContext(source, request, rawInput, releaseIds, 0);
-        stateStore.put(conversationId, FLOW_KEY, new SearchState(context, mergedReleases));
+        return new ArrayList<>(merged.values());
     }
 
     public void validateSession(String conversationId) {
@@ -113,7 +196,7 @@ public class SearchContextService {
             SearchContext old = state.context();
             SearchContext updated = new SearchContext(
                     old.source(), old.request(), old.rawInput(), old.releaseIds(), page);
-            stateStore.put(conversationId, FLOW_KEY, new SearchState(updated, state.releases()));
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(updated, state.releases(), state.stacks()));
         });
     }
 
@@ -121,11 +204,10 @@ public class SearchContextService {
         return loadContext(conversationId).map(SearchContext::currentPage).orElse(0);
     }
 
+    /** Moves the whole state — stacks included, otherwise a multi-stack turn would arrive as one. */
     public void copySearchContext(String fromId, String toId) {
         stateStore.get(fromId, FLOW_KEY, SearchState.class).ifPresent(state ->
-                saveSearchContext(toId, state.context().source(), state.context().rawInput(),
-                        state.context().request(), state.releases())
-        );
+                stateStore.put(toId, FLOW_KEY, state));
     }
 
     public void clearSearch(String conversationId) {
@@ -151,7 +233,16 @@ public class SearchContextService {
             List<ReleaseMetadata> updated = state.releases().stream()
                     .map(r -> r.id().equals(replacement.id()) ? replacement : r)
                     .toList();
-            stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), updated));
+            // Same release can sit in an older stack too — refresh it there so its tracklist is
+            // fetched once no matter which stack the user browses it from.
+            List<SearchStack> stacks = state.stacks().stream()
+                    .map(stack -> new SearchStack(stack.id(), stack.label(),
+                            stack.releases().stream()
+                                    .map(r -> r.id().equals(replacement.id()) ? replacement : r)
+                                    .toList(),
+                            stack.currentPage()))
+                    .toList();
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), updated, stacks));
         });
     }
 }

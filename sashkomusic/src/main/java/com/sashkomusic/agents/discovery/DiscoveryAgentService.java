@@ -3,11 +3,13 @@ package com.sashkomusic.agents.discovery;
 import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.agents.contract.DiscoverRequest;
 import com.sashkomusic.agents.contract.DiscoverResult;
+import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.shared.model.SearchEngine;
+import com.sashkomusic.mainagent.search.SearchStack;
 import com.sashkomusic.shared.model.ReleaseMetadata;
+import com.sashkomusic.shared.model.SearchEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,25 +25,23 @@ import java.util.stream.Collectors;
 public class DiscoveryAgentService {
 
     private final DiscoveryAgent discoveryAgent;
-    private final DiscoveryAgentTools discoveryAgentTools;
     private final SearchContextService searchContextService;
     private final ReleaseSearchFlowService releaseSearchFlowService;
     private final ChatResponseAccumulator accumulator;
 
     public DiscoverResult handle(DiscoverRequest request) {
-        log.info("Discovery agent handling request: conversationId={}, query='{}', preferred={}",
-                request.conversationId(), request.query(), request.preferredEngine());
+        log.info("Discovery agent handling request: conversationId={}, query='{}'",
+                request.conversationId(), request.query());
 
-        if (request.preferredEngine() != null) {
-            return handleDirect(request);
-        }
-        return handleViaLlm(request);
+        String discoveryMemoryId = request.conversationId() + ":d";
+        // Turn boundary: stacks left over from the previous answer stop counting as "just found", so
+        // this turn shows exactly the stacks it built — however many tool calls that took.
+        searchContextService.beginStacks(discoveryMemoryId);
+
+        return handleViaLlm(request, discoveryMemoryId);
     }
 
-    private DiscoverResult handleViaLlm(DiscoverRequest request) {
-        String discoveryMemoryId = request.conversationId() + ":d";
-        String rawInputBefore = safeGetRawInput(discoveryMemoryId);
-        SearchEngine engineBefore = safeGetEngine(discoveryMemoryId);
+    private DiscoverResult handleViaLlm(DiscoverRequest request, String discoveryMemoryId) {
         String summary;
         try {
             summary = discoveryAgent.chat(discoveryMemoryId, request.query());
@@ -49,62 +49,57 @@ public class DiscoveryAgentService {
             log.error("Discovery agent failure: {}", ex.getMessage(), ex);
             return DiscoverResult.empty("вибач, шось накрилось");
         }
-        return buildResult(request.conversationId(), discoveryMemoryId, summary, rawInputBefore, engineBefore);
+        return buildResult(request.conversationId(), discoveryMemoryId, summary);
     }
 
-    private DiscoverResult handleDirect(DiscoverRequest request) {
-        String discoveryMemoryId = request.conversationId() + ":d";
-        String toolResult = discoveryAgentTools.runSearch(request.preferredEngine(), request.query(), discoveryMemoryId);
-        log.info("Direct search on {}: {}", request.preferredEngine(), toolResult);
-        return buildResult(request.conversationId(), discoveryMemoryId, toolResult, null, null);
-    }
+    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary) {
+        List<SearchStack> stacks = searchContextService.getStacks(discoveryMemoryId).stream()
+                .filter(stack -> !stack.releases().isEmpty())
+                .toList();
 
-    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary,
-                                       String rawInputBefore, SearchEngine engineBefore) {
-        try {
-            var releases = searchContextService.getSearchResults(discoveryMemoryId);
-            var engine = searchContextService.getSource(discoveryMemoryId);
-            if (releases.isEmpty()) {
-                return DiscoverResult.empty(summary);
-            }
-            String rawInputAfter = safeGetRawInput(discoveryMemoryId);
-            boolean newSearch = !Objects.equals(rawInputBefore, rawInputAfter)
-                    || !Objects.equals(engineBefore, engine);
-            if (newSearch || rawInputBefore == null) {
-                searchContextService.copySearchContext(discoveryMemoryId, conversationId);
-                accumulator.replaceAll(conversationId,
-                        releaseSearchFlowService.buildPageResponse(ConversationContext.from(conversationId), 0));
-                return DiscoverResult.found(formatForMainAgent(releases, engine), releases, engine);
-            } else {
-                // No new search (e.g. getTrackList call) — use DiscoveryAgent's summary directly
-                return DiscoverResult.found(summary != null ? summary : formatForMainAgent(releases, engine), releases, engine);
-            }
-        } catch (Exception ex) {
-            log.debug("No search context: {}", ex.getMessage());
+        if (stacks.isEmpty()) {
+            // Nothing was searched this turn (tracklist question, research answer, or a miss) —
+            // DiscoveryAgent's own words are the answer and the cards on screen stay untouched.
             return DiscoverResult.empty(summary != null ? summary : "нич не знайшов");
         }
+
+        searchContextService.copySearchContext(discoveryMemoryId, conversationId);
+        ConversationContext ctx = ConversationContext.from(conversationId);
+        List<BotResponse> cards = stacks.stream()
+                .flatMap(stack -> releaseSearchFlowService.buildStackResponse(ctx, stack.id(), 0).stream())
+                .toList();
+        accumulator.replaceAll(conversationId, cards);
+
+        List<ReleaseMetadata> all = stacks.stream().flatMap(stack -> stack.releases().stream()).toList();
+        SearchEngine engine = all.isEmpty() ? null : all.getFirst().source();
+        return DiscoverResult.found(formatForMainAgent(stacks), all, engine);
     }
 
-    private String safeGetRawInput(String discoveryMemoryId) {
-        try {
-            return searchContextService.getRawInput(discoveryMemoryId);
-        } catch (Exception e) {
-            return null;
+    /**
+     * What MainAgent reads to write its intro. One stack collapses to the old aggregate line; several
+     * are listed separately, because with three stacks on screen the intro has to address all three.
+     */
+    private static String formatForMainAgent(List<SearchStack> stacks) {
+        if (stacks.size() == 1) {
+            return describe(stacks.getFirst().releases());
         }
+        String perStack = stacks.stream()
+                .map(stack -> "• %s — %s".formatted(
+                        stack.label() == null || stack.label().isBlank() ? "стос " + stack.id() : stack.label(),
+                        describe(stack.releases())))
+                .collect(Collectors.joining("\n"));
+        return "Showed %d separate card stacks:\n%s\nIntroduce all of them in 2-4 sentences; do not list releases."
+                .formatted(stacks.size(), perStack);
     }
 
-    private SearchEngine safeGetEngine(String discoveryMemoryId) {
-        try {
-            return searchContextService.getSource(discoveryMemoryId);
-        } catch (Exception e) {
-            return null;
-        }
-    }
+    private static String describe(List<ReleaseMetadata> releases) {
+        String sources = releases.stream()
+                .map(ReleaseMetadata::source)
+                .filter(Objects::nonNull)
+                .map(SearchEngine::getName)
+                .distinct()
+                .collect(Collectors.joining(", "));
 
-    private static String formatForMainAgent(List<ReleaseMetadata> releases, SearchEngine engine) {
-        String engineName = engine != null ? engine.getName() : "unknown";
-
-        // year range
         var allYears = releases.stream()
                 .filter(r -> r.years() != null)
                 .flatMap(r -> r.years().stream())
@@ -116,7 +111,6 @@ public class DiscoveryAgentService {
                 allYears.size() == 1 ? allYears.getFirst().toString() :
                         allYears.getFirst() + "–" + allYears.getLast();
 
-        // type breakdown
         var typeCounts = releases.stream()
                 .filter(r -> r.types() != null)
                 .flatMap(r -> r.types().stream())
@@ -124,10 +118,10 @@ public class DiscoveryAgentService {
                 .collect(Collectors.groupingBy(t -> t.toLowerCase().trim(), Collectors.counting()));
         String typesStr = typeCounts.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(4)
                 .map(e -> e.getValue() + " " + e.getKey())
                 .collect(Collectors.joining(", "));
 
-        // top labels
         String labelsStr = releases.stream()
                 .map(ReleaseMetadata::label)
                 .filter(l -> l != null && !l.isBlank())
@@ -138,7 +132,6 @@ public class DiscoveryAgentService {
                 .map(Map.Entry::getKey)
                 .collect(Collectors.joining(", "));
 
-        // top tags
         String tagsStr = releases.stream()
                 .filter(r -> r.tags() != null)
                 .flatMap(r -> r.tags().stream())
@@ -151,7 +144,9 @@ public class DiscoveryAgentService {
                 .collect(Collectors.joining(", "));
 
         var sb = new StringBuilder();
-        sb.append("Found ").append(releases.size()).append(" releases on ").append(engineName).append(".");
+        sb.append(releases.size()).append(" releases");
+        if (!sources.isEmpty()) sb.append(" (").append(sources).append(")");
+        sb.append(".");
         if (!yearsStr.isEmpty()) sb.append(" Years: ").append(yearsStr).append(".");
         if (!typesStr.isEmpty()) sb.append(" Types: ").append(typesStr).append(".");
         if (!labelsStr.isEmpty()) sb.append(" Labels: ").append(labelsStr).append(".");

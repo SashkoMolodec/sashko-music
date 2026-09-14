@@ -70,10 +70,7 @@ Spring Events (async):
 | Tool | Trigger | Feature spec |
 |------|---------|-------------|
 | `findMusic` | "знайди", "пошукай", "є щось від" | [search.md](search.md) |
-| `findMusicOnDiscogs` | "знайди на discogs" | [search.md](search.md) |
-| `findMusicOnBandcamp` | "знайди на bandcamp" | [search.md](search.md) |
-| `findMusicOnMusicBrainz` | "знайди на musicbrainz" | [search.md](search.md) |
-| `digDeeper` | "покажи ще", "наступне джерело" | [search.md](search.md) |
+| `digDeeper` | "покажи ще", "копай", "покажи все" | [search.md](search.md) |
 | `downloadMusic` | "скачай", "завантаж" | [download.md](download.md) |
 | `discussRelease` | "які треки?", "що за жанр?" | [search.md](search.md) |
 | `manageLibrary` | "оціни", "energy 3", "banger" | [dj-tagging.md](dj-tagging.md) |
