@@ -1,7 +1,7 @@
 package com.sashkomusic.mainagent.library;
 
 import org.springframework.context.ApplicationEventPublisher;
-import com.sashkomusic.events.AddCommentTaskEvent;
+import com.sashkomusic.events.AddMarkerTaskEvent;
 import com.sashkomusic.libraryagent.domain.entity.Marker;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.repository.MarkerRepository;
@@ -126,13 +126,13 @@ public class SmartlistLabelFlowService {
 
         if (LabelContext.MODE_TRACK.equals(lctx.mode())) {
             djTagContextHolder.deactivateCommentMode(ctx.conversationId());
-            eventPublisher.publishEvent(new AddCommentTaskEvent(lctx.targetId(), label, ctx.conversationId()));
+            eventPublisher.publishEvent(new AddMarkerTaskEvent(lctx.targetId(), label, ctx.conversationId()));
             return List.of(BotResponse.text("🏷 мітка " + label + " додається до треку"));
         } else {
             albumCommentContextHolder.clear(ctx.conversationId());
             List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(lctx.targetId());
             for (Track track : tracks) {
-                eventPublisher.publishEvent(new AddCommentTaskEvent(track.getId(), label, ctx.conversationId()));
+                eventPublisher.publishEvent(new AddMarkerTaskEvent(track.getId(), label, ctx.conversationId()));
             }
             return List.of(BotResponse.text("🏷 мітка " + label + " додається до " + tracks.size() + " треків альбому"));
         }

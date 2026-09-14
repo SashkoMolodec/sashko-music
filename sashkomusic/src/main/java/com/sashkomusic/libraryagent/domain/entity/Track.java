@@ -94,6 +94,24 @@ public class Track {
         }
     }
 
+    public void appendToTag(String tagName, String newValue) {
+        TrackTag tag = tags.stream()
+                .filter(t -> t.getTagName().equals(tagName))
+                .findFirst()
+                .orElse(null);
+
+        if (tag == null) {
+            setTag(tagName, newValue);
+        } else {
+            String existingValue = tag.getTagValue();
+            String combined = existingValue == null || existingValue.isEmpty()
+                    ? newValue
+                    : existingValue + "; " + newValue;
+            tag.setTagValue(combined);
+            tag.setLastSyncedAt(java.time.LocalDateTime.now());
+        }
+    }
+
     public java.util.Optional<String> getTag(String tagName) {
         return tags.stream()
                 .filter(t -> t.getTagName().equals(tagName))

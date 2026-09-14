@@ -1,6 +1,7 @@
 package com.sashkomusic.libraryagent.messaging.consumer;
 
 import com.sashkomusic.events.AddCommentTaskEvent;
+import com.sashkomusic.events.AddMarkerTaskEvent;
 import com.sashkomusic.events.RateTrackTaskEvent;
 import com.sashkomusic.events.ReplaceCommentTaskEvent;
 import com.sashkomusic.events.SetEnergyTaskEvent;
@@ -36,6 +37,13 @@ public class TrackTagUpdateListener {
     public void handleAddComment(AddCommentTaskEvent event) {
         apply("comment", event.comment(), event.trackId(), event.conversationId(),
                 () -> rateTrackService.addComment(event.trackId(), event.comment()));
+    }
+
+    @EventListener
+    @Async("asyncExecutor")
+    public void handleAddMarker(AddMarkerTaskEvent event) {
+        apply("marker", event.marker(), event.trackId(), event.conversationId(),
+                () -> rateTrackService.addMarker(event.trackId(), event.marker()));
     }
 
     @EventListener

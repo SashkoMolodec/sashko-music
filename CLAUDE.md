@@ -152,6 +152,7 @@ mainagent            →  MoveReleaseTaskEvent               →  libraryagent
 libraryagent         →  MoveReleaseCompleteEvent           →  mainagent
 mainagent            →  RateTrackTaskEvent                 →  libraryagent
 mainagent            →  AddCommentTaskEvent                →  libraryagent
+mainagent            →  AddMarkerTaskEvent                 →  libraryagent (appends the marker to the END of COMM)
 mainagent            →  SetEnergyTaskEvent                 →  libraryagent
 mainagent            →  SetFunctionTaskEvent               →  libraryagent
 libraryagent         →  TrackUpdateResultEvent             →  mainagent

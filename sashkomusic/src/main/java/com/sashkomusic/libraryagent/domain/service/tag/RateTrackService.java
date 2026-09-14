@@ -134,6 +134,27 @@ public class RateTrackService {
     }
 
     @Transactional
+    public RateResult addMarker(Long trackId, String marker) {
+        log.info("Adding marker for track id={}: {}", trackId, marker);
+
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
+        if (track == null) {
+            return new RateResult(false, "трек не знайдено");
+        }
+
+        track.appendToTag("COMM", marker);
+
+        Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
+        if (audioFile != null && Files.exists(audioFile)) {
+            djTagWriter.appendCommentText(audioFile, marker);
+        }
+
+        trackRepository.save(track);
+        log.info("Successfully added marker for track: id={}", trackId);
+        return new RateResult(true, "✅ мітку додано");
+    }
+
+    @Transactional
     public RateResult replaceComment(Long trackId, String comment) {
         log.info("Replacing comment for track id={}: {}", trackId, comment);
 

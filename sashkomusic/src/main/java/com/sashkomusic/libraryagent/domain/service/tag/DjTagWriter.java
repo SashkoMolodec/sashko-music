@@ -41,6 +41,10 @@ public class DjTagWriter {
         return prependToComment(audioFile, commentText, "comment");
     }
 
+    public boolean appendCommentText(Path audioFile, String commentText) {
+        return appendToComment(audioFile, commentText, "comment");
+    }
+
     public boolean replaceComment(Path audioFile, String commentText) {
         try {
             AudioFile audio = AudioFileIO.read(audioFile.toFile());
@@ -51,6 +55,29 @@ public class DjTagWriter {
             return true;
         } catch (Exception e) {
             log.error("Failed to replace COMM tag in {}: {}", audioFile, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private boolean appendToComment(Path audioFile, String value, String label) {
+        try {
+            AudioFile audio = AudioFileIO.read(audioFile.toFile());
+            Tag tag = audio.getTagOrCreateAndSetDefault();
+
+            String existingComment = tag.getFirst(FieldKey.COMMENT);
+            String combinedComment;
+            if (existingComment != null && !existingComment.isEmpty()) {
+                combinedComment = existingComment + "; " + value;
+            } else {
+                combinedComment = value;
+            }
+
+            tag.setField(FieldKey.COMMENT, combinedComment);
+            audio.commit();
+            log.info("Appended {} to COMM tag in {}: {}", label, audioFile.getFileName(), value);
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to append {} to COMM tag in {}: {}", label, audioFile, e.getMessage(), e);
             return false;
         }
     }
