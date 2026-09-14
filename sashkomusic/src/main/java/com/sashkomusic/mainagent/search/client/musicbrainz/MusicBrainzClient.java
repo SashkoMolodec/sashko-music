@@ -48,9 +48,7 @@ public class MusicBrainzClient implements SearchEngineService {
         // BROWSE case: no specific title to look up (style/year/label-type digging).
         // /release-group is one row per album concept instead of one row per pressing —
         // far less noisy than /release for "give me trance from 1994" style queries.
-        boolean isBrowse = !hasRelease && !hasRecording
-                && (!request.style().isEmpty() || (request.dateRange() != null && !request.dateRange().isEmpty()));
-        if (isBrowse) {
+        if (request.isBrowseQuery()) {
             log.info("Browse-style search detected (no title), trying release-group endpoint first");
             var groupResults = self.searchByReleaseGroup(request);
             if (!groupResults.isEmpty()) {

@@ -51,6 +51,16 @@ public class DiscoveryAgentTools {
             @P("resolved query: artist + title (+ optional year/label), e.g. 'Adjust (BE) Mist'") String query,
             @ToolMemoryId String conversationId) {
         MetadataSearchRequest request = extractRequest(query);
+
+        // The lookup-vs-explore split is a routing decision the model makes, and it gets it wrong:
+        // "пошукай detroit techno класичне" has no artist and no title, so there is nothing to
+        // validate a result against and the answer degrades into the scattershot pile this whole
+        // design exists to kill. Catch it here rather than trusting the prompt, and answer it the
+        // way an explore ask should be answered — researched picks, each its own stack.
+        if (!request.hasLookupAnchor()) {
+            log.info("search('{}') has no artist/title anchor — handling as an explore ask", query);
+            return exploreAndRecommend(query, conversationId);
+        }
         return runStack(conversationId, request, query, null);
     }
 

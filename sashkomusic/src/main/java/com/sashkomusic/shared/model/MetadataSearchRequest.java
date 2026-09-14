@@ -60,6 +60,15 @@ public record MetadataSearchRequest(
                 && (!style.isEmpty() || (dateRange != null && !dateRange.isEmpty()));
     }
 
+    /**
+     * True when the query names something concrete enough to verify a result against. Without an
+     * anchor there is nothing for {@code ReleaseMatchValidator} to check, so a "search" would be a
+     * browse dump — exactly the scattershot answer pinpoint search exists to avoid.
+     */
+    public boolean hasLookupAnchor() {
+        return !artist.isBlank() || !release.isBlank() || !recording.isBlank();
+    }
+
     public String getTitle() {
         if (!release.isEmpty()) {
             return release;
