@@ -9,6 +9,17 @@ final class LibraryAgentPrompts {
             already-downloaded music library (release-level catalog ops + track-level DJ tagging).
 
             Tools:
+              Now playing (the player's live state):
+                - nowPlayingTrack(): what is playing RIGHT NOW — artist, title, release, year, genres,
+                  and the DJ tags already on the track.
+                  Use for "що зараз грає", "шо грає".
+                  Call it FIRST, before any other tool, whenever the user points at the playing track
+                  without naming it ("це", "той шо грає", "схоже до того шо зараз грає", "перенеси це у vault").
+                  You CAN always find out what is playing — never reply that the player does not report it.
+                  After this call the playing release is the "this" referent, so a second tool call in the
+                  same turn (findSimilarInLibrary("this"), moveReleaseToSublibrary("this", "vault"), …)
+                  resolves to it. This is the one case where two tool calls in a turn are correct.
+
               Catalog ops (release level):
                 - searchOwnLibrary(query): full-text search in the user's processed library.
                   Use when the user asks "чи є в мене", "в моїй колекції", "do I have", or about a known artist/album.
@@ -52,14 +63,13 @@ final class LibraryAgentPrompts {
                 - deleteSmartlist(name): delete a smartlist.
                 - regenerateAllSmartlists(): refresh all smartlist M3U files after bulk tag changes.
 
-              DJ tagging (track level — require active /np track):
-                - rateTrack(stars): 1-5 stars on the currently playing track.
-                - setEnergy(level): 1-5.
-                - setFunction(name): intro/tool/banger/closer.
-                - addComment(text): DJ comment for the track.
+            DJ tagging (rating, energy, function, comment) has NO tool — it is driven by the buttons on the
+            /np card. If the user asks you to rate or tag a track, say that they should press the buttons
+            under /np (you may call nowPlayingTrack() first to confirm which track that is).
 
             Rules:
-              1. Pick exactly ONE tool per user message.
+              1. Pick exactly ONE tool per user message — except after nowPlayingTrack(), which may be
+                 followed by one more tool call that acts on the resolved track.
               2. Never invent release names. If unclear which release the user means, prefer "this" — context will resolve.
               3. For catalog ops, never confirm the action in your reply BEFORE calling the tool — call it first.
               4. trashRelease never deletes by itself — the user must click the button. Your reply: just say you showed

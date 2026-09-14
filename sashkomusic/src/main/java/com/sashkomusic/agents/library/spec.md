@@ -54,6 +54,7 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 
 | Tool | Trigger | Action |
 |------|---------|--------|
+| `nowPlayingTrack()` | "що зараз грає", і **завжди першим** коли юзер каже "це" / "той трек що грає" / "схоже на те що грає", а в розмові трек не названий | `NowPlayingResolver.resolve()` — Navidrome → Icecast fallback → пошук рядка плеєра в БД. Повертає артиста, назву, реліз, рік, жанри й уже проставлені DJ-теги; робить реліз, що грає, референтом `"this"` (пише `LastReleaseContextHolder`) |
 | `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X" | `LibrarySearchService.search(query, 5)`; updates `LastReleaseContextHolder` |
 | `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease`; reads tracks from `TrackRepository` ordered by track number; returns formatted list |
 | `findSimilarInLibrary(releaseQuery)` | "маю щось схоже?", "що в мене є схоже на X", "similar in my library" — similarity within the OWN collection | Resolves release → `LibrarySimilarityService.pickRepresentativeTrack` + `.findSimilarToTrack` — pure audio-feature (BPM/MFCC/timbre) cosine similarity over `tracks_analyzed`, z-score normalized. No external API, no LLM guessing. |
@@ -92,7 +93,13 @@ Auto-regeneration: `SmartlistRegenerationListener` (`@Async`) listens to `TrackU
 
 ### DJ tagging (track-level)
 
-Track-level DJ tagging (rate / energy / function / comment) is **not** exposed as agent tools — it is driven entirely by the inline keyboard from `/np` (`RATE:`, `ENERGY_RATE:`, `FUNCTION_RATE:`, `ADD_COMMENT:` callbacks → `NowPlayingFlowService` / `DjTagFlowService` / `CommentInputOngoingFlow`). The agent should not attempt to mutate track tags directly; if the user asks for it in NL, point them at `/np`.
+Track-level DJ tagging (rate / energy / function / comment) is **not** exposed as agent tools — it is driven entirely by the inline keyboard from `/np` (`RATE:`, `ENERGY_RATE:`, `FUNCTION_RATE:`, `ADD_COMMENT:` callbacks → `NowPlayingFlowService` / `DjTagFlowService` / `CommentInputOngoingFlow`). The agent should not attempt to mutate track tags directly; if the user asks for it in NL, point them at the buttons on the `/np` card.
+
+`LibraryAgentPrompts.SYSTEM` must not list `rateTrack` / `setEnergy` / `setFunction` / `addComment` as tools —
+вони не існують у `LibraryAgentTools`. Промпт із фантомними тулами дає гірший провал, ніж їх відсутність:
+Haiku «вірить», що має доступ до поточного треку, і на питання «схоже до того що зараз грає?» вигадує
+пояснення («плеєр не передає цю інформацію») замість того, щоб викликати `nowPlayingTrack`.
+Читати, що грає, агент **може** (`nowPlayingTrack`) — писати теги ні.
 
 ---
 
@@ -103,10 +110,14 @@ Track-level DJ tagging (rate / energy / function / comment) is **not** exposed a
 2. Otherwise → `LibrarySearchService.search(query, 1)` → top-1 → also writes back into `LastReleaseContextHolder`.
 3. None → `null` → tool returns `"не знайшов реліз — уточни назву"`.
 
-`LastReleaseContextHolder` is written from three places:
+`LastReleaseContextHolder` is written from:
 - `LibraryProcessingCompleteListener` after successful process
 - `MoveReleaseCompleteListener` after move (so user can say "поверни оцей назад у working")
 - `searchOwnLibrary` after FTS (top result wins as default referent)
+- `NowPlayingFlowService` / `NowPlayingAlbumFlowService` — `/np` і `/npalbum` роблять реліз, що грає,
+  референтом `"this"`. Це те, чого юзер очікує після `/np`: «перенеси це у vault», «маю схоже?»,
+  «видали це» мусять працювати без повторного називання релізу.
+- `nowPlayingTrack` tool — те саме, але для вільного тексту (юзер не тиснув `/np`)
 
 It is cleared by the "стоп" handler in `UserInteractionOrchestrator`.
 

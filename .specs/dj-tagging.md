@@ -8,18 +8,27 @@
 ## /np command (Now Playing)
 
 ```
-User: /np
-  └─ NowPlayingFlowService.nowPlaying(ctx)
-       ├─ NavidromeClient.getCurrentlyPlaying()
-       │    └─ Navidrome API: /rest/getNowPlaying
-       ├─ fallback: IcecastClient.getCurrentlyPlaying()
-       │    └─ Icecast status.xsl
-       ├─ якщо нічого не грає → "😔 нічого не грає зараз"
+User: /np   (або кнопка "шо грає 🎵")
+  └─ NowPlayingFlowService.nowPlaying(ctx) → NowPlayingResult(responses, agentContext)
+       ├─ NowPlayingResolver.resolve()          ← спільний для /np, /npalbum і LLM-тула
+       │    ├─ NavidromeClient.getCurrentlyPlayingTrackInfo()  (/rest/getNowPlaying)
+       │    ├─ fallback: IcecastClient.getCurrentlyPlayingTrackInfo()  (status.xsl)
+       │    └─ TrackService.findByArtistAndTitleOptional(artist, title) → трек + реліз + жанри
+       ├─ якщо нічого не грає → "зараз нич не грає 🥺"
        ├─ DjTagContextHolder.save(conversationId, DjTagContext { track, waitingForComment:false })
-       └─ повертає картку треку з кнопками:
-            ⭐⭐⭐⭐⭐ (RATE:1..5)
-            [↕ DJ теги] (EXPAND_DJ_RATE:)
+       ├─ LastReleaseContextHolder.set(...) — реліз, що грає, стає референтом "this"
+       │    ("перенеси це у vault", "маю схоже?" працюють без називання релізу)
+       ├─ повертає картку треку з кнопками (RATE:/ENERGY_RATE:/FUNCTION_RATE:/ADD_COMMENT:)
+       └─ agentContext → UserInteractionOrchestrator → mainMemoryProvider.appendUserAndAi(...)
+            "зараз грає: <артист> — <назва> (реліз: <назва>, <рік>), жанри: …, рейтинг: N/5, …"
+            ← без цього рядка MainAgent на "схоже до того що зараз грає?" не знає, що грає
 ```
+
+`/npalbum` (`NowPlayingAlbumFlowService`) робить те саме через той самий резолвер — і так само пише
+`LastReleaseContextHolder` та agentContext.
+
+Плеєр можна прочитати і з вільного тексту: `LibraryAgentTools.nowPlayingTrack()` (той самий
+`NowPlayingResolver`) — див. [agents/library/spec.md](../sashkomusic/src/main/java/com/sashkomusic/agents/library/spec.md).
 
 ---
 
@@ -108,24 +117,15 @@ AddCommentTaskEvent → libraryagent AddCommentListener
 
 ## manageLibrary tool (LLM path)
 
-MainAgent може викликати `manageLibrary(command)` якщо юзер написав вільний текст:
+Тегування з вільного тексту ("постав цьому треку 5 зірок") **не реалізоване**: у `LibraryAgentTools`
+немає ні `rateTrack`, ні `setEnergy`, ні `setFunction`, ні `addComment`, а `LibraryCommandParser`
+(regex-парсер під це) ніде не викликається — живий лишився тільки його тест. Єдиний шлях запису
+DJ-тегів — кнопки на картці `/np`.
 
-```
-User: "постав цьому треку 5 зірок і energy 4"
-  └─ MainAgent → manageLibrary("постав 5 зірок і energy 4", conversationId)
-       └─ LibraryAgentService.handle(LibraryRequest)
-            └─ LibraryCommandParser (regex) → Rate(5), SetEnergy(4)
-            └─ публікує обидва events
-```
-
-`LibraryCommandParser` підтримує:
-| Pattern | Результат |
-|---------|-----------|
-| "rate 5", "оціни 5", "5 stars", "5 зірок", "5/5" | `Rate(5)` |
-| "energy 3", "енергія 3", "e3" | `SetEnergy(3)` |
-| "intro", "tool", "banger", "closer", "інтро", "тул", "банжер", "клозер", "марк" | `SetFunction(type)` |
-| "comment текст", "коментар текст" | `AddComment(text)` |
-| інше | `Unknown(reason)` |
+`LibraryAgentPrompts.SYSTEM` **не має** перелічувати ці тули: промпт із фантомним тулом гірший за
+відсутність тула. Haiku «вірить», що має доступ до треку, і замість виклику `nowPlayingTrack`
+вигадує пояснення («плеєр не передає цю інформацію»). Читати, що грає, агент може
+(`nowPlayingTrack`) — писати теги ні.
 
 ---
 

@@ -4,11 +4,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import com.sashkomusic.events.RateTrackTaskEvent;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.library.config.IcecastConfig;
 import com.sashkomusic.mainagent.library.DjTagContextHolder;
+import com.sashkomusic.mainagent.library.NowPlayingResolver.NowPlaying;
 import com.sashkomusic.api.dto.TrackDto;
-import com.sashkomusic.api.service.TrackService;
-import com.sashkomusic.mainagent.library.client.IcecastClient;
 import com.sashkomusic.libraryagent.client.NavidromeClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,32 +21,43 @@ public class NowPlayingFlowService {
 
     private final ApplicationEventPublisher eventPublisher;
     private final NavidromeClient navidromeClient;
-    private final IcecastClient icecastClient;
-    private final IcecastConfig icecastConfig;
-    private final TrackService trackService;
+    private final NowPlayingResolver nowPlayingResolver;
     private final DjTagContextHolder djTagContextHolder;
+    private final LastReleaseContextHolder lastReleaseContextHolder;
 
-    public List<BotResponse> nowPlaying(ConversationContext ctx) {
-        NavidromeClient.CurrentTrackInfo trackInfo = navidromeClient.getCurrentlyPlayingTrackInfo();
+    /**
+     * The card the user sees plus the one line MainAgent's memory gets, so a follow-up like
+     * "схоже до того що зараз грає?" has the track name in context instead of asking the user
+     * what their own player is doing.
+     *
+     * @param agentContext blank when there is nothing worth telling the agent
+     */
+    public record NowPlayingResult(List<BotResponse> responses, String agentContext) {
+        static NowPlayingResult of(String text) {
+            return new NowPlayingResult(List.of(BotResponse.text(text)), "");
+        }
+    }
 
-        if (trackInfo == null && icecastConfig.isEnabled()) {
-            log.info("Navidrome returned null, trying Icecast fallback");
-            trackInfo = icecastClient.getCurrentlyPlayingTrackInfo();
+    public NowPlayingResult nowPlaying(ConversationContext ctx) {
+        Optional<NowPlaying> resolved = nowPlayingResolver.resolve();
+        if (resolved.isEmpty()) {
+            return NowPlayingResult.of("зараз нич не грає 🥺");
+        }
+        NowPlaying playing = resolved.get();
+
+        if (!playing.inLibrary()) {
+            return new NowPlayingResult(
+                    List.of(BotResponse.text("зараз грає: %s - %s, але трек не знайдено в БД"
+                            .formatted(playing.playerArtist(), playing.playerTitle()))),
+                    playing.summary());
         }
 
-        if (trackInfo == null) {
-            return List.of(BotResponse.text("зараз нич не грає 🥺"));
-        }
-
-        Optional<TrackDto> track = trackService.findByArtistAndTitleOptional(trackInfo.artist(), trackInfo.title());
-
-        TrackDto trackDto = track.orElseGet(TrackDto::empty);
-
-        if (trackDto.id() == null) {
-            return List.of(BotResponse.text("зараз грає: %s - %s, але трек не знайдено в БД".formatted(trackInfo.artist(), trackInfo.title())));
-        }
-
-        djTagContextHolder.setTrackContext(ctx.conversationId(), trackDto, trackInfo.navidromeId(), false);
+        TrackDto trackDto = playing.track();
+        djTagContextHolder.setTrackContext(ctx.conversationId(), trackDto, playing.navidromeId(), false);
+        // The playing release becomes the "this" referent — "перенеси це у vault" / "маю схоже?"
+        // right after /np must not need the release named again.
+        lastReleaseContextHolder.set(ctx.conversationId(), playing.releaseId(),
+                playing.releaseTitle(), trackDto.artistName());
 
         StringBuilder message = new StringBuilder();
 
@@ -59,10 +68,7 @@ public class NowPlayingFlowService {
         }
 
         StringBuilder emojiLine = new StringBuilder();
-        if (trackDto.rating() != null) {
-            String stars = convertWmpRatingToStars(trackDto.rating());
-            emojiLine.append(stars);
-        }
+        emojiLine.append("⭐".repeat(trackDto.stars()));
         if (trackDto.djEnergy() != null && !trackDto.djEnergy().isEmpty()) {
             emojiLine.append(" ").append(convertEnergyToEmoji(trackDto.djEnergy()));
         }
@@ -80,8 +86,10 @@ public class NowPlayingFlowService {
 
         message.append("\n\n✏️ оціни:");
 
-        List<List<BotResponse.ButtonDto>> rows = buildDjPanelRows(trackDto.id(), trackInfo.navidromeId());
-        return List.of(BotResponse.withMultiRowButtons(message.toString().toLowerCase(), rows));
+        List<List<BotResponse.ButtonDto>> rows = buildDjPanelRows(trackDto.id(), playing.navidromeId());
+        return new NowPlayingResult(
+                List.of(BotResponse.withMultiRowButtons(message.toString().toLowerCase(), rows)),
+                playing.summary());
     }
 
     public List<BotResponse> handleRate(ConversationContext ctx, String data) {
@@ -140,21 +148,6 @@ public class NowPlayingFlowService {
         return List.of();
     }
 
-    private String convertWmpRatingToStars(String ratingStr) {
-        try {
-            int rating = Integer.parseInt(ratingStr);
-            if (rating == 0) return "";
-            if (rating <= 51) return "⭐";   // 1 star
-            if (rating <= 102) return "⭐⭐";  // 2 stars
-            if (rating <= 153) return "⭐⭐⭐";  // 3 stars
-            if (rating <= 204) return "⭐⭐⭐⭐";  // 4 stars
-            return "⭐⭐⭐⭐⭐";                      // 5 stars
-        } catch (NumberFormatException e) {
-            log.warn("Invalid rating format: {}", ratingStr);
-            return "";
-        }
-    }
-
     private String convertEnergyToEmoji(String energy) {
         return switch (energy) {
             case "E1" -> "⚡";
@@ -174,21 +167,5 @@ public class NowPlayingFlowService {
             case "closer" -> "🎆";
             default -> "";
         };
-    }
-
-    private List<BotResponse> handleIcecastTrack(NavidromeClient.CurrentTrackInfo trackInfo) {
-        log.info("Handling Icecast track: {} - {}", trackInfo.artist(), trackInfo.title());
-
-        StringBuilder message = new StringBuilder();
-        if (trackInfo.artist() != null && !trackInfo.artist().isEmpty() &&
-                !trackInfo.artist().equalsIgnoreCase("Unknown Artist")) {
-            message.append(trackInfo.artist()).append(" — ").append(trackInfo.title());
-        } else {
-            message.append(trackInfo.title());
-        }
-
-        message.append("\n\n🎧 live stream");
-
-        return List.of(BotResponse.text(message.toString().toLowerCase()));
     }
 }

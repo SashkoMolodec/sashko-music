@@ -4,9 +4,13 @@ import com.sashkomusic.shared.model.MetadataSearchRequest;
 import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.shared.model.TrackMetadata;
 
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Decides whether a search result actually IS what was asked for.
@@ -38,6 +42,16 @@ public final class ReleaseMatchValidator {
     }
 
     private static final Set<String> VARIOUS_ARTISTS = Set.of("various", "various artists", "va", "v a", "unknown artist");
+
+    /**
+     * Splits a credit line into the artists on it. Punctuation is not stripped first on purpose —
+     * {@link #normalize} turns "&amp;" and "," into spaces, which would weld two names into one.
+     * "x" and "and" are deliberately absent: they swallow real names ("Malcolm X", "Chas and Dave").
+     */
+    private static final Pattern CREDIT_SEPARATOR = Pattern.compile(
+            "\\s*(?:[,;/&]|\\bfeat\\.?\\b|\\bft\\.?\\b|\\bfeaturing\\b|\\bvs\\.?\\b|\\bversus\\b"
+                    + "|\\bpres\\.?\\b|\\bpresents?\\b|\\bmeets\\b)\\s*",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
     public static Match evaluate(MetadataSearchRequest request, ReleaseMetadata release) {
         String wantedArtist = safe(request.artist());
@@ -91,14 +105,44 @@ public final class ReleaseMatchValidator {
     public static boolean needsTracklistCheck(MetadataSearchRequest request, ReleaseMetadata release) {
         if (safe(request.recording()).isBlank()) return false;
         if (release.tracks() != null && !release.tracks().isEmpty()) return false;
+        // Only two shapes of release can be rescued by their tracklist: a compilation, where the
+        // album artist says nothing about who plays each track, and the requested artist's own
+        // record under a title we did not ask for. A release credited to somebody else entirely is
+        // not worth an API call — and the budget is small enough that ten of those crowd out the
+        // one compilation that actually carries the track.
+        String wantedArtist = safe(request.artist());
+        boolean couldHostTheTrack = wantedArtist.isBlank()
+                || isVariousArtists(release.artist())
+                || artistMatches(release.artist(), wantedArtist);
+        if (!couldHostTheTrack) return false;
         return evaluate(request, release) == Match.NONE;
     }
 
+    /**
+     * True when the two strings name the same artist.
+     * <p>
+     * Containment used to count, and that is what let "Adjust" confirm releases by
+     * <em>Vinyl Speed Adjust</em> and <em>Adjust the Sails</em> — a search for one artist answered
+     * with three others. A name is either the requested one or it is not; the single allowance is a
+     * shared credit line, where "Adjust &amp; Someone", "Perfecto Presents… Paul Oakenfold" or
+     * "A feat. B" each carry the requested artist as one of their credits.
+     */
     public static boolean artistMatches(String found, String wanted) {
-        String a = normalize(found);
-        String b = normalize(wanted);
-        if (a.isBlank() || b.isBlank()) return false;
-        return a.equals(b) || containsWord(a, b) || containsWord(b, a);
+        Set<String> foundNames = creditedNames(found);
+        Set<String> wantedNames = creditedNames(wanted);
+        if (foundNames.isEmpty() || wantedNames.isEmpty()) return false;
+        return !Collections.disjoint(foundNames, wantedNames);
+    }
+
+    /** Every artist named on one credit line, each comparable on its own. */
+    private static Set<String> creditedNames(String artist) {
+        if (artist == null || artist.isBlank()) return Set.of();
+        return CREDIT_SEPARATOR.splitAsStream(artist)
+                // Articles are dropped so "The Orb" and "Orb (2)" are the same artist; the
+                // bracketed disambiguation goes away in normalize().
+                .map(name -> normalize(name).replaceFirst("^the ", ""))
+                .filter(name -> !name.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     public static boolean isVariousArtists(String artist) {

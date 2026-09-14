@@ -3,6 +3,7 @@ package com.sashkomusic.agents.discovery;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzClient;
+import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzSimilarArtistsResponse;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.Language;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,9 +36,11 @@ class DiscoveryAgentToolsTest {
     private final SearchRequestExtractor extractor = mock(SearchRequestExtractor.class);
     private final ReleaseRecommender recommender = mock(ReleaseRecommender.class);
 
+    private final MusicBrainzClient musicBrainz = mock(MusicBrainzClient.class);
+    private final ListenBrainzClient listenBrainz = mock(ListenBrainzClient.class);
+
     private final DiscoveryAgentTools tools = new DiscoveryAgentTools(
-            aggregatedSearch, contextService, extractor, recommender,
-            mock(MusicBrainzClient.class), mock(ListenBrainzClient.class));
+            aggregatedSearch, contextService, extractor, recommender, musicBrainz, listenBrainz);
 
     @BeforeEach
     void alwaysFindSomething() {
@@ -105,6 +109,57 @@ class DiscoveryAgentToolsTest {
         assertThat(result).contains("no concrete releases");
     }
 
+    @Test
+    void an_artist_musicbrainz_never_heard_of_falls_back_to_the_styles_on_its_own_release() {
+        // The real miss: a 1993 white-label 12" that exists on Discogs (with styles) and nowhere else.
+        // MusicBrainz can't resolve the artist, so ListenBrainz has nothing — that must not be the end.
+        whenExtracted(MetadataSearchRequest.create("Symphony Of Love", "Spirit Of Love", "",
+                DateRange.empty(), "", "", "", "", "", "", "", Language.EN));
+        when(musicBrainz.findArtistMbid(anyString())).thenReturn(Optional.empty());
+        when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
+                List.of(tagged("Symphony Of Love", "Spirit Of Love", "1993", "Acid", "Techno", "Trance", "Ambient")),
+                1, List.of(SearchEngine.DISCOGS), 0));
+        when(recommender.recommend(anyString())).thenReturn("""
+                Hardfloor — TB Resuscitation
+                Emmanuel Top — Acid Phase
+                """);
+
+        String result = tools.findSimilar("Symphony Of Love — Spirit Of Love", CONVERSATION);
+
+        // Styles capped at 3, year turned into a decade — a usable recommendation topic.
+        verify(recommender).recommend("Acid Techno Trance 1990s");
+        verify(contextService, times(2)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        assertThat(result).contains("card stacks");
+    }
+
+    @Test
+    void listenbrainz_data_still_wins_when_it_exists() {
+        whenExtracted(MetadataSearchRequest.create("Burial", "", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+        when(musicBrainz.findArtistMbid("Burial")).thenReturn(Optional.of("mbid-1"));
+        when(listenBrainz.findSimilarArtists("mbid-1"))
+                .thenReturn(List.of(new ListenBrainzSimilarArtistsResponse("mbid-2", "Zomby", null, "Person", 90)));
+
+        tools.findSimilar("Burial", CONVERSATION);
+
+        verify(recommender, never()).recommend(anyString());
+        verify(contextService).openStack(eq(CONVERSATION), eq("Zomby"), any(), eq("Zomby"), any());
+    }
+
+    @Test
+    void a_seed_no_catalog_knows_at_all_asks_about_the_spelling() {
+        whenExtracted(MetadataSearchRequest.create("Nonexistent", "Thing", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+        when(musicBrainz.findArtistMbid(anyString())).thenReturn(Optional.empty());
+        when(aggregatedSearch.search(any())).thenReturn(
+                new AggregatedSearchService.Aggregated(List.of(), 0, List.of(), 0));
+
+        String result = tools.findSimilar("Nonexistent Thing", CONVERSATION);
+
+        verify(recommender, never()).recommend(anyString());
+        assertThat(result).contains("spelling");
+    }
+
     private void whenExtracted(MetadataSearchRequest request) {
         when(extractor.extract(anyString())).thenReturn(request);
     }
@@ -112,5 +167,10 @@ class DiscoveryAgentToolsTest {
     private static ReleaseMetadata release(String artist, String title) {
         return new ReleaseMetadata("discogs:release:1", null, SearchEngine.DISCOGS, artist, title, 100,
                 List.of("1995"), List.of("Album"), 0, 0, 1, List.of(), null, List.of(), null);
+    }
+
+    private static ReleaseMetadata tagged(String artist, String title, String year, String... tags) {
+        return new ReleaseMetadata("discogs:release:65958", null, SearchEngine.DISCOGS, artist, title, 100,
+                List.of(year), List.of("Single"), 0, 0, 1, List.of(), null, List.of(tags), null);
     }
 }

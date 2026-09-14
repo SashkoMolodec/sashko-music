@@ -123,6 +123,22 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
         memory.add(AiMessage.from(aiText));
     }
 
+    /**
+     * Append unless the newest message already says exactly this. "шо грає 🎵" pressed five times on
+     * one track must not push five identical pairs through the window (and trip the summarizer) —
+     * the memory needs to know what is playing, not how often it was asked.
+     */
+    public void appendUserAndAiIfNew(String conversationId, String userText, String aiText) {
+        if (userText == null || aiText == null) return;
+        ChatMemory memory = get(conversationId);
+        List<ChatMessage> msgs = memory.messages();
+        if (!msgs.isEmpty() && msgs.getLast() instanceof AiMessage last && aiText.equals(last.text())) {
+            return;
+        }
+        memory.add(UserMessage.from(userText));
+        memory.add(AiMessage.from(aiText));
+    }
+
     public void clear(Object memoryId) {
         ChatMemory memory = memories.remove(memoryId);
         if (memory != null) memory.clear();

@@ -113,6 +113,23 @@ public record MetadataSearchRequest(
         );
     }
 
+    public MetadataSearchRequest withCountry(String newCountry) {
+        return new MetadataSearchRequest(
+                this.id,
+                this.artist,
+                this.release,
+                this.recording,
+                this.dateRange,
+                this.format,
+                this.type,
+                newCountry,
+                this.status,
+                this.style,
+                this.label,
+                this.catno
+        );
+    }
+
     /** Same query without the artist constraint — for lookups that must reach compilations, where
      * the requested artist appears on a track rather than as the release's album artist. */
     public MetadataSearchRequest withoutArtist() {

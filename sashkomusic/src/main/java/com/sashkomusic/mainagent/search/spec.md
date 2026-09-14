@@ -71,7 +71,7 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 `search(request)` → `Aggregated(releases, rawCount, sources, tracklistsChecked)`:
 1. MusicBrainz + Discogs + Bandcamp паралельно (`asyncExecutor`, таймаут 25s на движок, падіння движка = порожній список, не помилка всього пошуку).
 2. Кожен результат через `ReleaseMatchValidator` — не збігся, викидається. Cap `PER_ENGINE_CAP=12` на движок, щоб балакучий каталог не витіснив інші.
-3. **Deep pass:** якщо підтверджених < 5 і в запиті є `recording`, то для кандидатів, яких можна підтвердити тільки треклистом (компіляції), довантажуються треки — бюджет `TRACKLIST_BUDGET=8` викликів, паралельно.
+3. **Deep pass:** якщо підтверджених < 5 і в запиті є `recording`, то для кандидатів, яких можна підтвердити тільки треклистом, довантажуються треки — бюджет `TRACKLIST_BUDGET=8` викликів, паралельно. Кандидат проходить у бюджет тільки якщо він **може** нести чужий трек: компіляція (`Various`) або реліз самого запитаного артиста під незнайомою назвою. Реліз, підписаний третім артистом, відсіюється — інакше десяток однойменних чужих альбомів з'їдає весь бюджет і компіляція, на якій трек реально лежить, до перевірки не доходить.
 4. Сортування: `EXACT` → `TRACK` → `PARTIAL`, всередині рівня — по пріоритету джерела.
 5. Дедуп по нормалізованому `artist::title`; слот лишає джерело з вищим пріоритетом: **Discogs → Bandcamp → MusicBrainz** (у Discogs найбагатша картка + відео для 🎧; Bandcamp — прямa сторінка прослуховування; MB виграє, коли він єдиний). Cap `TOTAL_CAP=20`.
 
@@ -88,13 +88,25 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 - `PARTIAL` — назва містить запитану цілим словом (перевидання/розширені назви).
 - Browse-запит (тільки style/year) — валідувати нема проти чого, результати движка лишаються як є.
 
-`normalize()` зрізає дужкові уточнення, тому `Adjust (BE)` (як пише юзер) і `Adjust (2)` (як дизамбігує Discogs) — це один артист. Порівняння підрядків — по межах слів: "mist" не матчить "mistake".
+**Збіг артиста — це рівність імені, не входження підрядка.** Раніше `artistMatches` рахувало входження в обидва
+боки, і запит "Adjust" підтверджувався релізами *Vinyl Speed Adjust* та *Adjust the Sails* — на пошук одного
+артиста юзер отримував картки трьох інших (саме це й було в скріншотах). Тепер рядок артиста ріжеться по
+роздільниках кредиту (`, ; / &`, `feat.`, `ft.`, `vs.`, `pres.`, `presents`, `meets`) і кожне ім'я
+порівнюється на рівність — тому "Adjust & Someone", "Floating Machine, John Plaza" і
+"Perfecto Presents… Paul Oakenfold" далі матчаться, а "Vinyl Speed Adjust" — ні. `x` і `and` навмисно НЕ
+роздільники: вони з'їдають реальні імена ("Malcolm X", "Chas and Dave"). Різати треба **до** `normalize()`,
+бо той перетворює `&` і `,` на пробіли й зліпив би два імені в одне.
 
-`needsTracklistCheck()` каже, чи вердикт впирається саме в треклист — щоб не витрачати API-виклики на вже вирішені кандидати.
+`normalize()` зрізає дужкові уточнення, тому `Adjust (BE)` (як пише юзер) і `Adjust (2)` (як дизамбігує Discogs) — це один артист; провідний артикль теж зрізається ("The Orb" = "Orb (2)"). Порівняння назв — по межах слів: "mist" не матчить "mistake".
+
+`needsTracklistCheck()` каже, чи вердикт впирається саме в треклист — щоб не витрачати API-виклики ні на вже вирішені кандидати, ні на релізи чужих артистів (див. deep pass вище).
 
 ### `DiscogsClient` — structured params
 `addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). `mapToDomain` calls `filterByRequestedArtist` right after the type filter — Discogs' `artist=` param is a relevance hint, not an exact filter, so a query like "Alpi - Discontinuity" returns releases from every unrelated Discogs artist entity disambiguated as "Alpi", "Alpi (2)", "Alpi (3)", etc; the filter keeps only results whose extracted artist string case-insensitively equals the requested artist, falling back to the unfiltered list if that empties it (loose-but-present beats exact-but-empty). Grouping in `mapToDomain` keys on **artist + title**, not title alone — a title-only key merged unrelated releases that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known John Cage piece with a dozen reissues AND an unrelated electronic release; grouping by title alone mashed both into one release with garbage combined years/tags/label). Uses `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
 **Free-text `q` для трекових запитів (`textSearchForTrack`):** те, що юзер вбиває в пошук discogs.com, потрапляє в повнотекстовий індекс `q`, який покриває **треклист** — артиста й назву кожного треку. Структурні параметри цього не вміють: `artist=` бачить лише альбомного артиста, тому "Adjust (BE) - Mist" там дає нуль і деградує до голого `track=mist` по всіх артистах світу (реальний баг: 49 чужих релізів з треком "Mist"). Тому при `artist` + `recording` додатково виконується `q="<artist> <recording>"`, а результат мапиться з `request.withoutArtist()` — фільтр по альбомному артисту тут навмисно вимкнений, бо ціль саме компіляції з `Various`. Результати обох пошуків зливаються по `id`.
+`textSearchForTrack` спрацьовує **тільки** коли заповнені і `artist`, і `recording` — тому порожній `recording`
+мовчки вимикає єдиний шлях до треків компіляцій. Це не лікується в клієнті: поле приходить із екстрактора, і
+гарантує його `SearchRequestNormalizer` (див. [agents/discovery/spec.md](../../agents/discovery/spec.md)).
 `performSearch`/`retryWithoutArtist`/`performTextSearch` route through a `@Lazy self` proxy reference so `@CircuitBreaker`/`@Retry` actually apply — calling a `@CircuitBreaker`-annotated method directly (`this.performSearch(...)`) bypasses the Spring AOP proxy entirely.
 `getVideos(releaseId)` — community-curated YouTube links from the release's `videos[]`, in page order (used by `ListenLinkResolver`: перше = ведучий лінк, решта = переходи по треках).
 
@@ -118,7 +130,8 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 
 ## Listen links (`ListenLinkResolver`)
 
-`StreamingFlowService` віддає одне текстове повідомлення з готовим лінком (без кнопок) — деталі в [/.specs/streaming.md](../../../../../../.specs/streaming.md). Порядок джерел:
+`StreamingFlowService` віддає одне текстове повідомлення з готовим лінком (без кнопок), перевикористовуючи
+**один слот** на розмову (`flow_key = "listen_msg"`) — деталі в [/.specs/streaming.md](../../../../../../.specs/streaming.md). Порядок джерел:
 - `BANDCAMP` → `release.masterId()` (the release page itself IS the direct link)
 - `DISCOGS` → `DiscogsClient.getVideos()` (дедуп по URL, cap 8), falls back to yt-music search if the release has no attached video
 - `MUSICBRAINZ` → yt-music scraper search (`YtMusicScraperClient`, `sm-scraper` `/ytmusic/search`) by artist+title
@@ -129,7 +142,12 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 
 ## Similar-music lookup (`ListenBrainzClient`)
 
-`labs.api.listenbrainz.org/similar-artists/json` — free, no API key, CC0-licensed co-listen data. Used only by `DiscoveryAgentTools.findSimilar()` (see `agents/discovery/spec.md`) via `MusicBrainzClient.findArtistMbid()` → `ListenBrainzClient.findSimilarArtists()`. Library-internal similarity (own analyzed tracks) is a separate, unrelated path — `LibrarySimilarityService` in `libraryagent`, exposed via `LibraryAgentTools.findSimilarInLibrary` — pure audio-feature cosine similarity, no external API.
+`labs.api.listenbrainz.org/similar-artists/json` — free, no API key, CC0-licensed co-listen data. Used only by `DiscoveryAgentTools.findSimilar()` (see `agents/discovery/spec.md`) via `MusicBrainzClient.findArtistMbid()` → `ListenBrainzClient.findSimilarArtists()`.
+
+**Покриття цієї пари — не вся музика.** Обскурний вініл (1993, лейбл на 3 релізи) у MusicBrainz часто
+відсутній узагалі, тому `findArtistMbid` віддає empty і ланцюжок обривається на першому кроці. Для цього
+в `findSimilar` є style fallback: точковий пошук самого seed → стилі з його картки (Discogs пише
+`acid, techno, trance`) → `exploreAndRecommend("<styles> <decade>")`. Деталі — в `agents/discovery/spec.md`. Library-internal similarity (own analyzed tracks) is a separate, unrelated path — `LibrarySimilarityService` in `libraryagent`, exposed via `LibraryAgentTools.findSimilarInLibrary` — pure audio-feature cosine similarity, no external API.
 
 ---
 

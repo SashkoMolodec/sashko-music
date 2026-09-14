@@ -2,8 +2,6 @@ package com.sashkomusic.mainagent.library;
 
 import com.sashkomusic.events.ReplaceCommentTaskEvent;
 import com.sashkomusic.events.AddCommentTaskEvent;
-import com.sashkomusic.api.dto.TrackDto;
-import com.sashkomusic.api.service.TrackService;
 import com.sashkomusic.libraryagent.domain.entity.Artist;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.entity.Track;
@@ -13,7 +11,6 @@ import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.libraryagent.client.NavidromeClient;
 import com.sashkomusic.mainagent.library.AlbumCommentContextHolder.AlbumCommentContext;
 import com.sashkomusic.libraryagent.config.AppleMusicSyncConfig;
 import com.sashkomusic.mainagent.library.messaging.AppleMusicSyncOutputParser;
@@ -41,8 +38,8 @@ public class NowPlayingAlbumFlowService {
 
     private static final String LOCAL_FILE_PREFIX = "LOCAL_FILE:";
 
-    private final NavidromeClient navidromeClient;
-    private final TrackService trackService;
+    private final NowPlayingResolver nowPlayingResolver;
+    private final LastReleaseContextHolder lastReleaseContextHolder;
     private final TrackRepository trackRepository;
     private final TrackTagRepository trackTagRepository;
     private final ReleaseRepository releaseRepository;
@@ -54,25 +51,27 @@ public class NowPlayingAlbumFlowService {
     private final AppleMusicSyncConfig appleMusicSyncConfig;
 
     @Transactional(readOnly = true)
-    public List<BotResponse> nowPlayingAlbum(ConversationContext ctx) {
-        NavidromeClient.CurrentTrackInfo trackInfo = navidromeClient.getCurrentlyPlayingTrackInfo();
-        if (trackInfo == null) {
-            return List.of(BotResponse.text("зараз нич не грає 🥺"));
+    public NowPlayingFlowService.NowPlayingResult nowPlayingAlbum(ConversationContext ctx) {
+        Optional<NowPlayingResolver.NowPlaying> resolved = nowPlayingResolver.resolve();
+        if (resolved.isEmpty()) {
+            return NowPlayingFlowService.NowPlayingResult.of("зараз нич не грає 🥺");
+        }
+        NowPlayingResolver.NowPlaying playing = resolved.get();
+
+        if (!playing.inLibrary()) {
+            return new NowPlayingFlowService.NowPlayingResult(
+                    List.of(BotResponse.text("зараз грає: %s – %s, але трек не знайдено в БД"
+                            .formatted(playing.playerArtist(), playing.playerTitle()))),
+                    playing.summary());
         }
 
-        Optional<TrackDto> trackDtoOpt = trackService.findByArtistAndTitleOptional(trackInfo.artist(), trackInfo.title());
-        if (trackDtoOpt.isEmpty()) {
-            return List.of(BotResponse.text("зараз грає: %s – %s, але трек не знайдено в БД"
-                    .formatted(trackInfo.artist(), trackInfo.title())));
+        Optional<Release> releaseOpt = releaseRepository.findById(playing.releaseId());
+        if (releaseOpt.isEmpty()) {
+            return NowPlayingFlowService.NowPlayingResult.of("реліз для цього треку не знайдено.");
         }
-
-        TrackDto trackDto = trackDtoOpt.get();
-        Optional<Track> trackOpt = trackRepository.findById(trackDto.id());
-        if (trackOpt.isEmpty() || trackOpt.get().getRelease() == null) {
-            return List.of(BotResponse.text("реліз для цього треку не знайдено."));
-        }
-
-        Release release = trackOpt.get().getRelease();
+        Release release = releaseOpt.get();
+        lastReleaseContextHolder.set(ctx.conversationId(), release.getId(), release.getTitle(),
+                playing.track().artistName());
         List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(release.getId());
 
         String cardText = buildMainCardText(release, tracks);
@@ -84,7 +83,9 @@ public class NowPlayingAlbumFlowService {
         ));
 
         String imageUrl = release.getCoverPath() != null ? LOCAL_FILE_PREFIX + release.getCoverPath() : null;
-        return List.of(BotResponse.cardWithRows(cardText, imageUrl, rows));
+        return new NowPlayingFlowService.NowPlayingResult(
+                List.of(BotResponse.cardWithRows(cardText, imageUrl, rows)),
+                playing.summary());
     }
 
     @Transactional(readOnly = true)

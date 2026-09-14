@@ -167,7 +167,7 @@ public class UserInteractionOrchestrator {
             return newTopicFlowService.handle(ctx, rawInput.substring("/newtopic".length()).trim());
         }
         if (rawInput.startsWith("/np-album") || rawInput.startsWith("/npalbum")) {
-            return nowPlayingAlbumFlowService.nowPlayingAlbum(ctx);
+            return withNowPlayingContext(ctx, "/npalbum", nowPlayingAlbumFlowService.nowPlayingAlbum(ctx));
         }
         if (rawInput.startsWith("/markers")) {
             return markersFlowService.showMarkers(ctx);
@@ -183,12 +183,25 @@ public class UserInteractionOrchestrator {
             return smartlistsFlowService.showList(ctx);
         }
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
-            return nowPlayingFlowService.nowPlaying(ctx);
+            return withNowPlayingContext(ctx, "/np", nowPlayingFlowService.nowPlaying(ctx));
         }
         if (rawInput.toLowerCase().startsWith("копай ")) {
             return directSoulseekSearchFlowService.search(ctx, rawInput.substring("копай ".length()));
         }
         return Collections.emptyList();
+    }
+
+    /**
+     * The player is the one piece of state MainAgent's memory window can never contain. Writing what
+     * `/np` just showed into that memory is what makes the next free-text message ("схоже до того що
+     * зараз грає?") answerable — same mechanism `/library` and `/discovery` already use.
+     */
+    private List<BotResponse> withNowPlayingContext(ConversationContext ctx, String command,
+                                                    NowPlayingFlowService.NowPlayingResult result) {
+        if (result.agentContext() != null && !result.agentContext().isBlank()) {
+            mainMemoryProvider.appendUserAndAiIfNew(ctx.conversationId(), command, result.agentContext());
+        }
+        return result.responses();
     }
 
     private List<BotResponse> handleLibrarySlash(ConversationContext ctx, String query) {

@@ -30,6 +30,8 @@ public class DiscoveryAgentTools {
     /** Three stacks is what still reads as an answer in a Telegram chat rather than as a dump. */
     private static final int MAX_RECOMMENDATIONS = 3;
     private static final int MAX_SIMILAR_ARTISTS_TRIED = 6;
+    /** Beyond three styles the recommendation topic stops describing anything in particular. */
+    private static final int MAX_STYLE_SEEDS = 3;
 
     private final AggregatedSearchService aggregatedSearch;
     private final SearchContextService searchContextService;
@@ -89,35 +91,80 @@ public class DiscoveryAgentTools {
     public String findSimilar(
             @P("artist or release name to find similar music to, or empty to use the release currently in view") String seedQuery,
             @ToolMemoryId String conversationId) {
-        String seedArtist;
+        String seed;
+        MetadataSearchRequest seedRequest;
         if (seedQuery == null || seedQuery.isBlank()) {
             ReleaseMetadata current = currentRelease(conversationId);
             if (current == null) {
                 return "no release in view and no seed given — search for something first or name an artist";
             }
-            seedArtist = current.artist();
+            seed = current.artist() + " — " + current.title();
+            // The catalog already split artist from title — no extractor call needed for this one.
+            seedRequest = new MetadataSearchRequest(null, current.artist(), current.title(), "",
+                    DateRange.empty(), "", "", "", "", "", "", "");
         } else {
-            seedArtist = seedQuery.trim();
+            seed = seedQuery.trim();
+            // A typed seed arrives as the user said it — often "Artist — Title". MusicBrainz resolves
+            // artists, not that whole string, so pull the artist out of it first.
+            seedRequest = extractRequest(seed);
         }
+        String seedArtist = seedRequest.artist().isBlank() ? seed : seedRequest.artist();
 
-        Optional<String> mbid = musicBrainzClient.findArtistMbid(seedArtist);
-        if (mbid.isEmpty()) {
-            return "could not resolve artist '" + seedArtist + "' on MusicBrainz — ask the user to clarify the name";
-        }
+        List<String> similarArtists = musicBrainzClient.findArtistMbid(seedArtist)
+                .map(mbid -> listenBrainzClient.findSimilarArtists(mbid).stream()
+                        .sorted(Comparator.comparingInt(ListenBrainzSimilarArtistsResponse::score).reversed())
+                        .limit(MAX_SIMILAR_ARTISTS_TRIED)
+                        .map(ListenBrainzSimilarArtistsResponse::name)
+                        .toList())
+                .orElse(List.of());
 
-        List<String> similarArtists = listenBrainzClient.findSimilarArtists(mbid.get()).stream()
-                .sorted(Comparator.comparingInt(ListenBrainzSimilarArtistsResponse::score).reversed())
-                .limit(MAX_SIMILAR_ARTISTS_TRIED)
-                .map(ListenBrainzSimilarArtistsResponse::name)
-                .toList();
         if (similarArtists.isEmpty()) {
-            return "ListenBrainz has no similar-artist data for '" + seedArtist + "'";
+            log.info("No ListenBrainz co-listen data for '{}' — falling back to the seed's own styles", seedArtist);
+            return similarByStyle(seed, seedRequest, conversationId);
         }
 
         List<Candidate> candidates = similarArtists.stream()
                 .map(artist -> new Candidate(artist, "", artist))
                 .toList();
         return buildStacks(conversationId, candidates, "artists related to " + seedArtist + " by ListenBrainz co-listen data");
+    }
+
+    /**
+     * MusicBrainz and ListenBrainz cover what a lot of people listen to; an obscure 1993 white-label
+     * 12" exists only on Discogs — together with its styles. So when co-listen data runs out, ask the
+     * catalogs what the seed itself sounds like and recommend from that, instead of handing the model
+     * a dead end it can only turn into "уточни назву".
+     */
+    private String similarByStyle(String seed, MetadataSearchRequest seedRequest, String conversationId) {
+        var aggregated = aggregatedSearch.search(seedRequest);
+        Optional<ReleaseMetadata> top = aggregated.releases().stream().findFirst();
+        if (top.isEmpty()) {
+            return "no similarity data and no catalog match for '" + seed
+                    + "' — ask the user to confirm the spelling";
+        }
+
+        List<String> styles = top.get().tags() == null ? List.of() : top.get().tags().stream()
+                .filter(tag -> tag != null && !tag.isBlank())
+                .limit(MAX_STYLE_SEEDS)
+                .toList();
+        if (styles.isEmpty()) {
+            return "'" + seed + "' exists in the catalogs but carries no genre/style tags, and ListenBrainz "
+                    + "has no co-listen data for it — ask the user which direction they want";
+        }
+
+        String topic = String.join(" ", styles) + decadeOf(top.get()).map(d -> " " + d).orElse("");
+        log.info("Style fallback for '{}': recommending on '{}'", seed, topic);
+        return exploreAndRecommend(topic, conversationId);
+    }
+
+    /** "1993" → "1990s" — a decade is a usable recommendation filter, an exact year is not. */
+    private static Optional<String> decadeOf(ReleaseMetadata release) {
+        if (release.years() == null) return Optional.empty();
+        return release.years().stream()
+                .filter(year -> year != null && year.matches("\\d{4}"))
+                .map(Integer::parseInt)
+                .min(Integer::compareTo)
+                .map(year -> (year / 10 * 10) + "s");
     }
 
     @Tool("""
@@ -282,7 +329,11 @@ public class DiscoveryAgentTools {
 
     private MetadataSearchRequest extractRequest(String query) {
         try {
-            return searchRequestExtractor.extract(query);
+            // The extractor is an LLM and two of its rules never hold: it reads the Discogs artist
+            // disambiguator "(BE)" as a country filter, and it fills only `release` for a bare
+            // "Artist — Title" — which silently disables every track-lookup path downstream.
+            // SearchRequestNormalizer settles both in code.
+            return SearchRequestNormalizer.normalize(query, searchRequestExtractor.extract(query));
         } catch (Exception e) {
             log.warn("SearchRequestExtractor failed for query '{}': {} — falling back to raw query", query, e.getMessage());
             return new MetadataSearchRequest(null, query, "", "", DateRange.empty(), "", "", "", "", "", "", "");

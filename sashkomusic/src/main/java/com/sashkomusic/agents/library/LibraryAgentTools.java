@@ -14,6 +14,7 @@ import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
+import com.sashkomusic.mainagent.library.NowPlayingResolver;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
 import com.sashkomusic.mainagent.library.SmartlistCreationFlowService;
 import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
@@ -50,6 +51,32 @@ public class LibraryAgentTools {
     private final SmartlistCreationFlowService smartlistCreationFlowService;
     private final SmartlistService smartlistService;
     private final LibrarySimilarityService librarySimilarityService;
+    private final NowPlayingResolver nowPlayingResolver;
+
+    // ───────────────── now playing ─────────────────
+
+    @Tool("""
+            What the player is playing RIGHT NOW, resolved against the user's library: artist, title,
+            release, year, genres and the DJ tags already on the track.
+            Use for "що зараз грає", "шо грає", and ALWAYS call this FIRST when the user refers to the
+            playing track ("це", "той шо грає", "схоже на те шо зараз грає") without naming it.
+            Never tell the user you cannot know what is playing — call this instead.
+            After this call the playing release is the 'this' referent, so findSimilarInLibrary("this")
+            or moveReleaseToSublibrary("this", ...) can follow in the same turn without naming it.
+            """)
+    public String nowPlayingTrack(@ToolMemoryId String conversationId) {
+        Optional<NowPlayingResolver.NowPlaying> resolved = nowPlayingResolver.resolve();
+        if (resolved.isEmpty()) {
+            return "плеєр зараз нічого не грає (ні navidrome, ні icecast)";
+        }
+        NowPlayingResolver.NowPlaying playing = resolved.get();
+        if (!playing.inLibrary()) {
+            return playing.summary() + " — цього треку немає в бібліотеці, тому локальних тегів нема";
+        }
+        lastReleaseContextHolder.set(mainConversationId(conversationId), playing.releaseId(),
+                playing.releaseTitle(), playing.track().artistName());
+        return playing.summary();
+    }
 
     // ───────────────── catalog ops ─────────────────
 

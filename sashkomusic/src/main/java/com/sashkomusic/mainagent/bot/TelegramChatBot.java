@@ -15,6 +15,7 @@ import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateC
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
@@ -177,8 +178,13 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
             if (edited || response.rememberAs() == null) {
                 return;
             }
-            log.info("Could not edit remembered message {} in [{}] — sending a new one",
+            // The whole point of a remembered slot is that the conversation carries ONE of these
+            // messages. Telegram refuses the edit often enough (400 "message can't be edited") that
+            // sending the replacement on its own turned every 🎧 click into another copy of a long
+            // tracklist. If it cannot be edited it gets removed, so the slot still holds one message.
+            log.info("Could not edit remembered message {} in [{}] — replacing it with a new one",
                     response.editMessageId(), ctx.conversationId());
+            deleteMessage(ctx, response.editMessageId());
         }
 
         if (hasImage) {
@@ -285,6 +291,11 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                         .build());
                 return true;
             } catch (TelegramApiException ex) {
+                if (!hasImage) {
+                    // The first attempt WAS the text edit — repeating it can only fail identically.
+                    log.warn("❌ Cannot edit message {} in [{}]: {}", messageId, ctx.conversationId(), ex.getMessage());
+                    return false;
+                }
                 log.warn("Failed to edit caption for message {} in [{}]: {}. Falling back to text edit.",
                         messageId, ctx.conversationId(), ex.getMessage());
                 try {
@@ -304,6 +315,18 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
             }
         }
         return false;
+    }
+
+    /** Best-effort: a slot message that cannot be edited is dropped so its replacement stands alone. */
+    private void deleteMessage(ConversationContext ctx, int messageId) {
+        try {
+            client.execute(DeleteMessage.builder()
+                    .chatId(ctx.chatId())
+                    .messageId(messageId)
+                    .build());
+        } catch (TelegramApiException e) {
+            log.warn("Could not delete message {} in [{}]: {}", messageId, ctx.conversationId(), e.getMessage());
+        }
     }
 
     private void remember(ConversationContext ctx, BotResponse response, Message sent) {

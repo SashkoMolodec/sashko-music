@@ -58,9 +58,45 @@ class ReleaseMatchValidatorTest {
     }
 
     @Test
+    void does_not_spend_a_tracklist_lookup_on_someone_elses_record() {
+        // The budget is 8 calls; ten unrelated albums that merely share a word with the artist name
+        // used to eat all of them and starve the compilation that really carries the track.
+        var strangersAlbum = release("Vinyl Speed Adjust", "Retro EP");
+
+        assertThat(ReleaseMatchValidator.needsTracklistCheck(request("Adjust", "", "Fractured Elements"), strangersAlbum))
+                .isFalse();
+        // The requested artist's own record under an unfamiliar title still deserves the call.
+        assertThat(ReleaseMatchValidator.needsTracklistCheck(request("Adjust", "", "Fractured Elements"), release("Adjust", "Some EP")))
+                .isTrue();
+    }
+
+    @Test
     void ignores_bracketed_disambiguation_on_artist_names() {
         // "Adjust (BE)" as the user types it, "Adjust (2)" as Discogs disambiguates it — same artist.
         assertThat(ReleaseMatchValidator.artistMatches("Adjust (2)", "Adjust (BE)")).isTrue();
+    }
+
+    @Test
+    void rejects_an_artist_whose_name_merely_contains_the_requested_one() {
+        // The real miss: a search for "Adjust" came back with three other artists' albums, and the
+        // user was told they were the requested artist's records.
+        assertThat(ReleaseMatchValidator.artistMatches("Vinyl Speed Adjust", "Adjust")).isFalse();
+        assertThat(ReleaseMatchValidator.artistMatches("Adjust the Sails", "Adjust")).isFalse();
+        assertThat(ReleaseMatchValidator.evaluate(request("Adjust", "", ""), release("Vinyl Speed Adjust", "Retro EP")))
+                .isEqualTo(ReleaseMatchValidator.Match.NONE);
+    }
+
+    @Test
+    void accepts_the_requested_artist_as_one_credit_among_several() {
+        assertThat(ReleaseMatchValidator.artistMatches("Adjust & Someone", "Adjust")).isTrue();
+        assertThat(ReleaseMatchValidator.artistMatches("Floating Machine, John Plaza", "John Plaza")).isTrue();
+        assertThat(ReleaseMatchValidator.artistMatches("HATELOVE feat. Wanton", "Wanton")).isTrue();
+        assertThat(ReleaseMatchValidator.artistMatches("Perfecto Presents… Paul Oakenfold", "Paul Oakenfold")).isTrue();
+    }
+
+    @Test
+    void ignores_a_leading_article() {
+        assertThat(ReleaseMatchValidator.artistMatches("The Orb", "Orb (2)")).isTrue();
     }
 
     @Test

@@ -54,7 +54,7 @@ Sub-агенти юзають той самий `PostgresChatMemoryStore` під
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
 | `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів; треклист релізу якого **немає** в бібліотеці; "хочу схоже на X" / рекомендації для **нової** музики | `DiscoveryAgentService` → LLM path (Haiku) |
-| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist"); "маю щось схоже на X?" — similarity **в межах власної бібліотеки** | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist"); "маю щось схоже на X?" — similarity **в межах власної бібліотеки**; **"що зараз грає"** та будь-яке резолвлення поточного треку | `LibraryAgentService` → `LibraryAgent` (Haiku) |
 | `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
@@ -82,17 +82,41 @@ drain(conversationId) → aiText(summary)  +  drained cards  →  Telegram
 |---------|---------|------|
 | `/library <query>` | `LibraryAgentService.handle()` | Haiku тільки |
 | `/discovery <query>` | `DiscoveryAgentService.handle()` | Haiku тільки |
-| `/np` | `NowPlayingFlowService.nowPlaying()` | ні |
+| `/np`, `шо грає 🎵` | `NowPlayingFlowService.nowPlaying()` → `NowPlayingResult(responses, agentContext)` | ні |
+| `/npalbum` | `NowPlayingAlbumFlowService.nowPlayingAlbum()` → `NowPlayingResult` | ні |
 | `/newtopic` | `NewTopicFlowService.handle()` | ні |
 | `/clearctx` | publishes `ChatContextClearedEvent` → `MainChatMemoryProvider` clears chat memory across all agent suffixes | ні |
 | `стоп` | publishes `ChatContextClearedEvent` + `ChatHardResetEvent` → all per-conversation holders drop state | ні |
 
-Після `/discovery` і `/library` оркестратор викликає `mainMemoryProvider.appendUserAndAi(...)` що дописує summary в основну MainAgent memory (`conversation_messages` під `<conversationId>`). Тому MainAgent бачить активність slash-команд при наступному free-text запиті, а `/newtopic` може взяти цей контекст для seed нового топіка та генерації назви.
+Після `/discovery`, `/library`, `/np` і `/npalbum` оркестратор викликає `mainMemoryProvider.appendUserAndAi(...)` що дописує summary в основну MainAgent memory (`conversation_messages` під `<conversationId>`). Тому MainAgent бачить активність slash-команд при наступному free-text запиті, а `/newtopic` може взяти цей контекст для seed нового топіка та генерації назви.
+
+---
+
+## Поточний трек як контекст
+
+Плеєр — єдине джерело стану, якого немає в memory window. Тому «те, що зараз грає» приходить до MainAgent
+двома шляхами:
+
+1. **Пасивно.** `/np` і `/npalbum` (і кнопка `шо грає 🎵`) після показу картки дописують рядок
+   `зараз грає: <артист> — <назва> (<реліз>, <рік>) …` у MainAgent memory через
+   `mainMemoryProvider.appendUserAndAiIfNew` — так само, як це вже роблять `/discovery` і `/library`.
+   Тобто наступне вільнотекстове повідомлення бачить трек у контексті без жодного зайвого виклику.
+   `…IfNew` (а не `appendUserAndAi`) — бо кнопку `шо грає 🎵` тиснуть пачками: п'ять натискань на
+   одному треку не мають прогнати п'ять однакових пар через 32-повідомлювальне вікно і збити
+   авто-сумаризацію. Ідентичний рядок підряд ігнорується.
+2. **Активно.** `manageLibrary("що зараз грає")` → `LibraryAgentTools.nowPlayingTrack()` — живий стан плеєра.
+
+**Виняток із «один tool per intent»:** якщо юзер посилається на те, що грає ("схоже до того що зараз грає?",
+"скачай ще цього артиста"), а в контексті треку немає — спочатку `manageLibrary("що зараз грає")`, потім,
+у тому ж ході, цільовий tool із **розрезолвленою** назвою (`discoverMusic("symphony of love spirit of love")`).
+Ніколи не питати юзера, що в нього грає — це стан, який бот може прочитати сам.
+Виняток: "маю щось схоже на те що грає?" — це один виклик `manageLibrary`, бо LibraryAgent резолвить
+трек і робить audio-feature similarity сам, у межах одного ходу.
 
 ---
 
 ## Hard rules
-1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в memory window).
+1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в memory window). Виняток — резолвлення поточного треку (див. вище).
 2. Не вигадувати параметри — тільки те що сказав юзер.
 3. Не описувати release картки в тексті — вони вже в accumulator.
 4. Тільки MainAgent говорить до юзера. Sub-агенти → records/pushAll.

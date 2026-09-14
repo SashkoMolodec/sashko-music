@@ -65,7 +65,23 @@ Memory **не очищається** між викликами `handle()` — т
    `exploreAndRecommend`. Розділення lookup/explore описане в промпті (STEP 0), але промпт — це рекомендація
    моделі, а не гарантія: "пошукай detroit techno класичне" Haiku стабільно віддає в `search`. Гарантію дає
    саме цей код.
-1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest`.
+1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest` → **`SearchRequestNormalizer.normalize(query, request)`**.
+   Екстрактор — це LLM, і два його правила не тримаються на практиці, тому їх доводить до кінця код:
+   - **`(BE)` — це не країна.** "Adjust (BE)" — дизамбігуація однойменних артистів у Discogs (і саме так
+     юзер копіює назву звідти). Модель стабільно читає дужку як `country=BE`, після чого всі три каталоги
+     шукають *бельгійський прес* релізу, у якого його нема, і пошук гарантовано порожній. Правило: якщо
+     код країни присутній у запиті саме як `(XX)` — `country` обнуляється. Справжній запит про країну
+     формулюється словами ("German techno", "японські релізи"), ніколи дужкою.
+   - **"Artist — Title" — це ще й трек.** Без слова album/трек у запиті назва однаково ймовірно і те, і те,
+     і промпт просить заповнити обидва поля. Коли модель кладе тільки `release`, весь трековий шлях
+     вимикається мовчки: `DiscogsClient.textSearchForTrack` (єдиний, що дістає до треклиста компіляції) і
+     deep pass з підтвердженням треклистом обидва загейтовані на `recording`. Правило: `recording` порожній
+     + `release` є + у запиті нема album/LP/EP/vinyl/CD/альбом → `recording = release`. Слово "трек"/"track"
+     перебиває слово-реліз у тому ж запиті.
+
+   Реальний кейс, на якому це впіймали: "Adjust (BE) - Fractured Elements" — трек з компіляції
+   `Various — Air II` (Discogs 33491327). До фіксу пошук ішов як `artist=Adjust, release_title=Fractured
+   Elements, country=BE` і давав нуль на всіх трьох каталогах.
 2. `AggregatedSearchService.search(request)` — три каталоги паралельно + валідація + (за потреби) підтвердження треклистом.
 3. Порожньо → `searchContextService.rememberQuery(...)` (щоб `digDeeper` мав що розширювати) і повернути **перелік застосованих фільтрів** з інструкцією повторити з меншою їх кількістю. Окремо розрізняється `rawCount > 0` ("каталоги віддали N, але жоден не той артист/назва" → швидше проблема написання) від чистого нуля.
 4. Знайшло → `searchContextService.openStack(conversationId, query, request, label=null, releases)` — **власний стос** на цей виклик.
@@ -87,13 +103,28 @@ Memory **не очищається** між викликами `handle()` — т
 
 ### `findSimilar(seedQuery, conversationId)` — схоже на X → N стосів
 Real similarity, never invented from the LLM's own knowledge:
-1. Seed resolution: if `seedQuery` blank → the release currently in view (same `currentPage` lookup as `getTrackList`); else treated as an artist name directly.
-2. `MusicBrainzClient.findArtistMbid(seedArtist)` → MBID. Empty → ask for a clearer artist name.
+1. Seed resolution: if `seedQuery` blank → the release currently in view (same `currentPage` lookup as
+   `getTrackList`); artist і title там уже розділені каталогом, тому `MetadataSearchRequest` будується
+   напряму, без виклику екстрактора. Інакше — рядок, як його дав юзер (може бути "артист" або
+   "артист — назва"), через `SearchRequestExtractor`.
+2. `MusicBrainzClient.findArtistMbid(seedArtist)` → MBID, де `seedArtist` = поле `artist` з витягнутого запиту
+   (голий seed "symphony of love — spirit of love" як ім'я артиста в MB не резолвиться взагалі).
 3. `ListenBrainzClient.findSimilarArtists(mbid)` (labs.api.listenbrainz.org, free, no key, CC0) → top artists by co-listen score, capped at `MAX_SIMILAR_ARTISTS_TRIED` (6).
 4. Кожен споріднений артист стає кандидатом → точковий пошук по імені артиста → **свій стос** з label = ім'я артиста. Беруться перші 3, що дали результат.
 
 Раніше це був один стос із 12 релізів від 12 різних артистів — по картках було неможливо зрозуміти, де чия
 рекомендація. Тепер один артист = один стос.
+
+**Style fallback — коли ListenBrainz нічого не знає (крок 2 або 3 пустий).** MusicBrainz+ListenBrainz покривають
+те, що люди масово слухають; обскурне вінілове 12" 1993-го (типовий вміст цієї бібліотеки) там не існує —
+а в Discogs існує, разом зі стилями. Тому замість тупика:
+1. Той самий точковий агрегований пошук по seed → топ-реліз.
+2. З нього беруться `tags` (Discogs styles: `acid, techno, trance`) — максимум 3 — і десятиліття з `years` (`1990s`).
+3. `exploreAndRecommend("<styles> <decade>")` — юзер отримує стоси, а не відмову.
+4. Якщо навіть seed не знайшовся в жодному каталозі (або в нього немає стилів) — тільки тоді відмова
+   з проханням уточнити назву.
+
+Це код, а не правило промпту: «знайди схоже» не має права впертись у відсутність рядка в MusicBrainz.
 
 Тригер: "хочу схоже", "порадь щось подібне", "similar to X". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via ListenBrainz, not what the user already owns.
 
@@ -176,7 +207,8 @@ inside the same API call, so there's no client-side moment to hook a progress me
 3. `digDeeper()` читає `:d` контекст — не очищати пам'ять між викликами.
 4. Відповідь DiscoveryAgent — рядок для MainAgent (не для юзера напряму).
 5. Якщо нічого не знайшов → попросити уточнення (рік, лейбл, жанр, країна).
-6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки ListenBrainz co-listen дані.
+6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки ListenBrainz co-listen дані
+   або (fallback) стилі, які реальний каталог написав на самому seed-релізі.
 7. `exploreAndRecommend()` показує тільки те, що підтвердилось у каталогах — рекомендація без картки не показується.
 8. Жоден запит без анкера (артист/назва/трек) не доходить до показу як "пошук" — або explore, або нічого.
 9. `beginStacks()` викликає `DiscoveryAgentService` раз на хід; тули стоси не чистять.
@@ -193,5 +225,7 @@ inside the same API call, so there's no client-side moment to hook a progress me
 ## SDD checkpoints
 - Новий пошуковий движок → `SearchEngine` enum value + `SearchEngineService` impl. Tool-код не змінюється — `AggregatedSearchService` ітерує весь map.
 - Змінити суворість збігу → `ReleaseMatchValidator`, не тули.
+- Екстрактор систематично плутає поле → правило в `SearchRequestNormalizer` (детерміновано), а не тільки
+  абзац у промпті `SearchRequestExtractor`. Промпт — рекомендація, нормалізатор — гарантія.
 - Змінити кількість стосів у рекомендації → `MAX_RECOMMENDATIONS`.
 - Новий тип запиту (напр., RAG) → новий `@Tool` тут + рядок у таблиці Tools.

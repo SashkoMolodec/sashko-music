@@ -48,8 +48,16 @@ public interface SearchRequestExtractor {
               → Fill BOTH: release="Title" AND recording="Title".
             - Has release indicators (album, LP, EP, compilation, vinyl, CD):
               → Fill ONLY release field.
-            - Has track indicators (track, song, single):
-              → Fill ONLY recording field.
+            - Has track indicators (track, трек, song, пісня, single):
+              → Fill recording field (a track may also be the title of its own single, so filling
+                release with the same value is fine — leaving recording EMPTY is not).
+
+            ARTIST DISAMBIGUATION IS NOT A COUNTRY:
+            A 2-letter code in brackets right after an artist name — "Adjust (BE)", "Mist (UK)",
+            "Alpi (2)" — is how Discogs tells same-named artists apart. It is NOT a country filter.
+            → country stays EMPTY, artist keeps the plain name ("Adjust").
+            Only fill country when the user actually asks for one in words: "German techno",
+            "японські релізи", "pressed in the US".
 
             OUTPUT STRUCTURE:
             Return ONLY valid JSON without any markdown formatting or code blocks.
@@ -75,6 +83,7 @@ public interface SearchRequestExtractor {
             "Паліндром альбом Хвороба discogs" → artist="Паліндром", release="Хвороба", type="Album", language=UA
             "Jeff Mills 1996 vinyl" → artist="Jeff Mills", dateRange={from:1996,to:1996}, format="Vinyl"
             "German techno 90s" → country=DE, style=techno, dateRange={from:1990,to:1999}
+            "Adjust (BE) - Fractured Elements" → artist="Adjust", release="Fractured Elements", recording="Fractured Elements", country=""
             "Axis Records AX-009" → label="Axis Records", catno="AX-009"
             "bloomed in september tapes" → label="bloomed in september tapes"
             """)
