@@ -66,6 +66,59 @@ public class ProcessOptionsFormatter {
         return rows;
     }
 
+    /**
+     * Step 2 of the two-step pick: same candidates, same numbering as the tracks-selection card,
+     * but rendered with tag emphasis so the user can pick a different source purely for genre tags
+     * (e.g. bandcamp's rich self-applied tags) than the one picked for tracklist matching.
+     */
+    public BotResponse formatTagsSelection(List<ReleaseMetadata> candidates) {
+        StringBuilder message = new StringBuilder("🏷 _обери джерело тегів:_\n");
+        int index = 1;
+        for (ReleaseMetadata result : candidates) {
+            message.append(toEmojiNumber(index))
+                    .append(" **")
+                    .append(result.artist().toLowerCase())
+                    .append(" - ")
+                    .append(result.title().toLowerCase())
+                    .append("** • ");
+
+            if (result.tags() != null && !result.tags().isEmpty()) {
+                message.append(result.getTagsDisplay().toLowerCase());
+            } else {
+                message.append("без тегів");
+            }
+
+            String releaseUrl = buildReleaseUrl(result);
+            if (releaseUrl != null) {
+                message.append(" [🔗](").append(releaseUrl).append(")");
+            }
+
+            message.append("\n");
+            index++;
+        }
+
+        List<List<BotResponse.ButtonDto>> rows = buildTagsSelectionButtons(candidates.size());
+        return BotResponse.withMultiRowButtons(message.toString(), rows);
+    }
+
+    private List<List<BotResponse.ButtonDto>> buildTagsSelectionButtons(int count) {
+        List<List<BotResponse.ButtonDto>> rows = new ArrayList<>();
+        List<BotResponse.ButtonDto> row = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            row.add(new BotResponse.ButtonDto(toEmojiNumber(i + 1), "PROC_SEL_TAGS:" + i));
+            if (row.size() == 5) {
+                rows.add(List.copyOf(row));
+                row.clear();
+            }
+        }
+        if (!row.isEmpty()) rows.add(List.copyOf(row));
+        rows.add(List.of(
+                new BotResponse.ButtonDto("🔁 ті самі", "PROC_SEL_TAGS:same"),
+                new BotResponse.ButtonDto("❌", "PROC_SEL_TAGS:cancel")
+        ));
+        return rows;
+    }
+
     private int appendResults(StringBuilder message, List<ReleaseMetadata> results, int startIndex) {
         int index = startIndex;
         for (ReleaseMetadata result : results) {

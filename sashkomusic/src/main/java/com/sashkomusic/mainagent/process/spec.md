@@ -17,7 +17,8 @@ UserInteractionOrchestrator
   └─ ProcessFolderFlowService.handleProcessCommand()   ← (внутрішній виклик)
 
 CallbackDispatcher
-  └─ "PROC_SEL:" → ProcessFolderFlowService.handleMetadataSelectionByIndex()
+  ├─ "PROC_SEL:"      → ProcessFolderFlowService.handleMetadataSelectionByIndex()   (крок 1: треки)
+  └─ "PROC_SEL_TAGS:" → ProcessFolderFlowService.handleTagsSelectionByIndex()       (крок 2: теги)
 
 ProcessFolderFlowService.process()
   ├─ FolderAudioScanner.resolve() + listAudioFiles()
@@ -28,6 +29,31 @@ ProcessFolderFlowService.process()
   ├─ ProcessOptionsFormatter.format()  → BotResponse з кнопками PROC_SEL:0..N + PROC_SEL:cancel
   └─ ProcessFolderContextHolder.save() → ChatStateStore
 ```
+
+### Двокроковий вибір: треки vs теги
+
+Різні джерела сильні в різному — MusicBrainz дає точну кількість треків, Discogs/Bandcamp
+часто мають найбагатші genre-теги, але кількість треків у них менш надійна. Тому вибір
+розбитий на два кроки замість одного:
+
+1. **Крок 1** (`PROC_SEL:N`) — юзер обирає, з якого варіанта брати трек-лист (для
+   `TrackMatcher`). Якщо `releaseIds.size() <= 1` — вибирати нема з чого, флоу одразу
+   публікує `ProcessLibraryTaskEvent` як раніше, без кроку 2.
+2. Інакше `handleMetadataSelectionByIndex` зберігає крок-1 pick у
+   `ProcessFolderContextHolder.saveTracksPick()` (поле `tracksReleaseId`) і надсилає
+   **другу картку** — ті самі кандидати, той самий нумерований порядок, але
+   `ProcessOptionsFormatter.formatTagsSelection()` замість `format()`: акцент на
+   `getTagsDisplay()` замість кількості треків, кнопки `PROC_SEL_TAGS:0..N` +
+   `PROC_SEL_TAGS:same` (не міняти — теги з того самого варіанта, що й треки) +
+   `PROC_SEL_TAGS:cancel`.
+3. **Крок 2** (`PROC_SEL_TAGS:<payload>`) — `handleTagsSelectionByIndex` бере
+   крок-1-метадані (`getMetadataWithTracks(tracksReleaseId)`) і:
+   - `payload="same"` → публікує як є, без злиття;
+   - `payload="cancel"` → скасовує весь `/process`;
+   - `payload="<N>"` → резолвить крок-2 реліз (`getReleaseMetadata`, теги не потребують
+     lazy-tracks), викликає `tracksMetadata.withTags(tagsMetadata.tags())` — **тільки**
+     поле `tags` заміщується, `tracks`/`years`/`types`/`label` лишаються від крок-1 pick —
+     і публікує злиту `ReleaseMetadata`.
 
 ---
 
@@ -60,13 +86,20 @@ ProcessFolderFlowService.process()
 Замість text-based OngoingFlow — inline keyboard кнопки безпосередньо в картці результатів.
 Кнопки персистовані (ChatStateStore) — переживають рестарт JVM.
 
-### `handleMetadataSelectionByIndex(ctx, "PROC_SEL:<payload>")`
+### `handleMetadataSelectionByIndex(ctx, "PROC_SEL:<payload>")` — крок 1 (треки)
 - `payload = "cancel"` → `contextHolder.clear(conversationId)`, `"❌ скасовано"`.
-- `payload = "<N>"` → `contextHolder.getReleaseIdByOption(conversationId, N)` →
-  `searchContextService.getMetadataWithTracks(releaseId, conversationId)` →
-  `publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(...)))` → `contextHolder.clear()` → `"🚀 опрацьовую..."`.
+- `payload = "<N>"`, `releaseIds.size() <= 1` → одразу `publishEvent(...)` → `"🚀 опрацьовую..."` (без кроку 2).
+- `payload = "<N>"`, `releaseIds.size() > 1` → `contextHolder.saveTracksPick(conversationId, releaseId)` →
+  `optionsFormatter.formatTagsSelection(candidates)` (картка кроку 2, кнопки `PROC_SEL_TAGS:`).
 - Невідомий index → `"❌ невірний варіант"`.
 - Протухла сесія → `"❌ сесія закінчилась. спробуй ще раз"`.
+
+### `handleTagsSelectionByIndex(ctx, "PROC_SEL_TAGS:<payload>")` — крок 2 (теги)
+- `payload = "cancel"` → `contextHolder.clear(conversationId)`, `"❌ скасовано"`.
+- `payload = "same"` → публікує крок-1-метадані без змін.
+- `payload = "<N>"` → `tracksMetadata.withTags(tagsMetadata.tags())` → `publishEvent(...)` →
+  `contextHolder.clear()` → `"🚀 опрацьовую..."`.
+- Немає `tracksReleaseId` у стейті (сесія протухла між кроками) → `"❌ невідома команда"`.
 
 ### `handleMetadataSelection(ctx, rawInput)` — text fallback
 - URL → `handleUrlMetadataSelection` (Discogs / MusicBrainz / Bandcamp URL → fetch metadata → send task).
@@ -84,13 +117,15 @@ ProcessFolderFlowService.process()
 record ProcessFolderState(
     String directoryPath,
     List<String> audioFiles,
-    List<String> releaseIds      // індекс відповідає PROC_SEL:N
+    List<String> releaseIds,     // індекс відповідає PROC_SEL:N і PROC_SEL_TAGS:N
+    String tracksReleaseId       // null до кроку 1; крок-1 pick, поки чекаємо крок 2
 ) {}
 ```
 
 | Метод | Дія |
 |-------|-----|
-| `save(conversationId, path, files, releaseIds)` | Зберігає стан пошуку |
+| `save(conversationId, path, files, releaseIds)` | Зберігає стан пошуку (`tracksReleaseId=null`) |
+| `saveTracksPick(conversationId, releaseId)` | Записує крок-1 pick, чекаючи крок 2 |
 | `get(conversationId)` | Читає `Optional<ProcessFolderState>` |
 | `getReleaseIdByOption(conversationId, index)` | `releaseIds.get(index)` або `null` |
 | `hasActiveContext(conversationId)` | Перевіряє чи є активна сесія |
@@ -101,10 +136,15 @@ record ProcessFolderState(
 
 ## ProcessOptionsFormatter
 
-Будує `BotResponse.withMultiRowButtons()` з:
+`format()` (крок 1, вибір треків) будує `BotResponse.withMultiRowButtons()` з:
 - Markdown текст з секціями по джерелах (🎵 musicbrainz / 💿 discogs / 📼 bandcamp)
 - Emoji-numbered кнопки `PROC_SEL:0`..`PROC_SEL:N-1` (5 per row)
 - `PROC_SEL:cancel` (❌ скасувати)
+
+`formatTagsSelection()` (крок 2, вибір тегів) — та сама нумерація/порядок кандидатів,
+але рядок кожного варіанта показує `getTagsDisplay()` замість `getTrackCountDisplay()`.
+Кнопки: `PROC_SEL_TAGS:0`..`PROC_SEL_TAGS:N-1`, `PROC_SEL_TAGS:same` (🔁 ті самі —
+без злиття), `PROC_SEL_TAGS:cancel` (❌).
 
 ---
 

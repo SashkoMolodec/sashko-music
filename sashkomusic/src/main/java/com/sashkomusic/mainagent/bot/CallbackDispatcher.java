@@ -68,6 +68,7 @@ public class CallbackDispatcher {
         handlers.put("RM_SEL:", (ctx, data, msgId) -> removeRelease.promptTrackSelection(ctx, data));
         handlers.put("RM_NO:", (ctx, data, msgId) -> removeRelease.handleCancel(ctx, data));
         handlers.put("LIB_ASSIGN:", (ctx, data, msgId) -> sublibAssignment.handle(ctx, data));
+        handlers.put("PROC_SEL_TAGS:", (ctx, data, msgId) -> processFolder.handleTagsSelectionByIndex(ctx, data));
         handlers.put("PROC_SEL:", (ctx, data, msgId) -> processFolder.handleMetadataSelectionByIndex(ctx, data));
         handlers.put("PROC_OK:", (ctx, data, msgId) -> pendingProcess.handleConfirm(ctx, data));
         handlers.put("PROC_NO:", (ctx, data, msgId) -> pendingProcess.handleCancel(ctx, data));

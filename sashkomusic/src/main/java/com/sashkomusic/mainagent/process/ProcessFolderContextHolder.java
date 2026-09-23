@@ -20,15 +20,22 @@ public class ProcessFolderContextHolder {
     public record ProcessFolderState(
             String directoryPath,
             List<String> audioFiles,
-            List<String> releaseIds
+            List<String> releaseIds,
+            String tracksReleaseId  // set between step 1 (tracks pick) and step 2 (tags pick); null otherwise
     ) {}
 
     public void save(String conversationId, String directoryPath, List<String> audioFiles, List<String> releaseIds) {
-        stateStore.put(conversationId, FLOW_KEY, new ProcessFolderState(directoryPath, audioFiles, releaseIds));
+        stateStore.put(conversationId, FLOW_KEY, new ProcessFolderState(directoryPath, audioFiles, releaseIds, null));
     }
 
     public Optional<ProcessFolderState> get(String conversationId) {
         return stateStore.get(conversationId, FLOW_KEY, ProcessFolderState.class);
+    }
+
+    /** Records the step-1 (tracks) pick so step 2 (tags pick) can look it up after the round-trip to Telegram. */
+    public void saveTracksPick(String conversationId, String releaseId) {
+        get(conversationId).ifPresent(s -> stateStore.put(conversationId, FLOW_KEY,
+                new ProcessFolderState(s.directoryPath(), s.audioFiles(), s.releaseIds(), releaseId)));
     }
 
     public String getReleaseIdByOption(String conversationId, int index) {

@@ -86,6 +86,26 @@ public record ReleaseMetadata(
         );
     }
 
+    public ReleaseMetadata withTags(List<String> tags) {
+        return new ReleaseMetadata(
+                this.id,
+                this.masterId,
+                this.source,
+                this.artist,
+                this.title,
+                this.score,
+                this.years,
+                this.types,
+                this.minTracks,
+                this.maxTracks,
+                this.totalReleasesFound,
+                this.tracks,
+                this.coverUrl,
+                tags,
+                this.label
+        );
+    }
+
     // Helper method for backward compatibility - returns track titles only
     public List<String> trackTitles() {
         if (tracks == null || tracks.isEmpty()) {

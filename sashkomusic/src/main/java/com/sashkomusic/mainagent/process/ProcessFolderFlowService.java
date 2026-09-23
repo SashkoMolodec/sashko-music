@@ -167,6 +167,7 @@ public class ProcessFolderFlowService {
         return List.of(BotResponse.text("обери варіант кнопкою вище або скинь посилання на реліз"));
     }
 
+    /** Step 1: user picks which candidate's tracklist to match files against. */
     public List<BotResponse> handleMetadataSelectionByIndex(ConversationContext ctx, String data) {
         String payload = data.substring("PROC_SEL:".length());
         if ("cancel".equals(payload)) {
@@ -196,7 +197,75 @@ public class ProcessFolderFlowService {
             return List.of(BotResponse.text("❌ метадані не знайдено"));
         }
 
-        var folderState = state.get();
+        List<String> releaseIds = state.get().releaseIds();
+        if (releaseIds.size() <= 1) {
+            // Nothing to pick a different tags source from — publish straight away like before.
+            return publishProcessingTask(ctx, state.get(), metadata);
+        }
+
+        contextHolder.saveTracksPick(ctx.conversationId(), releaseId);
+
+        List<ReleaseMetadata> candidates = releaseIds.stream()
+                .map(id -> searchContextService.getReleaseMetadata(id, ctx.conversationId()))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        return List.of(optionsFormatter.formatTagsSelection(candidates));
+    }
+
+    /** Step 2: user picks which candidate's genre tags to merge into the step-1 pick before tagging. */
+    public List<BotResponse> handleTagsSelectionByIndex(ConversationContext ctx, String data) {
+        String payload = data.substring("PROC_SEL_TAGS:".length());
+
+        var state = contextHolder.get(ctx.conversationId());
+        if (state.isEmpty()) {
+            return List.of(BotResponse.text("❌ сесія закінчилась. спробуй /process ще раз"));
+        }
+
+        if ("cancel".equals(payload)) {
+            contextHolder.clear(ctx.conversationId());
+            return List.of(BotResponse.text("❌ скасовано"));
+        }
+
+        String tracksReleaseId = state.get().tracksReleaseId();
+        if (tracksReleaseId == null) {
+            return List.of(BotResponse.text("❌ невідома команда"));
+        }
+
+        ReleaseMetadata tracksMetadata = searchContextService.getMetadataWithTracks(tracksReleaseId, ctx.conversationId());
+        if (tracksMetadata == null) {
+            return List.of(BotResponse.text("❌ метадані не знайдено"));
+        }
+
+        ReleaseMetadata finalMetadata;
+        if ("same".equals(payload)) {
+            finalMetadata = tracksMetadata;
+        } else {
+            int index;
+            try {
+                index = Integer.parseInt(payload);
+            } catch (NumberFormatException e) {
+                return List.of(BotResponse.text("❌ невідома команда"));
+            }
+
+            String tagsReleaseId = contextHolder.getReleaseIdByOption(ctx.conversationId(), index);
+            if (tagsReleaseId == null) {
+                return List.of(BotResponse.text("❌ невірний варіант"));
+            }
+
+            ReleaseMetadata tagsMetadata = searchContextService.getReleaseMetadata(tagsReleaseId, ctx.conversationId());
+            if (tagsMetadata == null) {
+                return List.of(BotResponse.text("❌ метадані не знайдено"));
+            }
+
+            finalMetadata = tracksMetadata.withTags(tagsMetadata.tags());
+        }
+
+        return publishProcessingTask(ctx, state.get(), finalMetadata);
+    }
+
+    private List<BotResponse> publishProcessingTask(ConversationContext ctx, ProcessFolderContextHolder.ProcessFolderState folderState,
+                                                     ReleaseMetadata metadata) {
         eventPublisher.publishEvent(new ProcessLibraryTaskEvent(new ProcessLibraryTask(
                 ctx.conversationId(), folderState.directoryPath(), folderState.audioFiles(), metadata)));
         contextHolder.clear(ctx.conversationId());
