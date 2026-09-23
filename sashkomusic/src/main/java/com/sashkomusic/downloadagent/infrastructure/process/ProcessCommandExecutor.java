@@ -3,6 +3,7 @@ package com.sashkomusic.downloadagent.infrastructure.process;
 import com.sashkomusic.events.DownloadLogLineEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -10,6 +11,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Shared OS-process runner for downloader CLIs (qobuz-dl / rip / gamdl / yt-dlp / bandcamp-downloader).
@@ -24,6 +26,15 @@ public class ProcessCommandExecutor {
 
     private final ApplicationEventPublisher eventPublisher;
 
+    @Value("${process.executor.timeout-minutes:45}")
+    private int timeoutMinutes;
+
+    /**
+     * 45min default covers the slowest legitimate download (a large album over a throttled
+     * source); it exists so a CLI that blocks on an unanswered stdin prompt (e.g. bandcamp-dl's
+     * "download anyway?" confirmation) gets killed instead of parking an asyncExecutor thread
+     * forever.
+     */
     public Process execute(String logTag, String conversationId, String... command) {
         try {
             log.info("Executing command [{}]: {}", logTag, String.join(" ", command));
@@ -34,7 +45,14 @@ public class ProcessCommandExecutor {
             Process process = pb.start();
             logOutputAsync(logTag, conversationId, process);
 
-            int exitCode = process.waitFor();
+            boolean finished = process.waitFor(timeoutMinutes, TimeUnit.MINUTES);
+            if (!finished) {
+                process.destroyForcibly();
+                log.error("Command [{}] timed out after {} minutes, killed", logTag, timeoutMinutes);
+                throw new RuntimeException("Command [" + logTag + "] timed out after " + timeoutMinutes + " minutes");
+            }
+
+            int exitCode = process.exitValue();
             if (exitCode != 0) {
                 log.error("Command [{}] failed with exit code {}", logTag, exitCode);
             }

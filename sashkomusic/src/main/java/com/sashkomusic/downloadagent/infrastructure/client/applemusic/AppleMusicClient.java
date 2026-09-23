@@ -103,6 +103,7 @@ public class AppleMusicClient implements MusicSourcePort {
             Process process = commandExecutor.execute("gamdl", conversationId,
                     gamdlPath,
                     url,
+                    "--no-config-file",
                     "--cookies-path", cookiesPath,
                     "--output-path", outputPath,
                     "--language", "uk",

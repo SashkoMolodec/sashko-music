@@ -96,7 +96,8 @@ public class BandcampDownloadClient implements MusicSourcePort {
                     bandcampDlPath,
                     url,
                     "--base-dir", outputPath,
-                    "--template", "%{artist}/%{album}/%{track} - %{title}"
+                    "--template", "%{artist}/%{album}/%{track} - %{title}",
+                    "--no-confirm"
             );
 
             activeProcesses.put(releaseId, process);
