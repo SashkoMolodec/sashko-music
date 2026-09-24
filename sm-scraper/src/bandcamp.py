@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote_plus
 
+import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from playwright_stealth import stealth_async
@@ -13,6 +14,16 @@ from playwright_stealth import stealth_async
 from config import BANDCAMP_TIMEOUT_MS, BANDCAMP_EMAIL, BANDCAMP_PASSWORD, BANDCAMP_COOKIES_FILE
 
 logger = logging.getLogger(__name__)
+
+# Bandcamp/Fastly started serving a JS bot-challenge to our Playwright browser on every single
+# release page (even with playwright-stealth) — confirmed by hand across multiple labels, none of
+# which resolve the challenge no matter how long we wait. A plain requests.get() with bandcamp-dl's
+# own honest, non-browser-impersonating User-Agent sails through untouched, so release-page fetches
+# (static server-rendered HTML — no JS needed to read og:title/tracklist/tags) go through requests
+# instead of the browser context.
+_RELEASE_FETCH_HEADERS = {
+    "User-Agent": "bandcamp-dl/0.0.17 (https://github.com/iheanyi/bandcamp-dl)",
+}
 
 _browser: Browser | None = None
 _context: BrowserContext | None = None
@@ -200,21 +211,19 @@ async def _login() -> bool:
         await page.close()
 
 
-async def get_release_metadata(url: str) -> dict | None:
-    if _context is None:
-        raise RuntimeError("Browser not initialized")
+def _fetch_release_html(url: str) -> str:
+    response = requests.get(url, headers=_RELEASE_FETCH_HEADERS, timeout=BANDCAMP_TIMEOUT_MS / 1000)
+    response.raise_for_status()
+    return response.text
 
+
+async def get_release_metadata(url: str) -> dict | None:
     logger.info("Fetching Bandcamp release metadata: %s", url)
-    page = await _context.new_page()
-    await stealth_async(page)
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=BANDCAMP_TIMEOUT_MS)
-        html = await page.content()
+        html = await asyncio.to_thread(_fetch_release_html, url)
     except Exception as e:
         logger.warning("Failed to load Bandcamp release page %s: %s", url, e)
         return None
-    finally:
-        await page.close()
 
     soup = BeautifulSoup(html, "html.parser")
     return _parse_release_page(soup, url)
