@@ -31,6 +31,7 @@ public class MarkersFlowService {
     private final MarkerRepository markerRepository;
     private final ChatStateStore chatStateStore;
     private final SmartlistService smartlistService;
+    private final SmartlistLabelContextHolder smartlistLabelContextHolder;
 
     @Transactional(readOnly = true)
     public List<BotResponse> showMarkers(ConversationContext ctx) {
@@ -54,6 +55,11 @@ public class MarkersFlowService {
     }
 
     public List<BotResponse> promptCreate(ConversationContext ctx) {
+        // Abandons a stray 🏷 label-picker context, if one is still pending for this chat —
+        // otherwise LabelSelectionOngoingFlow wins the OngoingFlow dispatch race and the marker
+        // name typed here gets misread as a numeric label selection (same bug class as the
+        // album-comment fix in SmartlistLabelFlowService.showList()).
+        smartlistLabelContextHolder.clear(ctx.conversationId());
         chatStateStore.put(ctx.conversationId(), FLOW_KEY, true);
         return List.of(BotResponse.withButtons("введи назву нової мітки:", Map.of("❌", "MARKERS_ADD_CANCEL")));
     }
@@ -102,6 +108,7 @@ public class MarkersFlowService {
         if (markers.isEmpty()) {
             return List.of(BotResponse.text("міток ще немає"));
         }
+        smartlistLabelContextHolder.clear(ctx.conversationId());
         List<Long> ids = markers.stream().map(Marker::getId).toList();
         chatStateStore.put(ctx.conversationId(), REMOVE_FLOW_KEY, new RemovalContext(ids));
         return List.of(BotResponse.withButtons(
