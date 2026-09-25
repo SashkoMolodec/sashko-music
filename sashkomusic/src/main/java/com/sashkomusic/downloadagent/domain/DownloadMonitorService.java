@@ -193,10 +193,16 @@ public class DownloadMonitorService {
      * - "HYPERREAL EP [SCX021]" -> "hyperrealepscx021"
      * - "hyperreal-ep-scx021" -> "hyperrealepscx021"
      * - "Artist - Album (2024)" -> "artistalbum2024"
+     * <p>
+     * Includes {@code /} and {@code \} — downloader CLIs (streamrip, yt-dlp, bandcamp-dl) strip
+     * filesystem-unsafe slash characters from folder names, so a release title containing one
+     * (e.g. "VO\OV Jungle Mix #2") would otherwise never substring-match its real download folder
+     * and poll {@link #checkDownloads()} for up to {@link #FOLDER_CREATION_TIMEOUT} before erroring
+     * out on a download that actually completed within seconds.
      */
     private String normalizeForMatching(String text) {
         return text.toLowerCase()
-                .replaceAll("[\\s\\-_\\[\\](){}]", ""); // Remove spaces, dashes, underscores, brackets, parentheses
+                .replaceAll("[\\s\\-_\\[\\](){}/\\\\]", ""); // Remove spaces, dashes, underscores, brackets, parens, slashes
     }
 
     /**
