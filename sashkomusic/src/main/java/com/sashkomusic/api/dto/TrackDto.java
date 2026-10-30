@@ -26,9 +26,14 @@ public record TrackDto(
      * @return 0 when unrated or unparseable, otherwise 1..5
      */
     public int stars() {
-        if (rating == null || rating.isBlank()) return 0;
+        return starsOf(rating);
+    }
+
+    /** Same WMP-to-stars mapping for callers that only have the raw tag value. */
+    public static int starsOf(String rawRating) {
+        if (rawRating == null || rawRating.isBlank()) return 0;
         try {
-            int raw = Integer.parseInt(rating.trim());
+            int raw = Integer.parseInt(rawRating.trim());
             if (raw <= 0) return 0;
             return raw <= 51 ? 1 : raw <= 102 ? 2 : raw <= 153 ? 3 : raw <= 204 ? 4 : 5;
         } catch (NumberFormatException e) {

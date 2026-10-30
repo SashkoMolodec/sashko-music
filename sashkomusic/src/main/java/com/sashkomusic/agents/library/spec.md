@@ -57,6 +57,8 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 | `nowPlayingTrack()` | "що зараз грає", і **завжди першим** коли юзер каже "це" / "той трек що грає" / "схоже на те що грає", а в розмові трек не названий | `NowPlayingResolver.resolve()` — Navidrome → Icecast fallback → пошук рядка плеєра в БД. Повертає артиста, назву, реліз, рік, жанри й уже проставлені DJ-теги; робить реліз, що грає, референтом `"this"` (пише `LastReleaseContextHolder`) |
 | `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X" | `LibrarySearchService.search(query, 5)`; updates `LastReleaseContextHolder` |
 | `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease`; reads tracks from `TrackRepository` ordered by track number; returns formatted list |
+| `getReleaseInfo(releaseQuery)` | "розкажи про X", "що за альбом X", "який в нього bpm / лейбл / жанр", і щоб зрозуміти, що юзер має на увазі під "хочу щось таке як мій альбом X" | Resolves release via `resolveRelease` → `LibraryInfoService.releaseInfo` (read-only): артисти, рік, лейбл, sublibrary, жанри, середні аудіо-фічі (BPM, danceability, loudness, dynamic complexity, onset rate, spectral centroid, dissonance) і по кожному треку BPM + DJ-теги (рейтинг / енергія / функція / комент). Тільки читання. |
+| `getPlayingTrackDetails()` | "який він за звучанням", "яке bpm", "хочу таке саме" про трек, що грає | `NowPlayingResolver.resolve()` (як `nowPlayingTrack`, теж ставить референт `"this"`) + `LibraryInfoService.trackInfo` — аудіо-профіль треку з `tracks_analyzed` і DJ-теги. Трек не в бібліотеці → тільки summary плеєра. |
 | `findSimilarInLibrary(releaseQuery)` | "маю щось схоже?", "що в мене є схоже на X", "similar in my library" — similarity within the OWN collection | Resolves release → `LibrarySimilarityService.pickRepresentativeTrack` + `.findSimilarToTrack` — pure audio-feature (BPM/MFCC/timbre) cosine similarity over `tracks_analyzed`, z-score normalized. No external API, no LLM guessing. |
 | `moveReleaseToSublibrary(releaseQuery, sublibrary)` | "посунь / перенеси / move ... у vault / working" | Resolves release → publishes `MoveReleaseTaskEvent` |
 | `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → pushes confirmation card (RM_OK/RM_NO buttons) into accumulator |
@@ -155,6 +157,15 @@ On disk: `lib/<sublibrary>/<artist>/<album>/…`. Navidrome multi-library and Tr
 - Filesystem writes outside relocation / trash (those belong to `processFolder` services)
 - Direct discovery — searches that hit external APIs go to `DiscoveryAgent`
 - Slash command parsing (`/np`) — handled by `UserInteractionOrchestrator`. Release removal goes through the `trashRelease` tool; no dedicated slash exists.
+
+---
+
+## Library info (`LibraryInfoService`)
+
+Read-only, у `libraryagent/domain/service`. Збирає в текст для LLM те, що розкидане по `releases` / `release_tags` / `labels`,
+`track_tags` (`RATING` у WMP-шкалі → зірки, `DJ_ENERGY`, `DJ_FUNCTION`, `COMM`) і `tracks_analyzed` (лише без `error_message`).
+Релізні аудіо-фічі — середнє по проаналізованих треках; непроаналізовані позначаються явно ("нема аналізу"), без вигаданих значень.
+Не мутує теги — DJ-тегування лишається на кнопках `/np`.
 
 ---
 

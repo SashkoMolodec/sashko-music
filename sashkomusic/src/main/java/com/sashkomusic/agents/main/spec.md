@@ -54,7 +54,7 @@ Sub-агенти юзають той самий `PostgresChatMemoryStore` під
 | Tool | Тригер | Delegates to |
 |------|--------|-------------|
 | `discoverMusic(query)` | будь-який запит про пошук / дослідження музики, артистів, лейблів, жанрів; треклист релізу якого **немає** в бібліотеці; "хочу схоже на X" / рекомендації для **нової** музики | `DiscoveryAgentService` → LLM path (Haiku) |
-| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist"); "маю щось схоже на X?" — similarity **в межах власної бібліотеки**; **"що зараз грає"** та будь-яке резолвлення поточного треку | `LibraryAgentService` → `LibraryAgent` (Haiku) |
+| `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, DJ-тегування, process / reprocess; **треклист релізу що є в бібліотеці** ("трекліст <назва>", "які треки на <альбом>", "tracklist"); "маю щось схоже на X?" — similarity **в межах власної бібліотеки**; **інфо про власний реліз** ("розкажи про мій альбом X", "який в нього bpm/лейбл") та **профіль звучання треку, що грає** (`getReleaseInfo` / `getPlayingTrackDetails`); **"що зараз грає"** та будь-яке резолвлення поточного треку | `LibraryAgentService` → `LibraryAgent` (Haiku) |
 | `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
@@ -116,7 +116,7 @@ drain(conversationId) → aiText(summary)  +  drained cards  →  Telegram
 ---
 
 ## Hard rules
-1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в memory window). Виняток — резолвлення поточного треку (див. вище).
+1. Рівно один tool per intent якщо підходить. Small talk / питання за щойно знайдений реліз → відповідь без tool (контекст є в memory window). Виняток — резолвлення поточного треку (див. вище) та "хочу щось таке як мій альбом X": `manageLibrary("розкажи про X")` → у тому ж ході `discoverMusic` з артистом/альбомом + жанрами/лейблом/темпом з відповіді.
 2. Не вигадувати параметри — тільки те що сказав юзер.
 3. Не описувати release картки в тексті — вони вже в accumulator.
 4. Тільки MainAgent говорить до юзера. Sub-агенти → records/pushAll.

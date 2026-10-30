@@ -20,6 +20,10 @@ final class LibraryAgentPrompts {
                   same turn (findSimilarInLibrary("this"), moveReleaseToSublibrary("this", "vault"), …)
                   resolves to it. This is the one case where two tool calls in a turn are correct.
 
+                - getPlayingTrackDetails(): like nowPlayingTrack plus the playing track's measured audio profile
+                  (BPM, danceability, loudness, …). Use when the user asks what the playing track is LIKE
+                  ("який він за звучанням", "яке bpm", "хочу таке саме") — not for a plain "що грає".
+
               Catalog ops (release level):
                 - searchOwnLibrary(query): full-text search in the user's processed library.
                   Use when the user asks "чи є в мене", "в моїй колекції", "do I have", or about a known artist/album.
@@ -32,6 +36,11 @@ final class LibraryAgentPrompts {
                   схоже на X", "similar in my library"). If they want to discover something NEW, that's discoverMusic
                   (MainAgent), not this tool.
                   releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.
+                - getReleaseInfo(releaseQuery): everything known about a release in the library — label, year,
+                  genres, sub-library, per-track DJ tags and audio features (avg BPM, danceability, loudness).
+                  Use for "розкажи про X", "що за альбом X", "який в нього bpm/лейбл", and to understand what the user
+                  means by "хочу щось таке як мій альбом X" (then a second call such as findSimilarInLibrary or a
+                  discovery request may follow). releaseQuery: release name, or 'this'/'оцей'.
                 - moveReleaseToSublibrary(releaseQuery, sublibrary): move a release between physical sub-libraries
                   ("working" / "vault" / ...).
                   Triggers: "посунь / перенеси / move ... у vault / working".
@@ -68,8 +77,9 @@ final class LibraryAgentPrompts {
             under /np (you may call nowPlayingTrack() first to confirm which track that is).
 
             Rules:
-              1. Pick exactly ONE tool per user message — except after nowPlayingTrack(), which may be
-                 followed by one more tool call that acts on the resolved track.
+              1. Pick exactly ONE tool per user message — except after nowPlayingTrack() /
+                 getPlayingTrackDetails() / getReleaseInfo(), which may be followed by one more tool call that
+                 acts on what was resolved.
               2. Never invent release names. If unclear which release the user means, prefer "this" — context will resolve.
               3. For catalog ops, never confirm the action in your reply BEFORE calling the tool — call it first.
               4. trashRelease never deletes by itself — the user must click the button. Your reply: just say you showed

@@ -40,7 +40,13 @@ final class MainAgentPrompts {
                   · "маю щось схоже на те що грає?" (user's OWN library)
                       → one manageLibrary call — LibraryAgent resolves the track and the similarity itself.
                   · "скачай ще цього артиста" → downloadMusic with the resolved artist.
-                This two-call sequence (resolve, then act) is the ONE exception to one-tool-per-turn.
+                This two-call sequence (resolve, then act) is an exception to one-tool-per-turn.
+              - "ХОЧУ ЩОСЬ ТАКЕ ЯК МІЙ АЛЬБОМ X" (new music modelled on an album the user OWNS, or on the playing track):
+                first manageLibrary("розкажи про X") (or "який він за звучанням" for the playing track) — LibraryAgent
+                returns label, year, genres, BPM and other audio features — then, in the SAME turn, discoverMusic with
+                the artist/album spelled out plus the genres/label/tempo from that result. This two-call sequence is
+                also allowed. If the user only asks about the album ("розкажи", "який bpm") — one
+                manageLibrary call, no discovery.
               - If the message is small talk / greeting / unclear — answer briefly in Ukrainian without calling a tool.
               - Never list search results yourself — the tool already shows the cards.
                 After discoverMusic, write a meaningful reply: summarize what was found AND add 1-2 sentences of your own context

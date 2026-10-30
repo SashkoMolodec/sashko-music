@@ -8,6 +8,7 @@ import com.sashkomusic.libraryagent.domain.entity.Artist;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
 import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
+import com.sashkomusic.libraryagent.domain.service.LibraryInfoService;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.LibrarySimilarityService;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
@@ -52,6 +53,7 @@ public class LibraryAgentTools {
     private final SmartlistService smartlistService;
     private final LibrarySimilarityService librarySimilarityService;
     private final NowPlayingResolver nowPlayingResolver;
+    private final LibraryInfoService libraryInfoService;
 
     // ───────────────── now playing ─────────────────
 
@@ -76,6 +78,26 @@ public class LibraryAgentTools {
         lastReleaseContextHolder.set(mainConversationId(conversationId), playing.releaseId(),
                 playing.releaseTitle(), playing.track().artistName());
         return playing.summary();
+    }
+
+    @Tool("""
+            Audio profile of the track that is playing RIGHT NOW: what nowPlayingTrack returns plus the
+            track's measured BPM, danceability, loudness, dynamic complexity, spectral centroid and dissonance.
+            Use when the user wants to understand WHAT the playing track is like — "який це за звучанням",
+            "що в ньому особливого", "яке в нього bpm", "хочу таке саме" — before suggesting anything similar.
+            """)
+    public String getPlayingTrackDetails(@ToolMemoryId String conversationId) {
+        Optional<NowPlayingResolver.NowPlaying> resolved = nowPlayingResolver.resolve();
+        if (resolved.isEmpty()) {
+            return "плеєр зараз нічого не грає (ні navidrome, ні icecast)";
+        }
+        NowPlayingResolver.NowPlaying playing = resolved.get();
+        if (!playing.inLibrary()) {
+            return playing.summary() + " — цього треку немає в бібліотеці, тому локальних тегів нема";
+        }
+        lastReleaseContextHolder.set(mainConversationId(conversationId), playing.releaseId(),
+                playing.releaseTitle(), playing.track().artistName());
+        return playing.summary() + "\n" + libraryInfoService.trackInfo(playing.track().id()).orElse("");
     }
 
     // ───────────────── catalog ops ─────────────────
@@ -126,6 +148,25 @@ public class LibraryAgentTools {
             sb.append(t.getTitle()).append("\n");
         }
         return sb.toString().strip();
+    }
+
+    @Tool("""
+            Everything the library knows about a release in the user's OWN collection: artists, year, label,
+            sub-library, genres, per-track DJ tags (rating / energy / function / comment) and measured audio
+            features (average BPM, danceability, loudness, … plus BPM per track).
+            Use for: "розкажи про X", "що за альбом X", "який в нього лейбл / bpm / жанр", and to learn what the
+            user means by "хочу щось таке як мій альбом X" before searching for similar music.
+            releaseQuery: the release name, or 'this'/'оцей'/'цей' to use the last-referenced release.
+            """)
+    public String getReleaseInfo(
+            @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
+            @ToolMemoryId String conversationId) {
+        ReleaseRef ref = resolveRelease(releaseQuery, mainConversationId(conversationId));
+        if (ref == null) {
+            return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
+        }
+        return libraryInfoService.releaseInfo(ref.id())
+                .orElse("реліз знайдено (%s), але даних у БД нема".formatted(ref.label()));
     }
 
     @Tool("""

@@ -30,6 +30,23 @@ The project is a single Gradle module `sashkomusic` — one Spring Boot applicat
 
 **Key dependencies:** LangChain4j 1.10.0-beta18 (Anthropic), Resilience4j, WireMock (test), Flyway, JAudioTagger, spring-boot-starter-webflux.
 
+### Restart after changes
+
+After code changes are done and the tests pass, the bot may be rebuilt and restarted without asking again —
+the user has pre-approved it. Run the deploy script from the repo root:
+
+```bash
+./deploy.sh        # git pull origin main → compose build → compose up -d (a failed pull is only a warning)
+```
+
+There is no JDK on the host: run Gradle tests through the `gradle:8.14-jdk21-alpine` image first (copy the tree to a
+scratch dir, exclude `/build`, `/slskd`, `/navidrome`, `/downloads` with leading slashes so Java packages named
+`slskd` stay, and pass `--user $(id -u):$(id -g)` so the scratch dir stays removable).
+
+After a finished change that has been deployed, commit and push to `origin/main` without asking again — the user
+has pre-approved it. One commit per logical change, message in the style of `git log`, and end it with the
+attribution lines from the session. Never force-push, and never push if the tests or the deploy failed.
+
 ## Module Map
 
 | Package | Responsibility | Must NOT contain |
