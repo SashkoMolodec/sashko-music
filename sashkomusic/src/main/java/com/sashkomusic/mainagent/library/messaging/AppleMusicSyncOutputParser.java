@@ -20,6 +20,25 @@ public final class AppleMusicSyncOutputParser {
     private AppleMusicSyncOutputParser() {
     }
 
+    /** Counts reported by the script; {@code null} when the output is not the script's JSON. */
+    public record Summary(int staged, int added) {}
+
+    public static Summary parseSummary(ObjectMapper objectMapper, String output) {
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(output);
+            if (!root.has("staged")) {
+                return null;
+            }
+            return new Summary(root.path("staged").asInt(), root.path("added").asInt());
+        } catch (Exception e) {
+            log.warn("Could not parse Apple Music sync summary: {}", e.getMessage());
+            return null;
+        }
+    }
+
     public static List<AppleMusicSyncCompleteEvent.TrackDbid> parse(ObjectMapper objectMapper, String output) {
         if (output == null || output.isBlank()) {
             return List.of();

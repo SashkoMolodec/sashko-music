@@ -179,6 +179,7 @@ libraryagent         →  SmartlistDeletedEvent              →  mainagent (Nav
 libraryagent         →  SmartlistsChangedEvent             →  mainagent (NavidromeSmartlistScanListener → NavidromeClient.triggerScan(smartlists/))
 downloadagent        →  SlskdPrivateMessageReceivedEvent   →  mainagent (SlskdPrivateMessageNotificationListener → TelegramChatBot main chat)
 mainagent            →  AppleMusicSyncCompleteEvent        →  libraryagent (AppleMusicDbidPersistenceListener → Track.appleMusicDbid)
+mainagent            →  AppleMusicSyncFinishedEvent        →  mainagent (AppleMusicSyncFinishedListener → Telegram: release added to iTunes / failed)
 mainagent (orch)     →  ChatContextClearedEvent            →  MainChatMemoryProvider
 mainagent (orch)     →  ChatHardResetEvent                 →  FileIdCacheService, DownloadContextHolder, DjTagContextHolder, LastReleaseContextHolder, SmartlistCreationFlowService
 ```

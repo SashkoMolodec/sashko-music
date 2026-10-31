@@ -12,12 +12,6 @@ import com.sashkomusic.libraryagent.domain.repository.TrackTagRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.AlbumCommentContextHolder.AlbumCommentContext;
-import com.sashkomusic.libraryagent.config.AppleMusicSyncConfig;
-import com.sashkomusic.mainagent.library.messaging.AppleMusicSyncOutputParser;
-import com.sashkomusic.downloadagent.infrastructure.process.ProcessCommandExecutor;
-import com.sashkomusic.events.AppleMusicSyncCompleteEvent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -45,10 +39,8 @@ public class NowPlayingAlbumFlowService {
     private final ReleaseRepository releaseRepository;
     private final RemoveReleaseFlowService removeReleaseFlowService;
     private final AlbumCommentContextHolder commentContextHolder;
-    private final ObjectMapper objectMapper;
-    private final ProcessCommandExecutor commandExecutor;
     private final ApplicationEventPublisher eventPublisher;
-    private final AppleMusicSyncConfig appleMusicSyncConfig;
+    private final AppleMusicSyncService appleMusicSyncService;
 
     @Transactional(readOnly = true)
     public NowPlayingFlowService.NowPlayingResult nowPlayingAlbum(ConversationContext ctx) {
@@ -174,30 +166,18 @@ public class NowPlayingAlbumFlowService {
         if (releaseOpt.isEmpty()) {
             return List.of(BotResponse.text("реліз не знайдено."));
         }
-        String directoryPath = releaseOpt.get().getDirectoryPath();
+        Release release = releaseOpt.get();
+        String artists = release.getArtists().stream().map(Artist::getName).collect(Collectors.joining(", "));
+        String label = artists.isBlank() ? release.getTitle() : artists + " — " + release.getTitle();
 
-        try {
-            String output = commandExecutor.executeCapturing("applemusic-sync-manual",
-                    "python3", appleMusicSyncConfig.getScriptPath(), directoryPath,
-                    "--host", appleMusicSyncConfig.getHost(), "--port", String.valueOf(appleMusicSyncConfig.getPort()));
-
-            if (output == null || output.isBlank()) {
-                return List.of(BotResponse.text("❌ не вийшло залити в apple music: порожній результат"));
-            }
-
-            List<AppleMusicSyncCompleteEvent.TrackDbid> mappings = AppleMusicSyncOutputParser.parse(objectMapper, output);
-            if (!mappings.isEmpty()) {
-                eventPublisher.publishEvent(new AppleMusicSyncCompleteEvent(directoryPath, mappings));
-            }
-
-            JsonNode json = objectMapper.readTree(output);
-            int staged = json.path("staged").asInt();
-            int added = json.path("added").asInt();
-            return List.of(BotResponse.text("🍎 залито в apple music: %d/%d треків".formatted(added, staged)));
-        } catch (Exception e) {
-            log.error("Apple Music manual sync failed for releaseId={}: {}", releaseId, e.getMessage(), e);
-            return List.of(BotResponse.text("❌ помилка синку з apple music: " + e.getMessage()));
-        }
+        var submission = appleMusicSyncService.submit(ctx.conversationId(), release.getDirectoryPath(), label);
+        String text = switch (submission) {
+            case STARTED -> "🍎 запустив заливку в apple music: " + label + " — напишу, коли буде готово";
+            case ALREADY_RUNNING -> "🍎 цей реліз уже заливається, зачекай повідомлення";
+            case QUEUE_FULL -> "🍎 забагато заливок у черзі, спробуй трохи пізніше";
+            case DISABLED -> "🍎 синк з apple music вимкнений (APPLEMUSIC_SYNC_ENABLED)";
+        };
+        return List.of(BotResponse.text(text));
     }
 
     private String buildMainCardText(Release release, List<Track> tracks) {

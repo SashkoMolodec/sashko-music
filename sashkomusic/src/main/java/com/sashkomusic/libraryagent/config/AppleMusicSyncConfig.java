@@ -16,5 +16,7 @@ public class AppleMusicSyncConfig {
     private String host;
     private int port;
     private int timeoutSeconds = 600;
+    /** Syncs allowed to run at once; the rest wait in the executor queue. */
+    private int maxParallel = 3;
 
 }

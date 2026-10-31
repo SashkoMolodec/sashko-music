@@ -63,12 +63,29 @@ public class ProcessCommandExecutor {
         }
     }
 
+    /** Outcome of {@link #runCapturing}; {@code exitCode} is -1 when the command timed out and was killed. */
+    public record CapturedResult(int exitCode, String stdout, boolean timedOut) {
+        public boolean succeeded() {
+            return !timedOut && exitCode == 0;
+        }
+    }
+
     /**
      * Like {@link #execute}, but returns stdout instead of only logging it — for callers that
      * need to parse a command's output (e.g. the Apple Music sync script's JSON result). stdout
      * and stderr are read on separate threads so a chatty stderr can't deadlock the pipe.
+     * Waits without a deadline; use {@link #runCapturing} when the command may hang.
      */
     public String executeCapturing(String logTag, String... command) {
+        return runCapturing(logTag, 0, command).stdout();
+    }
+
+    /**
+     * {@link #executeCapturing} with a deadline and the exit code. On timeout the process and its
+     * children (the sync script's ssh/scp/ffmpeg) are killed — a hung ssh would otherwise pin the
+     * calling thread forever. {@code timeoutSeconds <= 0} means no deadline.
+     */
+    public CapturedResult runCapturing(String logTag, long timeoutSeconds, String... command) {
         try {
             log.info("Executing command [{}]: {}", logTag, String.join(" ", command));
 
@@ -99,14 +116,26 @@ public class ProcessCommandExecutor {
             stdoutReader.start();
             stderrReader.start();
 
-            int exitCode = process.waitFor();
+            boolean timedOut = false;
+            if (timeoutSeconds > 0) {
+                timedOut = !process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+                if (timedOut) {
+                    log.error("Command [{}] timed out after {}s, killing it and its children", logTag, timeoutSeconds);
+                    process.descendants().forEach(ProcessHandle::destroyForcibly);
+                    process.destroyForcibly();
+                    process.waitFor();
+                }
+            } else {
+                process.waitFor();
+            }
             stdoutReader.join();
             stderrReader.join();
 
+            int exitCode = timedOut ? -1 : process.exitValue();
             if (exitCode != 0) {
                 log.error("Command [{}] failed with exit code {}", logTag, exitCode);
             }
-            return stdout.toString();
+            return new CapturedResult(exitCode, stdout.toString(), timedOut);
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException("Failed to execute command", e);
         }
