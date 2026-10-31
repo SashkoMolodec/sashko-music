@@ -64,6 +64,9 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 - **LOOKUP** (has `release` or `recording`): `/release` endpoint, as before (limit **100** — MusicBrainz hard-caps at 100; 150 silently errors).
 - **BROWSE** (`isBrowseQuery()`): tries `/release-group` FIRST (one row per album concept, dedup'd across pressings — far less noisy than `/release` for a bare style+year query), falls back to `/release` if empty. Lucene field for date differs: `firstreleasedate:` on `/release-group` vs `date:` on `/release`; `/release-group` has no `country`/`label`/`catno` fields.
 - `findArtistMbid(artistName)` — new lookup (`/artist?query=`) used by `findSimilar`.
+- `getArtistRelations(mbid)` — `/artist/{mbid}?inc=artist-rels`: тип артиста і його зв'язки (`is person`, `member of band`). `RelatedArtistsCollector` будує з цього кандидатів.
+- `browseReleaseGroups(mbid)` — `/release-group?artist={mbid}&type=album|ep|single&release-group-status=website-default`: релізи саме цього артиста, без пошуку за іменем. Фільтри обов'язкові: сторінка вміщає 100 рядків, і без них живі записи та бутлеги витісняють альбоми.
+- Усі ці методи загортають помилку в `SearchNotCompleteException`: `retry-exceptions` дозволяє лише її, тож інакше одиничний 503 виглядає як "такого артиста нема".
 - **Group sort order is SCORE first, year only a tiebreaker** (`mapToGroupedDomain`). Was year-ascending first — same-name-collision releases (a different artist who happens to share/partially-match the searched name) would outrank the actual best match purely for being older, surfacing a totally unrelated result as the top card. Score (MusicBrainz's own Lucene relevance) must dominate; year only orders among equally-relevant matches.
 
 ### `AggregatedSearchService` — один пошук, три каталоги
@@ -87,6 +90,7 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 - `TRACK` — запитаний трек є в треклисті, і його **потрековий** артист збігається. Так у відповідь потрапляє компіляція.
 - `PARTIAL` — назва містить запитану цілим словом (перевидання/розширені назви).
 - Browse-запит (тільки style/year) — валідувати нема проти чого, результати движка лишаються як є.
+- Запит лише з лейблом — `PARTIAL`, якщо `labelMatches` (без суфіксів Records/Recordings/Tapes тощо), інакше `NONE`. Движки вважають лейбл підказкою релевантності, тому він перевіряється.
 
 **Збіг артиста — це рівність імені, не входження підрядка.** Раніше `artistMatches` рахувало входження в обидва
 боки, і запит "Adjust" підтверджувався релізами *Vinyl Speed Adjust* та *Adjust the Sails* — на пошук одного

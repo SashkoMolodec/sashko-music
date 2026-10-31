@@ -64,7 +64,8 @@ Memory **не очищається** між викликами `handle()` — т
    насправді explore-запит, який приїхав не в той тул. Такий виклик **автоматично** перекидається в
    `exploreAndRecommend`. Розділення lookup/explore описане в промпті (STEP 0), але промпт — це рекомендація
    моделі, а не гарантія: "пошукай detroit techno класичне" Haiku стабільно віддає в `search`. Гарантію дає
-   саме цей код.
+   саме цей код. Виняток — **лейбл**: це названа річ, і перевірити результат є проти чого, тому такий запит іде
+   в `searchLabel` (нижче), а не в explore.
 1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest` → **`SearchRequestNormalizer.normalize(query, request)`**.
    Екстрактор — це LLM, і два його правила не тримаються на практиці, тому їх доводить до кінця код:
    - **`(BE)` — це не країна.** "Adjust (BE)" — дизамбігуація однойменних артистів у Discogs (і саме так
@@ -90,6 +91,21 @@ Memory **не очищається** між викликами `handle()` — т
 **Викликається кілька разів за хід.** Питає юзер про три речі — три виклики, три стоси, три повідомлення з
 картками. Ліміт — 3 на відповідь (більше не читається в Telegram).
 
+### Лейбл у `search` — релізи одного лейблу → до 10 стосів
+`MetadataSearchRequest.isLabelLookup()`: є `label`, немає артиста, релізу й треку ("дай пару релізів з Tresor",
+"ще щось з того лейблу"). Промпт просить передавати `search("лейбл <назва>")`, а `SearchRequestNormalizer` це
+гарантує: якщо запит має рівно таку форму, а модель не заповнила `label`, назва йде в `label`, артист і назви
+обнуляються. Голе "Tresor" модель читає як артиста.
+1. `AggregatedSearchService.search(request)` → Discogs і MusicBrainz фільтрують за лейблом.
+2. `ReleaseMatchValidator` лишає тільки релізи, чий `label` справді збігається із запитаним (без суфіксів типу
+   Records/Recordings). Bandcamp лейбла не віддає, тому в такому запиті не бере участі. Каталоги дають кілька
+   лейблів на реліз, у Discogs там ще й дистриб'ютори, тому клієнти кладуть у `label` саме запитаний, якщо він є.
+   Кап такого пошуку `LABEL_CAP` (60), бо далі лишається один реліз на артиста.
+3. Перші `MAX_LABEL_STACKS` (10) релізів від різних артистів → кожен свій стос із label = назва лейблу.
+4. Порожньо → той самий шлях, що й у звичайного промаху: `rememberQuery` і перелік фільтрів.
+
+Це перші збіги за релевантністю каталогу, а не найкращі роботи лейблу. Кількість "пару" не враховується: показується все підтверджене до стелі.
+
 ### `exploreAndRecommend(topic, conversationId)` — research → N стосів
 Для відкритих запитів ("порадь щось", "що послухати з детройт-техно", "хочу дарк ембієнт 90-х"):
 1. `ReleaseRecommender` (окремий `@AiService` на `discoveryChatModel`, тобто **з web search**) → рівно 3 рядки `Artist — Release Title`, у написанні каталогів.
@@ -101,21 +117,50 @@ Memory **не очищається** між викликами `handle()` — т
 Чому одним тулом, а не "research → LLM сам викликає search × 3": цикл всередині тула детермінований і гарантує
 форму відповіді (N стосів), а Haiku при трьох послідовних тул-викликах легко зривається на прозу.
 
-### `findSimilar(seedQuery, conversationId)` — схоже на X → N стосів
-Real similarity, never invented from the LLM's own knowledge:
+### `findSimilar(seedQuery, conversationId)` — схоже на X → до 10 стосів
+Real similarity, never invented from the LLM's own knowledge. Детермінований кодовий шлях, LLM релізів не вибирає:
 1. Seed resolution: if `seedQuery` blank → the release currently in view (same `currentPage` lookup as
    `getTrackList`); artist і title там уже розділені каталогом, тому `MetadataSearchRequest` будується
    напряму, без виклику екстрактора. Інакше — рядок, як його дав юзер (може бути "артист" або
    "артист — назва"), через `SearchRequestExtractor`.
 2. `MusicBrainzClient.findArtistMbid(seedArtist)` → MBID, де `seedArtist` = поле `artist` з витягнутого запиту
    (голий seed "symphony of love — spirit of love" як ім'я артиста в MB не резолвиться взагалі).
-3. `ListenBrainzClient.findSimilarArtists(mbid)` (labs.api.listenbrainz.org, free, no key, CC0) → top artists by co-listen score, capped at `MAX_SIMILAR_ARTISTS_TRIED` (6).
-4. Кожен споріднений артист стає кандидатом → точковий пошук по імені артиста → **свій стос** з label = ім'я артиста. Беруться перші 3, що дали результат.
+3. `RelatedArtistsCollector.collect(mbid)` → впорядкований список споріднених артистів, кожен зі своїм MBID і
+   причиною. Три джерела (деталі нижче): **прямі** зв'язки сцени, **містки** через спільні групи, **co-listen**.
+4. Перші `MAX_SIMILAR_ARTISTS_TRIED` (12) артистів паралельно (`SIMILAR_SEARCH_CONCURRENCY` = 3): для кожного
+   `RelatedArtistsCollector.mainRelease(mbid)` дає назву головного релізу → точковий агрегований пошук
+   `артист + назва`. Непідтверджені мовчки пропускаються.
+5. Перші `MAX_SIMILAR_STACKS` (10) підтверджених у порядку зі списку → `openStack` послідовно (він не
+   потокобезпечний) з label `Артист — Назва · причина`. **10 — стеля, а не ціль:** менше, значить менше.
 
-Раніше це був один стос із 12 релізів від 12 різних артистів — по картках було неможливо зрозуміти, де чия
-рекомендація. Тепер один артист = один стос.
+**Один реліз = один стос, один артист = один реліз.** Пошук тільки за іменем ненадійний: серед псевдонімів
+трапляються імена на кшталт `Us` чи `Red Planet`. Пара артист + назва, де назва взята за MBID, цю колізію закриває.
+Гортання всередині стосу показує видання цього релізу.
 
-**Style fallback — коли ListenBrainz нічого не знає (крок 2 або 3 пустий).** MusicBrainz+ListenBrainz покривають
+**Чому зв'язки, а не лише co-listen.** Co-listen покриває те, що слухають масово, і тягне до відомих імен. Для
+малих сцен кращий сигнал — реальні люди: псевдоніми, групи, спільні проєкти. Це факти з MusicBrainz, а не оцінка.
+
+`RelatedArtistsCollector` (детермінований, без LLM):
+- **Люди seed-а:** сам seed, якщо це людина; учасники групи (`member of band`, backward); людина за псевдонімом
+  (`is person`, backward). Максимум `MAX_PEOPLE` (4), щоб велика група не з'їла бюджет MusicBrainz.
+- **Прямі:** усі люди-учасники, їхні псевдоніми (`is person`, forward) і групи (`member of band`, forward).
+  Спершу те, що спільне для кількох людей або є в co-listen, далі по черзі від кожної людини, щоб один учасник
+  не зайняв усі місця.
+- **Містки:** інші учасники до `MAX_BRIDGE_GROUPS` (4) груп seed-а. Саме так Drexciya доходить до Jeff Mills
+  через Underground Resistance.
+- **Co-listen:** `ListenBrainzClient.findSimilarArtists(mbid)` за score, MBID береться з відповіді.
+- **Порядок:** шаблон пряма, місток, пряма, co-listen по колу; вичерпане джерело пропускається, тому бідне
+  джерело добирається іншими. Co-listen має найменше ходів, бо тягне до відомих імен: у Drexciya це Aphex Twin і
+  Radiohead. Дублі за MBID викидаються, seed не показується ніколи.
+- **Причина:** реальний зв'язок важить більше за co-listen, тому артист, що є в обох, показується зі зв'язком.
+  Названо не більше двох джерел, щоб label не розтягував картку.
+- **`mainRelease`:** `MusicBrainzClient.browseReleaseGroups(mbid)` (`type=album|ep|single`, без бутлегів).
+  Album → EP → Single, без вторинних типів
+  (Compilation, Live тощо) раніше за ті, що з ними; при рівності найраніший. Якщо релізів нема, артист пропускається.
+
+Бібліотека не фільтрується, а другий запит "схоже" може показати те саме: стану між запитами нема.
+
+**Style fallback — коли нема кандидатів або жоден не підтвердився.** MusicBrainz+ListenBrainz покривають
 те, що люди масово слухають; обскурне вінілове 12" 1993-го (типовий вміст цієї бібліотеки) там не існує —
 а в Discogs існує, разом зі стилями. Тому замість тупика:
 1. Той самий точковий агрегований пошук по seed → топ-реліз.
@@ -126,7 +171,7 @@ Real similarity, never invented from the LLM's own knowledge:
 
 Це код, а не правило промпту: «знайди схоже» не має права впертись у відсутність рядка в MusicBrainz.
 
-Тригер: "хочу схоже", "порадь щось подібне", "similar to X". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via ListenBrainz, not what the user already owns.
+Тригер: "хочу схоже", "порадь щось подібне", "similar to X". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via MusicBrainz relations and ListenBrainz, not what the user already owns.
 
 ### Web search — no longer a local tool
 Research questions ("розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X") are handled by
@@ -168,7 +213,8 @@ inside the same API call, so there's no client-side moment to hook a progress me
 
 `formatForMainAgent(stacks)`:
 - один стос → агрегат як раніше: кількість, джерела, діапазон років, типи, топ-3 лейбли, топ-5 тегів;
-- кілька стосів → по рядку на стос (`• <label> — <агрегат>`) + інструкція представити всі.
+- кілька стосів → по рядку на стос (`• <label> — <агрегат>`) + інструкція представити всі;
+- більше 3 стосів → ті самі рядки, але інструкція описати спільне між ними, не називаючи кожен (вступ обмежений 600 символами).
 **Не перелічує кожен реліз** — MainAgent читає тільки `.summary()`.
 
 **`DiscoveryAgentPrompts.SYSTEM` ключові правила:**
@@ -194,6 +240,7 @@ inside the same API call, so there's no client-side moment to hook a progress me
 - Для TRACKLIST-запитів: **завжди** викликати `getTrackList` — ніколи не відповідати з пам'яті.
 - Для "ще копай"/"dig deeper": викликати `digDeeper`, не `search`.
 - Для "хочу схоже"/similarity-запитів: **завжди** викликати `findSimilar`, ніколи не вигадувати артистів самому.
+- Для запитів про лейбл ("релізи з X", "ще щось з того лейблу"): `search("лейбл <назва>")`, назву розрезолвити з контексту.
 - Для чисто дослідницьких питань без прохання знайти/показати релізи (bio, discography, label info): використати
   вбудований web search, не відповідати з пам'яті. Ніколи не писати "дивись картки нижче", якщо в цьому виклику
   не викликався `search`/`findSimilar`.
@@ -207,10 +254,10 @@ inside the same API call, so there's no client-side moment to hook a progress me
 3. `digDeeper()` читає `:d` контекст — не очищати пам'ять між викликами.
 4. Відповідь DiscoveryAgent — рядок для MainAgent (не для юзера напряму).
 5. Якщо нічого не знайшов → попросити уточнення (рік, лейбл, жанр, країна).
-6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки ListenBrainz co-listen дані
-   або (fallback) стилі, які реальний каталог написав на самому seed-релізі.
+6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки зв'язки MusicBrainz,
+   ListenBrainz co-listen дані або (fallback) стилі, які реальний каталог написав на самому seed-релізі.
 7. `exploreAndRecommend()` показує тільки те, що підтвердилось у каталогах — рекомендація без картки не показується.
-8. Жоден запит без анкера (артист/назва/трек) не доходить до показу як "пошук" — або explore, або нічого.
+8. Жоден запит без анкера (артист/назва/трек/лейбл) не доходить до показу як "пошук" — або explore, або нічого.
 9. `beginStacks()` викликає `DiscoveryAgentService` раз на хід; тули стоси не чистять.
 
 ---
@@ -227,5 +274,6 @@ inside the same API call, so there's no client-side moment to hook a progress me
 - Змінити суворість збігу → `ReleaseMatchValidator`, не тули.
 - Екстрактор систематично плутає поле → правило в `SearchRequestNormalizer` (детерміновано), а не тільки
   абзац у промпті `SearchRequestExtractor`. Промпт — рекомендація, нормалізатор — гарантія.
-- Змінити кількість стосів у рекомендації → `MAX_RECOMMENDATIONS`.
+- Змінити кількість стосів у рекомендації → `MAX_RECOMMENDATIONS`; у `findSimilar` → `MAX_SIMILAR_STACKS`; у лейблі → `MAX_LABEL_STACKS`.
+- Новий тип зв'язку або джерело схожості → `RelatedArtistsCollector`, не тули.
 - Новий тип запиту (напр., RAG) → новий `@Tool` тут + рядок у таблиці Tools.

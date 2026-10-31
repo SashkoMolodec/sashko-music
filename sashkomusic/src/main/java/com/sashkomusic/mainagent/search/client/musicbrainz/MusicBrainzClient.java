@@ -6,6 +6,7 @@ import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
 import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.shared.model.TrackMetadata;
 import com.sashkomusic.mainagent.search.SearchEngineService;
+import com.sashkomusic.mainagent.search.ReleaseMatchValidator;
 import com.sashkomusic.mainagent.search.client.musicbrainz.exception.SearchNotCompleteException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -113,7 +114,7 @@ public class MusicBrainzClient implements SearchEngineService {
                 return List.of();
             }
 
-            return mapToGroupedDomain(response.releases());
+            return mapToGroupedDomain(response.releases(), request.label());
 
         } catch (Exception ex) {
             log.warn("MusicBrainz API error (will retry): {}", ex.getMessage());
@@ -205,7 +206,7 @@ public class MusicBrainzClient implements SearchEngineService {
                 return List.of();
             }
 
-            return mapToGroupedDomain(allReleases);
+            return mapToGroupedDomain(allReleases, request.label());
 
         } catch (Exception ex) {
             log.warn("MusicBrainz recording API error (will retry): {}", ex.getMessage());
@@ -371,7 +372,7 @@ public class MusicBrainzClient implements SearchEngineService {
         return conditions.isEmpty() ? "*" : String.join(" AND ", conditions);
     }
 
-    private List<ReleaseMetadata> mapToGroupedDomain(List<MusicBrainzSearchResponse.Release> releases) {
+    private List<ReleaseMetadata> mapToGroupedDomain(List<MusicBrainzSearchResponse.Release> releases, String wantedLabel) {
         Map<String, List<MusicBrainzSearchResponse.Release>> grouped = releases.stream()
                 .filter(r -> r.releaseGroup() != null)
                 .collect(Collectors.groupingBy(r -> r.releaseGroup().id()));
@@ -381,7 +382,7 @@ public class MusicBrainzClient implements SearchEngineService {
         // actually matched the query (e.g. an unrelated 1983 release outranking the real 2023 hit
         // just for being older). Year is only a tiebreaker among equally-relevant matches.
         return grouped.values().stream()
-                .map(this::aggregateGroup)
+                .map(group -> aggregateGroup(group, wantedLabel))
                 .sorted(
                         Comparator.comparingInt(ReleaseMetadata::score).reversed()
                                 .thenComparing((ReleaseMetadata m) -> m.years().isEmpty() ? "9999" : m.years().getFirst())
@@ -390,7 +391,7 @@ public class MusicBrainzClient implements SearchEngineService {
                 .toList();
     }
 
-    private ReleaseMetadata aggregateGroup(List<MusicBrainzSearchResponse.Release> groupReleases) {
+    private ReleaseMetadata aggregateGroup(List<MusicBrainzSearchResponse.Release> groupReleases, String wantedLabel) {
         IntSummaryStatistics trackStats = groupReleases.stream()
                 .mapToInt(this::getTrackCount)
                 .filter(c -> c > 0)
@@ -438,7 +439,9 @@ public class MusicBrainzClient implements SearchEngineService {
                 .flatMap(r -> r.labelInfo().stream())
                 .filter(li -> li.label() != null && li.label().name() != null)
                 .map(li -> li.label().name())
-                .findFirst()
+                // On a co-release the requested label need not be listed first, and the rest of the
+                // pipeline only sees one label.
+                .min(Comparator.comparing(name -> !ReleaseMatchValidator.labelMatches(name, wantedLabel)))
                 .orElse("");
 
         return new ReleaseMetadata(
@@ -659,25 +662,86 @@ public class MusicBrainzClient implements SearchEngineService {
     @Retry(name = "musicBrainzClient")
     @RateLimiter(name = "musicBrainzClient")
     public Optional<String> findArtistMbid(String artistName) {
-        var response = client.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/artist")
-                        .queryParam("query", "artist:\"" + escapeLucene(artistName) + "\"")
-                        .queryParam("fmt", "json")
-                        .queryParam("limit", 1)
-                        .build())
-                .retrieve()
-                .body(MusicBrainzArtistSearchResponse.class);
+        try {
+            var response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/artist")
+                            .queryParam("query", "artist:\"" + escapeLucene(artistName) + "\"")
+                            .queryParam("fmt", "json")
+                            .queryParam("limit", 1)
+                            .build())
+                    .retrieve()
+                    .body(MusicBrainzArtistSearchResponse.class);
 
-        if (response == null || response.artists() == null || response.artists().isEmpty()) {
-            return Optional.empty();
+            if (response == null || response.artists() == null || response.artists().isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(response.artists().getFirst().id());
+        } catch (Exception ex) {
+            // Retry only fires on this exception, and without it a passing 503 reads as "unknown artist".
+            log.warn("MusicBrainz artist lookup API error (will retry): {}", ex.getMessage());
+            throw new SearchNotCompleteException("Search failed due to API error.");
         }
-        return Optional.of(response.artists().getFirst().id());
     }
 
     public Optional<String> findArtistMbidFallback(String artistName, Exception e) {
         log.warn("MusicBrainz findArtistMbid fallback triggered for artist '{}': {}", artistName, e.getMessage());
         return Optional.empty();
+    }
+
+    /** The artist's type and its links to other artists — the raw material of the scene graph behind {@code findSimilar}. */
+    @CircuitBreaker(name = "musicBrainzClient", fallbackMethod = "getArtistRelationsFallback")
+    @Retry(name = "musicBrainzClient")
+    @RateLimiter(name = "musicBrainzClient")
+    public Optional<MusicBrainzArtistRelationsResponse> getArtistRelations(String artistMbid) {
+        try {
+            return Optional.ofNullable(client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/artist/{id}")
+                            .queryParam("inc", "artist-rels")
+                            .queryParam("fmt", "json")
+                            .build(artistMbid))
+                    .retrieve()
+                    .body(MusicBrainzArtistRelationsResponse.class));
+        } catch (Exception ex) {
+            log.warn("MusicBrainz artist relations API error (will retry): {}", ex.getMessage());
+            throw new SearchNotCompleteException("Search failed due to API error.");
+        }
+    }
+
+    public Optional<MusicBrainzArtistRelationsResponse> getArtistRelationsFallback(String artistMbid, Exception e) {
+        log.warn("MusicBrainz getArtistRelations fallback triggered for MBID '{}': {}", artistMbid, e.getMessage());
+        return Optional.empty();
+    }
+
+    /** Browse, not search: the release groups of exactly this artist, so same-named artists cannot leak in. */
+    @CircuitBreaker(name = "musicBrainzClient", fallbackMethod = "browseReleaseGroupsFallback")
+    @Retry(name = "musicBrainzClient")
+    @RateLimiter(name = "musicBrainzClient")
+    public List<MusicBrainzReleaseGroupSearchResponse.ReleaseGroup> browseReleaseGroups(String artistMbid) {
+        try {
+            var response = client.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/release-group")
+                            .queryParam("artist", artistMbid)
+                            // Without these, 100 rows of live records and bootlegs can hide the albums.
+                            .queryParam("type", "album|ep|single")
+                            .queryParam("release-group-status", "website-default")
+                            .queryParam("fmt", "json")
+                            .queryParam("limit", 100)
+                            .build())
+                    .retrieve()
+                    .body(MusicBrainzReleaseGroupSearchResponse.class);
+            return response == null || response.releaseGroups() == null ? List.of() : response.releaseGroups();
+        } catch (Exception ex) {
+            log.warn("MusicBrainz release-group browse API error (will retry): {}", ex.getMessage());
+            throw new SearchNotCompleteException("Search failed due to API error.");
+        }
+    }
+
+    public List<MusicBrainzReleaseGroupSearchResponse.ReleaseGroup> browseReleaseGroupsFallback(String artistMbid, Exception e) {
+        log.warn("MusicBrainz browseReleaseGroups fallback triggered for MBID '{}': {}", artistMbid, e.getMessage());
+        return List.of();
     }
 
     @Override

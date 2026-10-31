@@ -53,6 +53,10 @@ public final class ReleaseMatchValidator {
                     + "|\\bpres\\.?\\b|\\bpresents?\\b|\\bmeets\\b)\\s*",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
+    /** Company words after a label's name. Only trailing and only after a name, so "Music" stays a label. */
+    private static final Pattern LABEL_SUFFIX = Pattern.compile(
+            "(\\s+(records?|recordings?|music|tapes|label|limited|ltd|gmbh|inc))+$");
+
     public static Match evaluate(MetadataSearchRequest request, ReleaseMetadata release) {
         String wantedArtist = safe(request.artist());
         String wantedAlbum = safe(request.release());
@@ -63,8 +67,10 @@ public final class ReleaseMatchValidator {
 
         // Browse query ("trance 1994") — style/year filters were applied by the engine itself and
         // there is no name to check anything against, so everything the engine returned stands.
+        // A label is a name, though: the engines treat it as a relevance hint, so it gets checked.
         if (!artistAsked && !titleAsked) {
-            return Match.PARTIAL;
+            String wantedLabel = safe(request.label());
+            return wantedLabel.isBlank() || labelMatches(release.label(), wantedLabel) ? Match.PARTIAL : Match.NONE;
         }
 
         boolean artistOnRelease = artistAsked && artistMatches(release.artist(), wantedArtist);
@@ -132,6 +138,16 @@ public final class ReleaseMatchValidator {
         Set<String> wantedNames = creditedNames(wanted);
         if (foundNames.isEmpty() || wantedNames.isEmpty()) return false;
         return !Collections.disjoint(foundNames, wantedNames);
+    }
+
+    /** True when both name the same label, however the catalog spells its company suffix ("Warp" = "Warp Records"). */
+    public static boolean labelMatches(String found, String wanted) {
+        String foundName = labelName(found);
+        return !foundName.isBlank() && foundName.equals(labelName(wanted));
+    }
+
+    private static String labelName(String label) {
+        return LABEL_SUFFIX.matcher(normalize(label)).replaceFirst("");
     }
 
     /** Every artist named on one credit line, each comparable on its own. */

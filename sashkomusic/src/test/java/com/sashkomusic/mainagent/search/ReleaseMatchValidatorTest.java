@@ -130,6 +130,40 @@ class ReleaseMatchValidatorTest {
                 .isEqualTo(ReleaseMatchValidator.Match.PARTIAL);
     }
 
+    @Test
+    void a_label_query_keeps_only_releases_really_on_that_label() {
+        var tresor = new MetadataSearchRequest(null, "", "", "", DateRange.empty(),
+                "", "", "", "", "", "Tresor", "");
+
+        assertThat(ReleaseMatchValidator.evaluate(tresor, onLabel("Tresor Records")))
+                .isEqualTo(ReleaseMatchValidator.Match.PARTIAL);
+        assertThat(ReleaseMatchValidator.evaluate(tresor, onLabel("Warp")))
+                .isEqualTo(ReleaseMatchValidator.Match.NONE);
+        assertThat(ReleaseMatchValidator.evaluate(tresor, onLabel("")))
+                .isEqualTo(ReleaseMatchValidator.Match.NONE);
+        assertThat(ReleaseMatchValidator.evaluate(tresor, onLabel(null)))
+                .isEqualTo(ReleaseMatchValidator.Match.NONE);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "Warp, Warp Records, true",
+            "Warp Records, Warp, true",
+            "Axis Records, Axis, true",
+            "bloomed in september tapes, Bloomed In September, true",
+            "Tresor, Tresor Berlin, false",
+            "Music, Music, true",
+            "Warp, Warpaint, false",
+    })
+    void label_names_compare_without_their_company_suffix(String found, String wanted, boolean expected) {
+        assertThat(ReleaseMatchValidator.labelMatches(found, wanted)).isEqualTo(expected);
+    }
+
+    private static ReleaseMetadata onLabel(String label) {
+        return new ReleaseMetadata("discogs:release:1", null, SearchEngine.DISCOGS, "Whoever", "Whatever", 100,
+                List.of("1992"), List.of("Album"), 0, 0, 1, List.of(), null, List.of(), label);
+    }
+
     private static MetadataSearchRequest request(String artist, String release, String recording) {
         return new MetadataSearchRequest(null, artist, release, recording, DateRange.empty(),
                 "", "", "", "", "", "", "");

@@ -1,9 +1,8 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzClient;
-import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzSimilarArtistsResponse;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.Language;
@@ -16,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,10 +37,10 @@ class DiscoveryAgentToolsTest {
     private final ReleaseRecommender recommender = mock(ReleaseRecommender.class);
 
     private final MusicBrainzClient musicBrainz = mock(MusicBrainzClient.class);
-    private final ListenBrainzClient listenBrainz = mock(ListenBrainzClient.class);
+    private final RelatedArtistsCollector relatedArtists = mock(RelatedArtistsCollector.class);
 
     private final DiscoveryAgentTools tools = new DiscoveryAgentTools(
-            aggregatedSearch, contextService, extractor, recommender, musicBrainz, listenBrainz);
+            aggregatedSearch, contextService, extractor, recommender, musicBrainz, relatedArtists);
 
     @BeforeEach
     void alwaysFindSomething() {
@@ -133,17 +133,132 @@ class DiscoveryAgentToolsTest {
     }
 
     @Test
-    void listenbrainz_data_still_wins_when_it_exists() {
-        whenExtracted(MetadataSearchRequest.create("Burial", "", "", DateRange.empty(),
-                "", "", "", "", "", "", "", Language.EN));
-        when(musicBrainz.findArtistMbid("Burial")).thenReturn(Optional.of("mbid-1"));
-        when(listenBrainz.findSimilarArtists("mbid-1"))
-                .thenReturn(List.of(new ListenBrainzSimilarArtistsResponse("mbid-2", "Zomby", null, "Person", 90)));
+    void each_related_artist_shows_its_main_release_and_why_it_is_here() {
+        whenSeedIs("Drexciya", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
+                new RelatedArtist("mbid-2", "Arpanet", "псевдонім Gerald Donald")));
+        when(relatedArtists.mainRelease("mbid-2")).thenReturn(Optional.of("Wireless Internet"));
 
-        tools.findSimilar("Burial", CONVERSATION);
+        String result = tools.findSimilar("Drexciya", CONVERSATION);
+
+        String label = "Arpanet — Wireless Internet · псевдонім Gerald Donald";
+        ArgumentCaptor<MetadataSearchRequest> request = ArgumentCaptor.forClass(MetadataSearchRequest.class);
+        verify(aggregatedSearch).search(request.capture());
+        assertThat(request.getValue().artist()).isEqualTo("Arpanet");
+        assertThat(request.getValue().release()).isEqualTo("Wireless Internet");
+        verify(contextService).openStack(eq(CONVERSATION), eq(label), any(), eq(label), any());
+        verify(recommender, never()).recommend(anyString());
+        assertThat(result).contains("card stacks");
+    }
+
+    @Test
+    void ten_stacks_is_a_ceiling_and_the_ranking_decides_who_makes_it() {
+        whenSeedIs("Drexciya", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(IntStream.range(0, 30)
+                .mapToObj(i -> new RelatedArtist("id-" + i, "Artist " + i, "reason"))
+                .toList());
+        when(relatedArtists.mainRelease(anyString())).thenReturn(Optional.of("Title"));
+
+        tools.findSimilar("Drexciya", CONVERSATION);
+
+        verify(aggregatedSearch, times(12)).search(any());
+        ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
+        verify(contextService, times(10)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any());
+        assertThat(labels.getAllValues()).first().asString().startsWith("Artist 0 — ");
+        assertThat(labels.getAllValues()).last().asString().startsWith("Artist 9 — ");
+    }
+
+    @Test
+    void fewer_confirmed_releases_means_fewer_stacks_with_no_padding() {
+        whenSeedIs("Drexciya", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
+                new RelatedArtist("no-releases", "Ghost", "reason"),
+                new RelatedArtist("unconfirmed", "Unknown", "reason"),
+                new RelatedArtist("real", "Arpanet", "reason")));
+        when(relatedArtists.mainRelease("no-releases")).thenReturn(Optional.empty());
+        when(relatedArtists.mainRelease("unconfirmed")).thenReturn(Optional.of("Nothing"));
+        when(relatedArtists.mainRelease("real")).thenReturn(Optional.of("Wireless Internet"));
+        when(aggregatedSearch.search(any())).thenAnswer(invocation -> {
+            MetadataSearchRequest request = invocation.getArgument(0);
+            return new AggregatedSearchService.Aggregated(
+                    request.artist().equals("Arpanet") ? List.of(release("Arpanet", "Wireless Internet")) : List.of(),
+                    0, List.of(), 0);
+        });
+
+        tools.findSimilar("Drexciya", CONVERSATION);
+
+        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+    }
+
+    @Test
+    void one_failed_search_does_not_cost_the_rest_of_the_answer() {
+        whenSeedIs("Drexciya", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
+                new RelatedArtist("boom", "Boom", "reason"),
+                new RelatedArtist("real", "Arpanet", "reason")));
+        when(relatedArtists.mainRelease("boom")).thenThrow(new IllegalStateException("catalog down"));
+        when(relatedArtists.mainRelease("real")).thenReturn(Optional.of("Wireless Internet"));
+
+        tools.findSimilar("Drexciya", CONVERSATION);
+
+        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+    }
+
+    @Test
+    void related_artists_that_all_fail_fall_back_to_the_styles_on_the_seed() {
+        whenSeedIs("Symphony Of Love", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(new RelatedArtist("ghost", "Ghost", "reason")));
+        when(relatedArtists.mainRelease("ghost")).thenReturn(Optional.empty());
+        when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
+                List.of(tagged("Symphony Of Love", "Spirit Of Love", "1993", "Acid")),
+                1, List.of(SearchEngine.DISCOGS), 0));
+        when(recommender.recommend(anyString())).thenReturn("Hardfloor — TB Resuscitation");
+
+        tools.findSimilar("Symphony Of Love", CONVERSATION);
+
+        verify(recommender).recommend("Acid 1990s");
+    }
+
+    @Test
+    void a_label_is_a_lookup_not_an_explore_ask_and_shows_one_release_per_artist() {
+        whenExtracted(label("Tresor"));
+        when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
+                List.of(release("Jeff Mills", "Waveform Transmission Vol. 1"),
+                        release("JEFF MILLS", "Waveform Transmission Vol. 3"),
+                        release("X-102", "Discovers the Rings of Saturn")),
+                3, List.of(SearchEngine.DISCOGS), 0));
+
+        String result = tools.search("лейбл Tresor", CONVERSATION);
 
         verify(recommender, never()).recommend(anyString());
-        verify(contextService).openStack(eq(CONVERSATION), eq("Zomby"), any(), eq("Zomby"), any());
+        verify(contextService, times(2)).openStack(eq(CONVERSATION), eq("лейбл Tresor"), any(), eq("Tresor"), any());
+        assertThat(result).contains("Waveform Transmission Vol. 1", "Discovers the Rings of Saturn")
+                .doesNotContain("Vol. 3");
+    }
+
+    @Test
+    void a_label_shows_at_most_ten_stacks() {
+        whenExtracted(label("Warp"));
+        when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
+                IntStream.range(0, 20).mapToObj(i -> release("Artist " + i, "Title")).toList(),
+                20, List.of(SearchEngine.DISCOGS), 0));
+
+        tools.search("лейбл Warp", CONVERSATION);
+
+        verify(contextService, times(10)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+    }
+
+    @Test
+    void an_unconfirmed_label_keeps_the_query_for_dig_deeper() {
+        whenExtracted(label("Nonexistent"));
+        when(aggregatedSearch.search(any())).thenReturn(
+                new AggregatedSearchService.Aggregated(List.of(), 7, List.of(), 0));
+
+        String result = tools.search("лейбл Nonexistent", CONVERSATION);
+
+        verify(contextService).rememberQuery(eq(CONVERSATION), eq("лейбл Nonexistent"), any());
+        verify(contextService, never()).openStack(anyString(), anyString(), any(), anyString(), any());
+        assertThat(result).contains("none were the requested");
     }
 
     @Test
@@ -162,6 +277,17 @@ class DiscoveryAgentToolsTest {
 
     private void whenExtracted(MetadataSearchRequest request) {
         when(extractor.extract(anyString())).thenReturn(request);
+    }
+
+    private void whenSeedIs(String artist, String mbid) {
+        whenExtracted(MetadataSearchRequest.create(artist, "", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+        when(musicBrainz.findArtistMbid(artist)).thenReturn(Optional.of(mbid));
+    }
+
+    private static MetadataSearchRequest label(String name) {
+        return MetadataSearchRequest.create("", "", "", DateRange.empty(),
+                "", "", "", "", "", name, "", Language.UA);
     }
 
     private static ReleaseMetadata release(String artist, String title) {

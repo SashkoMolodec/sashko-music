@@ -72,6 +72,23 @@ class SearchRequestNormalizerTest {
         assertThat(normalized.release()).isEqualTo("Ultima");
     }
 
+    @Test
+    void a_label_query_stays_a_label_when_the_model_reads_the_name_as_an_artist() {
+        var normalized = SearchRequestNormalizer.normalize("лейбл Tresor", request("Tresor", "", "", ""));
+
+        assertThat(normalized.isLabelLookup()).isTrue();
+        assertThat(normalized.label()).isEqualTo("Tresor");
+        assertThat(normalized.artist()).isEmpty();
+    }
+
+    @Test
+    void the_word_label_inside_an_ordinary_query_changes_nothing() {
+        var normalized = SearchRequestNormalizer.normalize("Jeff Mills на лейблі Tresor", request("Jeff Mills", "", "", ""));
+
+        assertThat(normalized.artist()).isEqualTo("Jeff Mills");
+        assertThat(normalized.isLabelLookup()).isFalse();
+    }
+
     private static MetadataSearchRequest request(String artist, String release, String recording, String country) {
         return new MetadataSearchRequest(null, artist, release, recording, DateRange.empty(),
                 "", "", country, "", "", "", "");

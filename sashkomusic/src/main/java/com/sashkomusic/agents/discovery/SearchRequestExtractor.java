@@ -42,6 +42,8 @@ public interface SearchRequestExtractor {
             9. QUOTED STRINGS: Text in quotes "..." is a SINGLE LITERAL ENTITY.
                - If contains label indicators (Records, Tapes, Recordings, Music, Label) → label field.
                - Otherwise → treat as artist or release depending on context.
+            10. LABEL WORDS: a name after "лейбл", "лейблу", "з лейблу", "на лейблі", "label", "on label",
+               "from label" is ALWAYS the label field, even with no Records/Tapes in it. artist stays empty.
 
             TRACK vs RELEASE DETECTION:
             - Pattern "Artist - Title" WITHOUT context indicators:
@@ -86,6 +88,8 @@ public interface SearchRequestExtractor {
             "Adjust (BE) - Fractured Elements" → artist="Adjust", release="Fractured Elements", recording="Fractured Elements", country=""
             "Axis Records AX-009" → label="Axis Records", catno="AX-009"
             "bloomed in september tapes" → label="bloomed in september tapes"
+            "лейбл Tresor" → label="Tresor"
+            "дай пару релізів з лейблу Warp" → label="Warp"
             """)
     @UserMessage("{{it}}")
     MetadataSearchRequest extract(String userPrompt);

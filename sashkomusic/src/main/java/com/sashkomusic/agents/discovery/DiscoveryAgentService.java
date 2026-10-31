@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DiscoveryAgentService {
 
+    private static final int MAX_STACKS_NAMED_IN_INTRO = 3;
+
     private final DiscoveryAgent discoveryAgent;
     private final SearchContextService searchContextService;
     private final ReleaseSearchFlowService releaseSearchFlowService;
@@ -88,8 +90,11 @@ public class DiscoveryAgentService {
                         stack.label() == null || stack.label().isBlank() ? "стос " + stack.id() : stack.label(),
                         describe(stack.releases())))
                 .collect(Collectors.joining("\n"));
-        return "Showed %d separate card stacks:\n%s\nIntroduce all of them in 2-4 sentences; do not list releases."
-                .formatted(stacks.size(), perStack);
+        // The intro is capped at 600 characters, which ten stacks cannot each get a mention in.
+        String instruction = stacks.size() > MAX_STACKS_NAMED_IN_INTRO
+                ? "Say in 2-4 sentences what connects them, without naming each one; do not list releases."
+                : "Introduce all of them in 2-4 sentences; do not list releases.";
+        return "Showed %d separate card stacks:\n%s\n%s".formatted(stacks.size(), perStack, instruction);
     }
 
     private static String describe(List<ReleaseMetadata> releases) {

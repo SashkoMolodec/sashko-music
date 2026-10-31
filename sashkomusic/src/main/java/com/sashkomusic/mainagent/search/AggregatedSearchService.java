@@ -33,6 +33,8 @@ public class AggregatedSearchService {
     /** Per-engine cap applied before merging, so one chatty catalog cannot crowd out the others. */
     private static final int PER_ENGINE_CAP = 12;
     private static final int TOTAL_CAP = 20;
+    /** A label answer keeps one release per artist, so it starts from far more rows than a lookup. */
+    private static final int LABEL_CAP = 60;
     /** Tracklist lookups cost one API call each — this is the ceiling per search. */
     private static final int TRACKLIST_BUDGET = 8;
     /** Below this many confirmed matches a track query is worth spending the tracklist budget on. */
@@ -93,9 +95,12 @@ public class AggregatedSearchService {
             return new Aggregated(merged, rawCount, sourcesOf(merged), 0);
         }
 
+        int engineCap = request.isLabelLookup() ? LABEL_CAP : PER_ENGINE_CAP;
+        int totalCap = request.isLabelLookup() ? LABEL_CAP : TOTAL_CAP;
+
         List<Scored> scored = new ArrayList<>();
         List<ReleaseMetadata> undecided = new ArrayList<>();
-        raw.forEach((engine, releases) -> releases.stream().limit(PER_ENGINE_CAP).forEach(release -> {
+        raw.forEach((engine, releases) -> releases.stream().limit(engineCap).forEach(release -> {
             var match = ReleaseMatchValidator.evaluate(request, release);
             if (match.isHit()) {
                 scored.add(new Scored(release, match));
@@ -116,7 +121,7 @@ public class AggregatedSearchService {
                         .thenComparingInt(s -> sourceRank(s.release().source())))
                 .map(Scored::release)
                 .toList();
-        List<ReleaseMetadata> merged = dedupe(ranked).stream().limit(TOTAL_CAP).toList();
+        List<ReleaseMetadata> merged = dedupe(ranked).stream().limit(totalCap).toList();
 
         log.info("Aggregated search: raw={} confirmed={} tracklistsChecked={} artist='{}' release='{}' recording='{}'",
                 rawCount, merged.size(), checked, request.artist(), request.release(), request.recording());

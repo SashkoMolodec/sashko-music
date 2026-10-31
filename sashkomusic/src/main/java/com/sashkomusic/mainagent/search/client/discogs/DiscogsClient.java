@@ -5,6 +5,7 @@ import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.libraryagent.domain.model.ReleaseMetadataFile;
 import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.shared.model.TrackMetadata;
+import com.sashkomusic.mainagent.search.ReleaseMatchValidator;
 import com.sashkomusic.mainagent.search.SearchEngineService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -254,11 +255,11 @@ public class DiscogsClient implements SearchEngineService {
         // score is currently a flat constant (see aggregateGroup) so a numeric re-sort is a no-op
         // that only serves to destroy that relevance order.
         return grouped.values().stream()
-                .map(this::aggregateGroup)
+                .map(group -> aggregateGroup(group, request.label()))
                 .toList();
     }
 
-    private ReleaseMetadata aggregateGroup(List<DiscogsSearchResponse.Result> groupResults) {
+    private ReleaseMetadata aggregateGroup(List<DiscogsSearchResponse.Result> groupResults, String wantedLabel) {
         var representative = groupResults.getFirst();
 
         String artist = extractArtist(representative.title());
@@ -310,8 +311,9 @@ public class DiscogsClient implements SearchEngineService {
         String label = groupResults.stream()
                 .filter(r -> r.label() != null && !r.label().isEmpty())
                 .flatMap(r -> r.label().stream())
-                .findFirst()
                 .map(this::cleanLabelName)
+                // Discogs lists distributors and pressing plants here too, in no useful order.
+                .min(java.util.Comparator.comparing(name -> !ReleaseMatchValidator.labelMatches(name, wantedLabel)))
                 .orElse("");
 
         return new ReleaseMetadata(

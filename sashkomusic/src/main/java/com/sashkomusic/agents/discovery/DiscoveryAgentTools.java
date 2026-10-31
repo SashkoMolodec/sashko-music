@@ -1,9 +1,8 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
-import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzClient;
-import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzSimilarArtistsResponse;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.MetadataSearchRequest;
@@ -17,9 +16,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -29,7 +34,13 @@ public class DiscoveryAgentTools {
 
     /** Three stacks is what still reads as an answer in a Telegram chat rather than as a dump. */
     private static final int MAX_RECOMMENDATIONS = 3;
-    private static final int MAX_SIMILAR_ARTISTS_TRIED = 6;
+    /** A ceiling, not a target: "схоже" shows what the catalogs confirm, up to this many stacks. */
+    private static final int MAX_SIMILAR_STACKS = 10;
+    /** A couple of spares for picks the catalogs don't have, without paying for the whole scene. */
+    private static final int MAX_SIMILAR_ARTISTS_TRIED = 12;
+    /** MusicBrainz serves one request a second, so more threads would only queue on its rate limiter. */
+    private static final int SIMILAR_SEARCH_CONCURRENCY = 3;
+    private static final int MAX_LABEL_STACKS = 10;
     /** Beyond three styles the recommendation topic stops describing anything in particular. */
     private static final int MAX_STYLE_SEEDS = 3;
 
@@ -38,7 +49,7 @@ public class DiscoveryAgentTools {
     private final SearchRequestExtractor searchRequestExtractor;
     private final ReleaseRecommender releaseRecommender;
     private final MusicBrainzClient musicBrainzClient;
-    private final ListenBrainzClient listenBrainzClient;
+    private final RelatedArtistsCollector relatedArtistsCollector;
 
     @Tool("""
             Pinpoint search for ONE specific thing — a release, a track, or an artist's records.
@@ -48,11 +59,16 @@ public class DiscoveryAgentTools {
             (at most 3 per answer). Resolve the query from the conversation first: if the user says
             "того самого артиста, але 90-ті", pass "<that artist> 1990-1999", never a pronoun.
             If it returns nothing, call it again with fewer filters — drop year/label/style first.
+            For releases of one record label pass "лейбл <name>": that shows up to 10 separate stacks.
             """)
     public String search(
             @P("resolved query: artist + title (+ optional year/label), e.g. 'Adjust (BE) Mist'") String query,
             @ToolMemoryId String conversationId) {
         MetadataSearchRequest request = extractRequest(query);
+
+        if (request.isLabelLookup()) {
+            return searchLabel(conversationId, request, query);
+        }
 
         // The lookup-vs-explore split is a routing decision the model makes, and it gets it wrong:
         // "пошукай detroit techno класичне" has no artist and no title, so there is nothing to
@@ -84,9 +100,10 @@ public class DiscoveryAgentTools {
 
     @Tool("""
             Find releases similar to a given artist/release, or to the release currently in view — for
-            "хочу схоже на X", "рекомендуй щось подібне", "similar to X". Uses ListenBrainz co-listen
-            data (real similarity, never invented), then runs the pinpoint search for the top related
-            artists — the user gets one card stack per artist. Never answer such asks from memory.
+            "хочу схоже на X", "рекомендуй щось подібне", "similar to X". Walks the real connections
+            around the seed — members, aliases, bandmates — plus ListenBrainz co-listen data, then
+            confirms one release per related artist in the catalogs. The user gets up to 10 card
+            stacks, each showing how it is connected. Never answer such asks from memory.
             """)
     public String findSimilar(
             @P("artist or release name to find similar music to, or empty to use the release currently in view") String seedQuery,
@@ -110,23 +127,86 @@ public class DiscoveryAgentTools {
         }
         String seedArtist = seedRequest.artist().isBlank() ? seed : seedRequest.artist();
 
-        List<String> similarArtists = musicBrainzClient.findArtistMbid(seedArtist)
-                .map(mbid -> listenBrainzClient.findSimilarArtists(mbid).stream()
-                        .sorted(Comparator.comparingInt(ListenBrainzSimilarArtistsResponse::score).reversed())
-                        .limit(MAX_SIMILAR_ARTISTS_TRIED)
-                        .map(ListenBrainzSimilarArtistsResponse::name)
-                        .toList())
+        List<RelatedArtist> related = musicBrainzClient.findArtistMbid(seedArtist)
+                .map(relatedArtistsCollector::collect)
                 .orElse(List.of());
 
-        if (similarArtists.isEmpty()) {
-            log.info("No ListenBrainz co-listen data for '{}' — falling back to the seed's own styles", seedArtist);
+        List<String> found = openSimilarStacks(conversationId, related);
+        if (found.isEmpty()) {
+            log.info("No confirmed related releases for '{}' — falling back to the seed's own styles", seedArtist);
             return similarByStyle(seed, seedRequest, conversationId);
         }
+        return describeStacks(found, "artists connected to " + seedArtist + " by MusicBrainz relations and ListenBrainz co-listen data");
+    }
 
-        List<Candidate> candidates = similarArtists.stream()
-                .map(artist -> new Candidate(artist, "", artist))
-                .toList();
-        return buildStacks(conversationId, candidates, "artists related to " + seedArtist + " by ListenBrainz co-listen data");
+    /**
+     * Confirms one release per related artist and opens a stack for each, in the order they were
+     * ranked. The searches run side by side because ten in a row would hold the bot for a minute;
+     * the stacks are opened afterwards because openStack is a read-modify-write of the chat state.
+     */
+    private List<String> openSimilarStacks(String conversationId, List<RelatedArtist> related) {
+        List<ConfirmedRelease> confirmed;
+        try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
+            List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
+                    .limit(MAX_SIMILAR_ARTISTS_TRIED)
+                    .map(artist -> CompletableFuture.supplyAsync(() -> confirmRelease(artist), pool)
+                            .exceptionally(e -> {
+                                log.warn("Related artist '{}' could not be confirmed: {}", artist.name(), e.getMessage());
+                                return null;
+                            }))
+                    .toList();
+            confirmed = searches.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .limit(MAX_SIMILAR_STACKS)
+                    .toList();
+        }
+
+        List<String> found = new ArrayList<>();
+        for (ConfirmedRelease release : confirmed) {
+            searchContextService.openStack(conversationId, release.label(), release.request(),
+                    release.label(), release.releases());
+            found.add("%s (%d releases)".formatted(release.label(), release.releases().size()));
+        }
+        return found;
+    }
+
+    /** The related artist's main release, if it has one and the catalogs back it up; otherwise null. */
+    private ConfirmedRelease confirmRelease(RelatedArtist artist) {
+        Optional<String> title = relatedArtistsCollector.mainRelease(artist.mbid());
+        if (title.isEmpty()) {
+            log.info("Related artist '{}' has no release to show — skipped", artist.name());
+            return null;
+        }
+        MetadataSearchRequest request = releaseRequest(artist.name(), title.get());
+        var aggregated = aggregatedSearch.search(request);
+        if (aggregated.isEmpty()) {
+            log.info("Related release '{} — {}' had no catalog match — skipped", artist.name(), title.get());
+            return null;
+        }
+        String label = "%s — %s · %s".formatted(artist.name(), title.get(), artist.reason());
+        return new ConfirmedRelease(label, request, aggregated.releases());
+    }
+
+    /**
+     * One stack per artist, so the answer shows the label's roster rather than one prolific artist.
+     * The validator has already dropped everything that is not really on this label.
+     */
+    private String searchLabel(String conversationId, MetadataSearchRequest request, String query) {
+        var aggregated = aggregatedSearch.search(request);
+        if (aggregated.isEmpty()) {
+            return reportMiss(conversationId, request, query, aggregated);
+        }
+        Map<String, ReleaseMetadata> byArtist = new LinkedHashMap<>();
+        aggregated.releases().forEach(release ->
+                byArtist.putIfAbsent(release.artist().toLowerCase(Locale.ROOT), release));
+
+        List<String> found = new ArrayList<>();
+        byArtist.values().stream().limit(MAX_LABEL_STACKS).forEach(release -> {
+            searchContextService.openStack(conversationId, query, request, request.label(), List.of(release));
+            found.add(release.artist() + " — " + release.title());
+        });
+        return describeStacks(found, "releases on the label " + request.label());
     }
 
     /**
@@ -227,6 +307,9 @@ public class DiscoveryAgentTools {
     /** One recommended thing to look up: the pinpoint search's input plus the label its stack wears. */
     private record Candidate(String artist, String title, String label) {}
 
+    /** A related artist's release the catalogs confirmed, ready to become a stack. */
+    private record ConfirmedRelease(String label, MetadataSearchRequest request, List<ReleaseMetadata> releases) {}
+
     private List<Candidate> researchCandidates(String topic) {
         String answer;
         try {
@@ -261,9 +344,7 @@ public class DiscoveryAgentTools {
             // Each attempt is a full three-catalog search; one spare covers a pick the catalogs
             // don't have, and stops "6 similar artists" from turning into a half-minute wait.
             if (found.size() >= MAX_RECOMMENDATIONS || attempts++ > MAX_RECOMMENDATIONS) break;
-            MetadataSearchRequest request = new MetadataSearchRequest(
-                    null, candidate.artist(), candidate.title(), "", DateRange.empty(),
-                    "", "", "", "", "", "", "");
+            MetadataSearchRequest request = releaseRequest(candidate.artist(), candidate.title());
             var aggregated = aggregatedSearch.search(request);
             if (aggregated.isEmpty()) {
                 log.info("Recommendation '{}' had no catalog match — skipped", candidate.label());
@@ -277,23 +358,37 @@ public class DiscoveryAgentTools {
         if (found.isEmpty()) {
             return "none of the researched picks could be confirmed in the catalogs — say so and ask for a narrower ask";
         }
+        return describeStacks(found, provenance);
+    }
+
+    private static MetadataSearchRequest releaseRequest(String artist, String title) {
+        return new MetadataSearchRequest(null, artist, title, "", DateRange.empty(),
+                "", "", "", "", "", "", "");
+    }
+
+    private static String describeStacks(List<String> found, String provenance) {
         return "showed %d card stacks — %s. Source: %s. Write a 2-4 sentence intro explaining the picks; do NOT list them again."
                 .formatted(found.size(), String.join("; ", found), provenance);
+    }
+
+    private String reportMiss(String conversationId, MetadataSearchRequest request, String rawInput,
+                              AggregatedSearchService.Aggregated aggregated) {
+        // Keep the query around even though it confirmed nothing — digDeeper widens THIS query.
+        searchContextService.rememberQuery(conversationId, rawInput, request);
+        String filters = describeFilters(request);
+        if (aggregated.rawCount() > 0) {
+            return ("catalogs returned %d results for '%s' but none were the requested artist/title/label "
+                    + "(filters: %s). Retry search() with fewer filters, or confirm the spelling with the user.")
+                    .formatted(aggregated.rawCount(), rawInput, filters);
+        }
+        return "nothing found for '%s' (filters: %s). Retry search() with fewer filters — drop year/label/style first."
+                .formatted(rawInput, filters);
     }
 
     private String runStack(String conversationId, MetadataSearchRequest request, String rawInput, String label) {
         var aggregated = aggregatedSearch.search(request);
         if (aggregated.isEmpty()) {
-            // Keep the query around even though it confirmed nothing — digDeeper widens THIS query.
-            searchContextService.rememberQuery(conversationId, rawInput, request);
-            String filters = describeFilters(request);
-            if (aggregated.rawCount() > 0) {
-                return ("catalogs returned %d results for '%s' but none were the requested artist/title "
-                        + "(filters: %s). Retry search() with fewer filters, or confirm the spelling with the user.")
-                        .formatted(aggregated.rawCount(), rawInput, filters);
-            }
-            return "nothing found for '%s' (filters: %s). Retry search() with fewer filters — drop year/label/style first."
-                    .formatted(rawInput, filters);
+            return reportMiss(conversationId, request, rawInput, aggregated);
         }
         searchContextService.openStack(conversationId, rawInput, request, label, aggregated.releases());
         String sources = aggregated.sources().stream().map(SearchEngine::getName).collect(Collectors.joining(", "));

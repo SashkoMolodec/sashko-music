@@ -39,10 +39,22 @@ final class SearchRequestNormalizer {
             "\\b(track|трек\\w*|song|пісн\\w*|сингл\\w*|single)\\b",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
 
+    /** The exact form DiscoveryAgent is told to pass for a label: "лейбл Tresor". */
+    private static final Pattern LABEL_QUERY = Pattern.compile(
+            "^\\s*(?:лейбл|label)\\s+(.+?)\\s*$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
+
     static MetadataSearchRequest normalize(String rawQuery, MetadataSearchRequest request) {
         if (request == null) return null;
         String raw = rawQuery == null ? "" : rawQuery;
-        return fillRecordingForBareTitle(raw, dropBracketedCountry(raw, request));
+        return fillRecordingForBareTitle(raw, dropBracketedCountry(raw, keepLabelAsLabel(raw, request)));
+    }
+
+    /** A bare name like "Tresor" reads as an artist to the model, whatever the word before it says. */
+    private static MetadataSearchRequest keepLabelAsLabel(String raw, MetadataSearchRequest request) {
+        var label = LABEL_QUERY.matcher(raw);
+        if (!label.matches() || !request.label().isBlank()) return request;
+        return request.withOnlyLabel(label.group(1));
     }
 
     private static MetadataSearchRequest dropBracketedCountry(String raw, MetadataSearchRequest request) {

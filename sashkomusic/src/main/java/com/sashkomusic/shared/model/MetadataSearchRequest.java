@@ -69,6 +69,14 @@ public record MetadataSearchRequest(
         return !artist.isBlank() || !release.isBlank() || !recording.isBlank();
     }
 
+    /**
+     * True when a label is the only thing named — "дай пару релізів з Tresor". A label is concrete
+     * enough to verify results against, so this is a lookup rather than an explore ask.
+     */
+    public boolean isLabelLookup() {
+        return !hasLookupAnchor() && !label.isBlank();
+    }
+
     public String getTitle() {
         if (!release.isEmpty()) {
             return release;
@@ -136,6 +144,13 @@ public record MetadataSearchRequest(
         return new MetadataSearchRequest(
                 this.id, "", this.release, this.recording, this.dateRange, this.format,
                 this.type, this.country, this.status, this.style, this.label, this.catno);
+    }
+
+    /** Same filters, but a label is the only thing named — no artist, release or recording. */
+    public MetadataSearchRequest withOnlyLabel(String newLabel) {
+        return new MetadataSearchRequest(
+                this.id, "", "", "", this.dateRange, this.format,
+                this.type, this.country, this.status, this.style, newLabel, this.catno);
     }
 
     public MetadataSearchRequest withAuthor(String author) {
