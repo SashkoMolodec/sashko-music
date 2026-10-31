@@ -12,6 +12,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -25,6 +27,8 @@ public class FolderAudioScanner {
 
     private static final Set<String> AUDIO_EXTENSIONS = Set.of(
             "mp3", "flac", "m4a", "ogg", "wav", "opus", "aac");
+
+    private static final Pattern SLSKD_RETRY_SUFFIX = Pattern.compile("^(.+)_\\d{15,}(\\.[^.]+)$");
 
     @Value("${downloads.base-path:/Users/okravch/my/sm/downloads}")
     private String downloadsBasePath;
@@ -86,14 +90,28 @@ public class FolderAudioScanner {
     private record Scored(Path path, int score) {}
 
     public List<String> listAudioFiles(Path folderPath) throws IOException {
+        List<Path> audio;
         try (Stream<Path> files = Files.walk(folderPath)) {
-            return files
+            audio = files
                     .filter(Files::isRegularFile)
                     .filter(this::isAudioFile)
                     .filter(this::isNotHiddenMacFile)
-                    .map(Path::toString)
                     .toList();
         }
+        Set<Path> all = Set.copyOf(audio);
+        return audio.stream()
+                .filter(p -> !isRetryCopy(p, all))
+                .map(Path::toString)
+                .toList();
+    }
+
+    /**
+     * slskd keeps a re-downloaded file next to the original as "name_<ticks>.ext". Such a copy is only
+     * dropped when the original is present, so a folder holding nothing but suffixed files stays intact.
+     */
+    static boolean isRetryCopy(Path file, Set<Path> siblings) {
+        Matcher m = SLSKD_RETRY_SUFFIX.matcher(file.getFileName().toString());
+        return m.matches() && siblings.contains(file.resolveSibling(m.group(1) + m.group(2)));
     }
 
     private boolean isAudioFile(Path file) {
