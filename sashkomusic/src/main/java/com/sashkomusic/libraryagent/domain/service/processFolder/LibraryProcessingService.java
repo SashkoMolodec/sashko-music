@@ -253,7 +253,7 @@ public class LibraryProcessingService {
                                    List<FileOrganizer.OrganizedFile> organizedFiles, List<String> errors) {
         try {
             releaseService.saveRelease(metadata, directoryPath, coverPath, organizedFiles, processingVersion,
-                    libraryConfig.getDefaultSublibrary());
+                    libraryConfig.getDefaultSublibrary(), true);
             log.info("Release saved to database successfully");
             metadataWriter.writeMetadata(directoryPath, metadata, processingVersion);
             return true;

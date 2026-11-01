@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.library.messaging;
 
-import com.sashkomusic.events.LibraryProcessingCompleteEvent;
+import com.sashkomusic.events.ReleasePlacedEvent;
 import com.sashkomusic.mainagent.library.AppleMusicSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,12 +19,7 @@ public class AppleMusicSyncListener {
 
     @EventListener
     @Async("asyncExecutor")
-    public void handleLibraryProcessingComplete(LibraryProcessingCompleteEvent event) {
-        if (!event.success()) {
-            log.debug("Skipping Apple Music sync - library processing was not successful");
-            return;
-        }
-
+    public void handleReleasePlaced(ReleasePlacedEvent event) {
         String directoryPath = event.directoryPath();
         if (directoryPath == null || directoryPath.isEmpty()) {
             log.warn("Skipping Apple Music sync - directory path is empty");
@@ -34,6 +29,6 @@ public class AppleMusicSyncListener {
         Path folder = Path.of(directoryPath).getFileName();
         var submission = syncService.submit(event.conversationId(), directoryPath,
                 folder != null ? folder.toString() : directoryPath);
-        log.info("Apple Music sync after processing {}: {}", directoryPath, submission);
+        log.info("Apple Music sync after placing {}: {}", directoryPath, submission);
     }
 }

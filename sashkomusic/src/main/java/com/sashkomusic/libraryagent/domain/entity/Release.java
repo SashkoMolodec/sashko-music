@@ -57,6 +57,10 @@ public class Release {
     @Column(nullable = false)
     private String sublibrary = "working";
 
+    /** True from processing until the user's first sub-library choice; analysis and Apple sync wait for it. */
+    @Column(nullable = false)
+    private boolean placementPending = false;
+
     @Column
     private Integer metadataVersion;
 

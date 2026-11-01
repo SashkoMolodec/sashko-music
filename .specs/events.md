@@ -28,6 +28,9 @@ downloadagent   →  DownloadErrorEvent            →  mainagent
 
 mainagent       →  ProcessLibraryTaskEvent       →  libraryagent
 libraryagent    →  LibraryProcessingCompleteEvent→  mainagent
+mainagent       →  MoveReleaseTaskEvent          →  libraryagent
+mainagent       →  PlaceReleaseTaskEvent         →  libraryagent
+libraryagent    →  ReleasePlacedEvent            →  libraryagent (аналіз), mainagent (Apple sync)
 mainagent       →  ReprocessReleaseTaskEvent     →  libraryagent
 libraryagent    →  ReprocessReleaseCompleteEvent →  mainagent
 
@@ -124,6 +127,20 @@ libraryagent → mainagent.
 LibraryProcessingCompleteEvent(String conversationId, String masterId, String directoryPath,
                                List<ProcessedFile> processedFiles, boolean success,
                                String message, List<String> errors)
+```
+
+### `PlaceReleaseTaskEvent`
+mainagent → libraryagent. Юзер на питання "куди покласти?" обрав папку, у якій реліз уже лежить. Нічого не
+переносить, лише підтверджує розміщення (див. [library-processing.md](library-processing.md)).
+```java
+PlaceReleaseTaskEvent(String conversationId, Long releaseId)
+```
+
+### `ReleasePlacedEvent`
+libraryagent → libraryagent (аналіз) і mainagent (Apple sync). Публікується **один раз** на реліз, після першого
+вибору папки (перенос або "залишити"), коли шлях уже фінальний.
+```java
+ReleasePlacedEvent(String conversationId, Long releaseId, String releaseTitle, String directoryPath)
 ```
 
 ### `ReprocessReleaseTaskEvent`

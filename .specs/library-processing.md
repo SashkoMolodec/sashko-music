@@ -117,12 +117,52 @@ Output: `MetadataSearchRequest { artist, release, year?, label?, format? }`
 
 ---
 
+## Розміщення релізу і запуск фонових задач
+
+Після `/process` реліз лягає в підбібліотеку за замовчуванням (`working`), а бот питає "📦 куди покласти?".
+Аудіоаналіз і Apple Music sync **не стартують одразу**: обидва читають файли за шляхом, а вибір папки
+переносить реліз, і задача, що вже читає старий шлях, падає (`Could not open file …/working/…`,
+`ffmpeg … No such file or directory`). Тому вони запускаються на фінальному шляху, після першого вибору.
+
+```
+saveRelease(awaitPlacement=true)   ← LibraryProcessingService (новий реліз)
+  └─ releases.placement_pending = true, аналіз НЕ запускається
+LibraryProcessingCompleteEvent → повідомлення з кнопками LIB_ASSIGN:<releaseId>:<sublibrary>
+
+вибір папки (SublibraryAssignmentHandler)
+  ├─ інша папка      → MoveReleaseTaskEvent  → MoveReleaseListener → move() → успіх → ReleasePlacementService.confirm
+  └─ та сама ("✅")  → PlaceReleaseTaskEvent → PlaceReleaseListener              ──→ ReleasePlacementService.confirm
+                         (лише якщо placement_pending; інакше нічого не робиться)
+
+ReleasePlacementService.confirm(conversationId, releaseId)
+  └─ UPDATE releases SET placement_pending = false WHERE id = ? AND placement_pending = true
+       0 рядків → вже розміщено (або старий реліз): нічого не робити
+       1 рядок  → ReleasePlacedEvent(conversationId, releaseId, title, directoryPath)
+
+ReleasePlacedEvent
+  ├─ libraryagent: ReleasePlacedAnalysisListener → ReleaseService.requestAnalysis(releaseId)
+  └─ mainagent:    AppleMusicSyncListener        → AppleMusicSyncService.submit(...)
+```
+
+- **Лише перший вибір.** Позначка `placement_pending` знімається одним атомарним `UPDATE`, тому подальші переноси
+  (`working` → `vault` через місяць) не запускають аналіз і Apple sync вдруге (інакше iTunes отримав би дублі),
+  а подвійний клік не запускає їх двічі.
+- **`/reprocess`** (`ReprocessingService`, `saveRelease(awaitPlacement=false)`) питання про папку не показує,
+  а реліз уже лежить на своєму місці, тому аналіз стартує одразу, як і раніше.
+- **Старі релізи** мають `placement_pending = false` (міграція `V20`), тож їх переноси нічого не запускають.
+- **Вибір не зроблено** → ні аналізу, ні Apple sync, доки реліз не розміщено (будь-який перенос або "залишити").
+  Це свідомий компроміс: вибір папки — штатна частина процесу.
+- Якщо після обробки не вдалося знайти реліз у БД за шляхом, кнопок нема, і позначка лишається, поки реліз не
+  перенесуть уручну.
+
+---
+
 ## Audio analyzer (Python, async)
 
 ```
-LibraryProcessingService
+ReleasePlacedAnalysisListener (після розміщення) / ReprocessingService (одразу)
   └─ POST {AUDIO_ANALYZER_URL}/analyze { filePath, releaseId, conversationId }
-       (fire-and-forget, WebClient)
+       (fire-and-forget, WebClient; filePath = Track.localPath на момент запиту)
 
 Python sm-audio-analyzer:
   └─ Essentia: BPM, MFCC, danceability, loudness

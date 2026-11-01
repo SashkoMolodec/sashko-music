@@ -2,6 +2,7 @@ package com.sashkomusic.libraryagent.messaging.consumer;
 
 import com.sashkomusic.events.MoveReleaseCompleteEvent;
 import com.sashkomusic.events.MoveReleaseTaskEvent;
+import com.sashkomusic.libraryagent.domain.service.ReleasePlacementService;
 import com.sashkomusic.libraryagent.domain.service.ReleaseRelocationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class MoveReleaseListener {
 
     private final ReleaseRelocationService relocationService;
+    private final ReleasePlacementService placementService;
     private final ApplicationEventPublisher eventPublisher;
 
     @EventListener
@@ -39,6 +41,10 @@ public class MoveReleaseListener {
                     result.success(),
                     result.message()
             ));
+
+            if (result.success()) {
+                confirmPlacement(event);
+            }
         } catch (Exception ex) {
             log.error("Fatal error during release move: {}", ex.getMessage(), ex);
             eventPublisher.publishEvent(new MoveReleaseCompleteEvent(
@@ -46,6 +52,16 @@ public class MoveReleaseListener {
                     null, null, null, null, event.targetSublibrary(),
                     false, "fatal error: " + ex.getMessage()
             ));
+        }
+    }
+
+    /** The move itself already succeeded; a failure announcing the placement must not turn it into a failed move. */
+    private void confirmPlacement(MoveReleaseTaskEvent event) {
+        try {
+            placementService.confirm(event.conversationId(), event.releaseId());
+        } catch (Exception ex) {
+            log.error("Release {} was moved, but its placement could not be confirmed: {}",
+                    event.releaseId(), ex.getMessage(), ex);
         }
     }
 }

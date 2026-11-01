@@ -2,6 +2,7 @@ package com.sashkomusic.mainagent.library;
 
 import org.springframework.context.ApplicationEventPublisher;
 import com.sashkomusic.events.MoveReleaseTaskEvent;
+import com.sashkomusic.events.PlaceReleaseTaskEvent;
 import com.sashkomusic.libraryagent.domain.entity.Release;
 import com.sashkomusic.libraryagent.domain.repository.ReleaseRepository;
 import com.sashkomusic.mainagent.bot.BotResponse;
@@ -44,6 +45,10 @@ public class SublibraryAssignmentHandler {
         }
         Release release = releaseOpt.get();
         if (sublibrary.equals(release.getSublibrary())) {
+            // Keeping the default is still the user's choice: it is what lets analysis and Apple sync start.
+            if (release.isPlacementPending()) {
+                eventPublisher.publishEvent(new PlaceReleaseTaskEvent(ctx.conversationId(), releaseId));
+            }
             return List.of(BotResponse.text("✅ залишаємо у " + sublibrary));
         }
 

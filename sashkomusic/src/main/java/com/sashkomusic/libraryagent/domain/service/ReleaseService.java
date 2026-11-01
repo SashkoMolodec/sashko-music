@@ -66,7 +66,8 @@ public class ReleaseService {
             String coverPath,
             List<FileOrganizer.OrganizedFile> organizedFiles,
             Integer metadataVersion,
-            String sublibrary
+            String sublibrary,
+            boolean awaitPlacement
     ) {
         log.info("Saving release: {} by {} from source {}", metadata.title(), metadata.artist(), metadata.source());
 
@@ -84,6 +85,9 @@ public class ReleaseService {
             release.setSublibrary(sublibrary);
         }
         release.setLastProcessed(java.time.LocalDateTime.now());
+        if (awaitPlacement) {
+            release.setPlacementPending(true);
+        }
         if (metadataVersion != null) {
             release.setMetadataVersion(metadataVersion);
         }
@@ -145,7 +149,16 @@ public class ReleaseService {
         log.info("Successfully saved release with ID: {}", savedRelease.getId());
 
         librarySearchService.indexRelease(savedRelease.getId());
-        triggerAudioAnalysis(savedRelease);
+        // A release waiting for its sub-library gets analysed once it has a final path; see ReleasePlacementService.
+        if (!awaitPlacement) {
+            triggerAudioAnalysis(savedRelease);
+        }
+    }
+
+    /** Sends every track of the release to the analyzer, from the paths the database holds right now. */
+    @Transactional(readOnly = true)
+    public void requestAnalysis(Long releaseId) {
+        releaseRepository.findById(releaseId).ifPresent(this::triggerAudioAnalysis);
     }
 
     private void extractAndStoreTags(Track track, String filePath) {

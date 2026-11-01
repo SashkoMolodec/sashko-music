@@ -167,6 +167,8 @@ mainagent            →  RemoveReleaseTaskEvent             →  libraryagent
 libraryagent         →  RemoveReleaseCompleteEvent         →  mainagent
 mainagent            →  MoveReleaseTaskEvent               →  libraryagent
 libraryagent         →  MoveReleaseCompleteEvent           →  mainagent
+mainagent            →  PlaceReleaseTaskEvent              →  libraryagent (first "keep it here" choice → ReleasePlacedEvent)
+libraryagent         →  ReleasePlacedEvent                 →  libraryagent (audio analysis), mainagent (AppleMusicSyncListener)
 mainagent            →  RateTrackTaskEvent                 →  libraryagent
 mainagent            →  AddCommentTaskEvent                →  libraryagent
 mainagent            →  AddMarkerTaskEvent                 →  libraryagent (appends the marker to the END of COMM)

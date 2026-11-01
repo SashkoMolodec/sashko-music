@@ -76,7 +76,7 @@ class ReleaseSearchIndexingOrderTest {
 
     @Test
     void flushes_the_release_before_building_its_search_vector() {
-        releaseService.saveRelease(metadata(), "/lib/working/symphony of love", null, List.of(), 1, null);
+        releaseService.saveRelease(metadata(), "/lib/working/symphony of love", null, List.of(), 1, null, false);
 
         InOrder order = inOrder(releaseRepository, librarySearchService);
         order.verify(releaseRepository).saveAndFlush(any(Release.class));
@@ -85,7 +85,7 @@ class ReleaseSearchIndexingOrderTest {
 
     @Test
     void does_not_index_off_a_plain_save_whose_join_table_rows_are_still_pending() {
-        releaseService.saveRelease(metadata(), "/lib/working/symphony of love", null, List.of(), 1, null);
+        releaseService.saveRelease(metadata(), "/lib/working/symphony of love", null, List.of(), 1, null, false);
 
         verify(releaseRepository, never()).save(any(Release.class));
     }
