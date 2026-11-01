@@ -51,17 +51,25 @@ public class FolderAudioScanner {
     }
 
     /**
-     * Searches immediate (and one level nested) sub-folders of downloads root for the closest match to the user's query.
-     * Token-based scoring: each lowercased alnum token in the query that appears in the folder name adds 1.
+     * Finds the folder the user means when the path they typed does not exist as written.
+     * <p>
+     * A pasted path is first matched by its tail under the downloads root, so any mount name on the
+     * user's machine works. Failing that, sub-folders (one level nested) are scored by token overlap
+     * with the LAST path segment only: the parents say where the folder is mounted, not what it is,
+     * and counting them let {@code own_copy} outscore {@code own_copy/arnika}.
      */
     public Optional<Path> findClosestFolder(String query) {
-        String q = stripQuotes(query).trim().toLowerCase();
+        String q = stripQuotes(query).trim();
         if (q.isEmpty()) return Optional.empty();
-        List<String> tokens = List.of(q.split("[^\\p{L}\\p{N}]+"));
-        if (tokens.isEmpty()) return Optional.empty();
 
-        Path root = Paths.get(downloadsBasePath);
+        Path root = Paths.get(downloadsBasePath).normalize();
         if (!Files.isDirectory(root)) return Optional.empty();
+
+        Optional<Path> byTail = findByPathTail(q, root);
+        if (byTail.isPresent()) return byTail;
+
+        List<String> tokens = List.of(lastSegment(q).toLowerCase().split("[^\\p{L}\\p{N}]+"));
+        if (tokens.isEmpty()) return Optional.empty();
 
         try (Stream<Path> stream = Files.walk(root, 2)) {
             return stream
@@ -76,6 +84,25 @@ public class FolderAudioScanner {
             log.warn("Failed to search downloads folder: {}", ex.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** "/Volumes/any/own_copy/arnika" → tries root/Volumes/…, root/any/…, root/own_copy/arnika, root/arnika; first folder that exists wins. */
+    private Optional<Path> findByPathTail(String query, Path root) {
+        if (!query.startsWith("/")) return Optional.empty();
+        List<String> parts = Stream.of(query.split("/")).filter(s -> !s.isBlank()).toList();
+        if (parts.contains("..")) return Optional.empty();
+        for (int from = 0; from < parts.size(); from++) {
+            Path candidate = root.resolve(String.join("/", parts.subList(from, parts.size()))).normalize();
+            if (!candidate.equals(root) && candidate.startsWith(root) && Files.isDirectory(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String lastSegment(String path) {
+        String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        return trimmed.substring(trimmed.lastIndexOf('/') + 1);
     }
 
     private int score(String folderNameLower, List<String> tokens) {
