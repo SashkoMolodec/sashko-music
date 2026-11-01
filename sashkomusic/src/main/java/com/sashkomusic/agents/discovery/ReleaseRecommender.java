@@ -16,15 +16,17 @@ public interface ReleaseRecommender {
             that really exists — check the artist name and the release title as they are spelled in
             music catalogs (MusicBrainz/Discogs), not as a blog paraphrases them.
 
-            Output EXACTLY 3 lines, nothing else. Each line: Artist — Release Title
+            Output EXACTLY 5 lines, best pick first, nothing else. Each line: Artist — Release Title
             No numbering, no years, no labels, no commentary, no markdown, no blank lines.
             Use the spelling the catalogs use. If the ask names an era/scene/style, pick releases
-            that genuinely belong to it and differ from each other (not three records by one artist).
+            that genuinely belong to it and differ from each other (not several records by one artist).
 
             Example output for "classic detroit techno, the origins":
             Model 500 — Classics
             Derrick May — Innovator
             Juan Atkins — Deep Space
+            Cybotron — Enter
+            Inner City — Paradise
             """)
     @UserMessage("{{it}}")
     String recommend(String topic);

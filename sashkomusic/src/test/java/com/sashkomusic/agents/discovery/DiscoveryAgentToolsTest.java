@@ -80,7 +80,7 @@ class DiscoveryAgentToolsTest {
     }
 
     @Test
-    void recommendations_are_searched_one_by_one_so_each_gets_its_own_stack() {
+    void each_recommendation_is_searched_on_its_own_so_each_gets_its_own_stack() {
         whenExtracted(MetadataSearchRequest.create("", "", "", DateRange.empty(),
                 "", "", "", "", "ambient", "", "", Language.EN));
         when(recommender.recommend(anyString())).thenReturn("""
@@ -92,10 +92,35 @@ class DiscoveryAgentToolsTest {
 
         ArgumentCaptor<MetadataSearchRequest> requests = ArgumentCaptor.forClass(MetadataSearchRequest.class);
         verify(aggregatedSearch, times(2)).search(requests.capture());
+        // The searches run side by side, so the call order is not the stack order.
         assertThat(requests.getAllValues()).extracting(MetadataSearchRequest::artist)
-                .containsExactly("Model 500", "Derrick May");
+                .containsExactlyInAnyOrder("Model 500", "Derrick May");
         assertThat(requests.getAllValues()).extracting(MetadataSearchRequest::release)
-                .containsExactly("Classics", "Innovator");
+                .containsExactlyInAnyOrder("Classics", "Innovator");
+    }
+
+    @Test
+    void a_pick_the_catalogs_lack_is_replaced_by_a_spare_and_the_stacks_keep_the_recommenders_order() {
+        when(recommender.recommend(anyString())).thenReturn("""
+                Model 500 — Classics
+                Nobody — Unknown Tape
+                Derrick May — Innovator
+                Juan Atkins — Deep Space
+                Cybotron — Enter
+                """);
+        when(aggregatedSearch.search(any())).thenAnswer(invocation -> {
+            MetadataSearchRequest request = invocation.getArgument(0);
+            List<ReleaseMetadata> found = request.artist().equals("Nobody")
+                    ? List.of() : List.of(release(request.artist(), request.release()));
+            return new AggregatedSearchService.Aggregated(found, found.size(), List.of(SearchEngine.DISCOGS), 0);
+        });
+
+        tools.exploreAndRecommend("detroit techno", CONVERSATION);
+
+        ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
+        verify(contextService, times(3)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any());
+        assertThat(labels.getAllValues()).containsExactly(
+                "Model 500 — Classics", "Derrick May — Innovator", "Juan Atkins — Deep Space");
     }
 
     @Test

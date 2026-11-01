@@ -40,7 +40,7 @@ public class DiscoveryAgentTools {
     private static final int MAX_SIMILAR_STACKS = 10;
     /** A couple of spares for picks the catalogs don't have, without paying for the whole scene. */
     private static final int MAX_SIMILAR_ARTISTS_TRIED = 12;
-    /** MusicBrainz serves one request a second, so more threads would only queue on its rate limiter. */
+    /** MusicBrainz serves one request a second, so more threads would only queue on its rate limiter. Shared by explore and similar. */
     private static final int SIMILAR_SEARCH_CONCURRENCY = 3;
     private static final int MAX_LABEL_STACKS = 10;
     /** Beyond three styles the recommendation topic stops describing anything in particular. */
@@ -311,6 +311,9 @@ public class DiscoveryAgentTools {
     /** One recommended thing to look up: the pinpoint search's input plus the label its stack wears. */
     private record Candidate(String artist, String title, String label) {}
 
+    /** A researched pick the catalogs confirmed, ready to become a stack. */
+    private record ConfirmedPick(Candidate candidate, MetadataSearchRequest request, List<ReleaseMetadata> releases) {}
+
     /** A related artist's release the catalogs confirmed, ready to become a stack. */
     private record ConfirmedRelease(String label, Connection connection, MetadataSearchRequest request,
                                     List<ReleaseMetadata> releases) {}
@@ -341,29 +344,46 @@ public class DiscoveryAgentTools {
     /**
      * Turns researched picks into one card stack each. Candidates that nothing in the catalogs backs
      * up are skipped silently — a recommendation the user cannot open is worse than one fewer stack.
+     * The recommender lists spares for exactly that case; all picks are searched side by side and the
+     * first confirmed ones, in the recommender's order, become the stacks.
      */
     private String buildStacks(String conversationId, List<Candidate> candidates, String provenance) {
-        List<String> found = new ArrayList<>();
-        int attempts = 0;
-        for (Candidate candidate : candidates) {
-            // Each attempt is a full three-catalog search; one spare covers a pick the catalogs
-            // don't have, and stops "6 similar artists" from turning into a half-minute wait.
-            if (found.size() >= MAX_RECOMMENDATIONS || attempts++ > MAX_RECOMMENDATIONS) break;
-            MetadataSearchRequest request = releaseRequest(candidate.artist(), candidate.title());
-            var aggregated = aggregatedSearch.search(request);
-            if (aggregated.isEmpty()) {
-                log.info("Recommendation '{}' had no catalog match — skipped", candidate.label());
-                continue;
-            }
-            searchContextService.openStack(conversationId, candidate.label(), request,
-                    candidate.label(), aggregated.releases());
-            found.add("%s (%d releases)".formatted(candidate.label(), aggregated.releases().size()));
+        List<ConfirmedPick> confirmed;
+        try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
+            List<CompletableFuture<ConfirmedPick>> searches = candidates.stream()
+                    .map(candidate -> CompletableFuture.supplyAsync(() -> confirmPick(candidate), pool)
+                            .exceptionally(e -> {
+                                log.warn("Recommendation '{}' could not be confirmed: {}", candidate.label(), e.getMessage());
+                                return null;
+                            }))
+                    .toList();
+            confirmed = searches.stream()
+                    .map(CompletableFuture::join)
+                    .filter(Objects::nonNull)
+                    .limit(MAX_RECOMMENDATIONS)
+                    .toList();
         }
 
-        if (found.isEmpty()) {
+        if (confirmed.isEmpty()) {
             return "none of the researched picks could be confirmed in the catalogs — say so and ask for a narrower ask";
         }
+        List<String> found = new ArrayList<>();
+        for (ConfirmedPick pick : confirmed) {
+            searchContextService.openStack(conversationId, pick.candidate().label(), pick.request(),
+                    pick.candidate().label(), pick.releases());
+            found.add("%s (%d releases)".formatted(pick.candidate().label(), pick.releases().size()));
+        }
         return describeStacks(found, provenance);
+    }
+
+    private ConfirmedPick confirmPick(Candidate candidate) {
+        MetadataSearchRequest request = releaseRequest(candidate.artist(), candidate.title());
+        var aggregated = aggregatedSearch.search(request);
+        if (aggregated.isEmpty()) {
+            log.info("Recommendation '{}' had no catalog match — skipped", candidate.label());
+            return null;
+        }
+        return new ConfirmedPick(candidate, request, aggregated.releases());
     }
 
     private static MetadataSearchRequest releaseRequest(String artist, String title) {
@@ -438,11 +458,5 @@ public class DiscoveryAgentTools {
             log.warn("SearchRequestExtractor failed for query '{}': {} — falling back to raw query", query, e.getMessage());
             return new MetadataSearchRequest(null, query, "", "", DateRange.empty(), "", "", "", "", "", "", "");
         }
-    }
-
-    /** Direct entry point for the no-LLM path — same aggregated search, no engine choice to make. */
-    String runSearch(String query, String conversationId) {
-        log.info("Discovery tool: direct search query='{}' conversationId={}", query, conversationId);
-        return runStack(conversationId, extractRequest(query), query, null);
     }
 }
