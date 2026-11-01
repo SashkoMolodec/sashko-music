@@ -33,9 +33,9 @@ public interface MainAgent {
 |----------|----------|
 | Модель | `claude-sonnet-5-5` (override: `agents.main.model-name`) |
 | maxTokens | 8192 — thinking теж рахується в `max_tokens`, 2048 на Sonnet 5.5 обрізало б відповідь |
-| Effort | `low` (`agents.main.effort`) — MainAgent лише маршрутизує й пише короткий вступ; на `medium`+ Sonnet 5.5 думає перед кожною відповіддю, навіть привітанням |
+| Effort | дефолт Sonnet 5.5 (не задається). Бажане значення `low` — MainAgent лише маршрутизує й пише короткий вступ, а на `medium`+ модель думає перед кожною відповіддю, навіть привітанням. Але `output_config.effort` можна передати лише через `customParameters`, а `langchain4j` 1.10.0 серіалізує їх двічі (розгорнуто й цілим об'єктом під ключем `custom_parameters`), і Anthropic відповідає 400 на кожен запит. Повернути `low` можна після оновлення бібліотеки або власним HTTP-клієнтом, лише з перевіркою тіла запиту (`SonnetRequestBodyTest`) |
 | Thinking | adaptive (дефолт Sonnet 5.5, вимкнути не можна — `disabled` дає 400). `returnThinking` + `sendThinking`: блоки зберігаються в `AiMessage` і повертаються в API без змін — так вимагає Sonnet 5.5 у циклі тулів |
-| Refusal fallback | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) — відмова класифікатора повторюється на сервері іншою моделлю |
+| Refusal fallback | вимкнено з тієї ж причини: `fallbacks` теж ішов би через `customParameters`. Відмова класифікатора повертається як звичайна помилка моделі (див. "У разі помилки моделі") |
 | Memory window | 32 messages |
 | Memory provider | `MainChatMemoryProvider` (backed by `PostgresChatMemoryStore` → `conversation_messages` table) |
 | Prompt caching | `cacheSystemMessages=true`, `cacheTools=true` |

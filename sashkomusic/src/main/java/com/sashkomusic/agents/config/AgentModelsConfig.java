@@ -15,27 +15,25 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 
 @Configuration
 public class AgentModelsConfig {
 
     /**
-     * Sonnet 5.5 always thinks (adaptive; {@code disabled} is a 400), so the knobs are effort and
-     * thinking-block handling rather than on/off. Thinking blocks are kept on the AiMessage and sent
-     * back unchanged — the tool loop needs them — and refused requests are retried server-side.
+     * Sonnet 5.5 always thinks (adaptive; {@code disabled} is a 400), so the only knob here is
+     * thinking-block handling: they are kept on the AiMessage and sent back unchanged, because the
+     * tool loop needs them.
+     * <p>
+     * Do not pass {@code customParameters} (effort, fallbacks): langchain4j 1.10.0 writes them twice,
+     * flattened and again under {@code custom_parameters}, and Anthropic rejects every request with
+     * a 400. {@code SonnetRequestBodyTest} checks the real request body.
      */
     @Bean("sonnetChatModel")
     public ChatModel sonnetChatModel(Environment env) {
-        String effort = env.getProperty("agents.main.effort", "low");
         return builder(env, "agents.main.model-name", "claude-sonnet-5-5",
                 "agents.main.max-tokens", "8192", "main")
                 .returnThinking(true)
                 .sendThinking(true)
-                .beta("server-side-fallback-2026-07-01")
-                .customParameters(Map.of(
-                        "output_config", Map.of("effort", effort),
-                        "fallbacks", "default"))
                 .build();
     }
 
