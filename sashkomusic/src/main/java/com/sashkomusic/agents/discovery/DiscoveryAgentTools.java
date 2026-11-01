@@ -1,5 +1,6 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -131,7 +133,7 @@ public class DiscoveryAgentTools {
                 .map(relatedArtistsCollector::collect)
                 .orElse(List.of());
 
-        List<String> found = openSimilarStacks(conversationId, related);
+        List<String> found = openSimilarStacks(conversationId, seedArtist, related);
         if (found.isEmpty()) {
             log.info("No confirmed related releases for '{}' — falling back to the seed's own styles", seedArtist);
             return similarByStyle(seed, seedRequest, conversationId);
@@ -140,11 +142,12 @@ public class DiscoveryAgentTools {
     }
 
     /**
-     * Confirms one release per related artist and opens a stack for each, in the order they were
-     * ranked. The searches run side by side because ten in a row would hold the bot for a minute;
-     * the stacks are opened afterwards because openStack is a read-modify-write of the chat state.
+     * Confirms one release per related artist and opens a stack for each. The ranking decides who
+     * makes the ceiling; on screen they go by kind of connection, so the cards follow the intro.
+     * The searches run side by side because ten in a row would hold the bot for a minute; the
+     * stacks are opened afterwards because openStack is a read-modify-write of the chat state.
      */
-    private List<String> openSimilarStacks(String conversationId, List<RelatedArtist> related) {
+    private List<String> openSimilarStacks(String conversationId, String seedArtist, List<RelatedArtist> related) {
         List<ConfirmedRelease> confirmed;
         try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
             List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
@@ -159,13 +162,14 @@ public class DiscoveryAgentTools {
                     .map(CompletableFuture::join)
                     .filter(Objects::nonNull)
                     .limit(MAX_SIMILAR_STACKS)
+                    .sorted(Comparator.comparing(ConfirmedRelease::connection))
                     .toList();
         }
 
         List<String> found = new ArrayList<>();
         for (ConfirmedRelease release : confirmed) {
             searchContextService.openStack(conversationId, release.label(), release.request(),
-                    release.label(), release.releases());
+                    release.label(), release.connection().describe(seedArtist), release.releases());
             found.add("%s (%d releases)".formatted(release.label(), release.releases().size()));
         }
         return found;
@@ -185,7 +189,7 @@ public class DiscoveryAgentTools {
             return null;
         }
         String label = "%s — %s · %s".formatted(artist.name(), title.get(), artist.reason());
-        return new ConfirmedRelease(label, request, aggregated.releases());
+        return new ConfirmedRelease(label, artist.connection(), request, aggregated.releases());
     }
 
     /**
@@ -308,7 +312,8 @@ public class DiscoveryAgentTools {
     private record Candidate(String artist, String title, String label) {}
 
     /** A related artist's release the catalogs confirmed, ready to become a stack. */
-    private record ConfirmedRelease(String label, MetadataSearchRequest request, List<ReleaseMetadata> releases) {}
+    private record ConfirmedRelease(String label, Connection connection, MetadataSearchRequest request,
+                                    List<ReleaseMetadata> releases) {}
 
     private List<Candidate> researchCandidates(String topic) {
         String answer;

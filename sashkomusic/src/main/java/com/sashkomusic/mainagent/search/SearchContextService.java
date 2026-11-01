@@ -74,13 +74,18 @@ public class SearchContextService {
      */
     public String openStack(String conversationId, String rawInput, MetadataSearchRequest request,
                             String label, List<ReleaseMetadata> results) {
+        return openStack(conversationId, rawInput, request, label, null, results);
+    }
+
+    public String openStack(String conversationId, String rawInput, MetadataSearchRequest request,
+                            String label, String group, List<ReleaseMetadata> results) {
         List<ReleaseMetadata> releases = distinctById(results);
         SearchEngine source = releases.isEmpty() ? SearchEngine.MUSICBRAINZ : releases.getFirst().source();
 
         List<SearchStack> stacks = new ArrayList<>(
                 stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::stacks).orElse(List.of()));
         String stackId = "s" + (stacks.size() + 1);
-        stacks.add(new SearchStack(stackId, label, releases, 0));
+        stacks.add(new SearchStack(stackId, label, group, releases, 0));
 
         stateStore.put(conversationId, FLOW_KEY,
                 new SearchState(contextFor(source, rawInput, request, releases), releases, stacks));
@@ -236,7 +241,7 @@ public class SearchContextService {
             // Same release can sit in an older stack too — refresh it there so its tracklist is
             // fetched once no matter which stack the user browses it from.
             List<SearchStack> stacks = state.stacks().stream()
-                    .map(stack -> new SearchStack(stack.id(), stack.label(),
+                    .map(stack -> new SearchStack(stack.id(), stack.label(), stack.group(),
                             stack.releases().stream()
                                     .map(r -> r.id().equals(replacement.id()) ? replacement : r)
                                     .toList(),

@@ -23,7 +23,7 @@ public interface MainAgent {
 |----------|----------|
 | `conversationId` | `"chatId"` для DM, `"chatId:topicId"` для групового топіку |
 | `userMessage` | Вербатимний текст від користувача |
-| Return | Коротка укр. відповідь ≤600 символів, lowercase, без markdown |
+| Return | Коротка укр. відповідь ≤600 символів, lowercase, без markdown. Результат `discoverMusic` може задати власні правила вступу (довжина, що називати, які факти), і вони мають пріоритет |
 
 ---
 
@@ -58,6 +58,8 @@ Sub-агенти юзають той самий `PostgresChatMemoryStore` під
 | `downloadMusic(artist, album)` | "скачай ...", "download X" (text-based, не кнопка `DL:`) | `DownloadAgentService` (deterministic) → `MusicDownloadFlowService` |
 
 `discoverMusic` — fire-and-forget для запитів; результат (`DiscoverResult.summary()`) вже відформатований `DiscoveryAgentService`. MainAgent не парсить `DiscoverResult` структурно.
+
+Коли стосів кілька, інструкція в кінці результату перекриває загальні правила промпту: ліміт 600 символів, "власний контекст" і "назвати кожен стос". Див. `formatForMainAgent` в [discovery/spec.md](../discovery/spec.md).
 
 Side-effect пошуку: release cards → `ChatResponseAccumulator` → Telegram до того як MainAgent пише summary.
 

@@ -62,7 +62,24 @@ public class RelatedArtistsCollector {
     private final ListenBrainzClient listenBrainzClient;
 
     /** One related artist, with the reason it is related in words the card can show. */
-    public record RelatedArtist(String mbid, String name, String reason) {}
+    public record RelatedArtist(String mbid, String name, String reason, Connection connection) {}
+
+    /** Which kind of tie brought an artist in. The intro is built around these, so the words go to the model. */
+    public enum Connection {
+        DIRECT("the people behind %s, their aliases and their other bands"),
+        BRIDGE("reached through a band shared with the people behind %s"),
+        CO_LISTEN("only played by the same listeners as %s, with no known real connection");
+
+        private final String description;
+
+        Connection(String description) {
+            this.description = description;
+        }
+
+        public String describe(String seedArtist) {
+            return description.formatted(seedArtist);
+        }
+    }
 
     /** How a node is linked to its sources. Each format takes the sources' names. */
     private enum Link {
@@ -92,7 +109,8 @@ public class RelatedArtistsCollector {
 
         private RelatedArtist toRelatedArtist() {
             String named = sources.stream().limit(MAX_SOURCES_NAMED).collect(Collectors.joining(" і "));
-            return new RelatedArtist(mbid, name, link.format.formatted(named));
+            Connection connection = link == Link.BANDMATE ? Connection.BRIDGE : Connection.DIRECT;
+            return new RelatedArtist(mbid, name, link.format.formatted(named), connection);
         }
     }
 
@@ -122,7 +140,7 @@ public class RelatedArtistsCollector {
                 .collect(Collectors.toSet());
         List<RelatedArtist> fromCoListen = coListened.stream()
                 .filter(artist -> !connected.contains(artist.artistMbid()))
-                .map(artist -> new RelatedArtist(artist.artistMbid(), artist.name(), "часто слухають разом"))
+                .map(artist -> new RelatedArtist(artist.artistMbid(), artist.name(), "часто слухають разом", Connection.CO_LISTEN))
                 .toList();
         return merge(seedMbid, List.of(ranked(direct, coListenedIds), ranked(bridges, coListenedIds), fromCoListen));
     }

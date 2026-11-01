@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -25,6 +26,14 @@ import java.util.stream.Collectors;
 public class DiscoveryAgentService {
 
     private static final int MAX_STACKS_NAMED_IN_INTRO = 3;
+    /** Groups need room: each one has to say how it connects, which 600 characters cannot do for three. */
+    private static final int MAX_GROUPED_INTRO_CHARS = 900;
+    private static final String UNGROUPED = "other picks in this answer";
+    /** Left to fill the gaps itself, the model reaches for memory, and its memory of small scenes is wrong. */
+    private static final String ONLY_THESE_FACTS = "Use only the facts above: every artist, label, year, place, "
+            + "genre or scene you mention must appear in these lines, and do not describe an artist beyond them, "
+            + "however well you know it. This overrides your usual rules about length, adding your own context "
+            + "and naming every stack.";
 
     private final DiscoveryAgent discoveryAgent;
     private final SearchContextService searchContextService;
@@ -80,21 +89,50 @@ public class DiscoveryAgentService {
     /**
      * What MainAgent reads to write its intro. One stack collapses to the old aggregate line; several
      * are listed separately, because with three stacks on screen the intro has to address all three.
+     * Grouped stacks are listed by group, since the groups are the reasoning the intro has to explain.
      */
-    private static String formatForMainAgent(List<SearchStack> stacks) {
+    static String formatForMainAgent(List<SearchStack> stacks) {
         if (stacks.size() == 1) {
             return describe(stacks.getFirst().releases());
         }
+        if (stacks.stream().anyMatch(DiscoveryAgentService::hasGroup)) {
+            return formatGrouped(stacks);
+        }
         String perStack = stacks.stream()
-                .map(stack -> "• %s — %s".formatted(
-                        stack.label() == null || stack.label().isBlank() ? "стос " + stack.id() : stack.label(),
-                        describe(stack.releases())))
+                .map(DiscoveryAgentService::stackLine)
                 .collect(Collectors.joining("\n"));
         // The intro is capped at 600 characters, which ten stacks cannot each get a mention in.
         String instruction = stacks.size() > MAX_STACKS_NAMED_IN_INTRO
                 ? "Say in 2-4 sentences what connects them, without naming each one; do not list releases."
                 : "Introduce all of them in 2-4 sentences; do not list releases.";
-        return "Showed %d separate card stacks:\n%s\n%s".formatted(stacks.size(), perStack, instruction);
+        return "Showed %d separate card stacks:\n%s\n%s %s".formatted(stacks.size(), perStack, instruction, ONLY_THESE_FACTS);
+    }
+
+    private static String formatGrouped(List<SearchStack> stacks) {
+        Map<String, List<SearchStack>> groups = stacks.stream().collect(Collectors.groupingBy(
+                stack -> hasGroup(stack) ? stack.group() : UNGROUPED, LinkedHashMap::new, Collectors.toList()));
+        String perGroup = groups.entrySet().stream()
+                .map(group -> "[%s]\n%s".formatted(group.getKey(), group.getValue().stream()
+                        .map(DiscoveryAgentService::stackLine)
+                        .collect(Collectors.joining("\n"))))
+                .collect(Collectors.joining("\n"));
+        String instruction = ("Write one plain paragraph of at most %d characters, with no markdown, headings or "
+                + "lists, that goes through these groups in the order given: say how each group is connected to the "
+                + "seed and name a couple of its artists as examples. "
+                + "Be plain that co-listened artists have no known real connection. Do not list releases.")
+                .formatted(MAX_GROUPED_INTRO_CHARS);
+        return "Showed %d separate card stacks, grouped by why they were picked:\n%s\n%s %s"
+                .formatted(stacks.size(), perGroup, instruction, ONLY_THESE_FACTS);
+    }
+
+    private static boolean hasGroup(SearchStack stack) {
+        return stack.group() != null && !stack.group().isBlank();
+    }
+
+    private static String stackLine(SearchStack stack) {
+        return "• %s — %s".formatted(
+                stack.label() == null || stack.label().isBlank() ? "стос " + stack.id() : stack.label(),
+                describe(stack.releases()));
     }
 
     private static String describe(List<ReleaseMetadata> releases) {

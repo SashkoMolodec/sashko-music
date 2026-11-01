@@ -1,5 +1,6 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
@@ -136,7 +137,7 @@ class DiscoveryAgentToolsTest {
     void each_related_artist_shows_its_main_release_and_why_it_is_here() {
         whenSeedIs("Drexciya", "mbid-1");
         when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
-                new RelatedArtist("mbid-2", "Arpanet", "псевдонім Gerald Donald")));
+                new RelatedArtist("mbid-2", "Arpanet", "псевдонім Gerald Donald", Connection.DIRECT)));
         when(relatedArtists.mainRelease("mbid-2")).thenReturn(Optional.of("Wireless Internet"));
 
         String result = tools.findSimilar("Drexciya", CONVERSATION);
@@ -146,7 +147,8 @@ class DiscoveryAgentToolsTest {
         verify(aggregatedSearch).search(request.capture());
         assertThat(request.getValue().artist()).isEqualTo("Arpanet");
         assertThat(request.getValue().release()).isEqualTo("Wireless Internet");
-        verify(contextService).openStack(eq(CONVERSATION), eq(label), any(), eq(label), any());
+        verify(contextService).openStack(eq(CONVERSATION), eq(label), any(), eq(label),
+                eq(Connection.DIRECT.describe("Drexciya")), any());
         verify(recommender, never()).recommend(anyString());
         assertThat(result).contains("card stacks");
     }
@@ -155,7 +157,7 @@ class DiscoveryAgentToolsTest {
     void ten_stacks_is_a_ceiling_and_the_ranking_decides_who_makes_it() {
         whenSeedIs("Drexciya", "mbid-1");
         when(relatedArtists.collect("mbid-1")).thenReturn(IntStream.range(0, 30)
-                .mapToObj(i -> new RelatedArtist("id-" + i, "Artist " + i, "reason"))
+                .mapToObj(i -> new RelatedArtist("id-" + i, "Artist " + i, "reason", Connection.DIRECT))
                 .toList());
         when(relatedArtists.mainRelease(anyString())).thenReturn(Optional.of("Title"));
 
@@ -163,18 +165,36 @@ class DiscoveryAgentToolsTest {
 
         verify(aggregatedSearch, times(12)).search(any());
         ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
-        verify(contextService, times(10)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any());
+        verify(contextService, times(10)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), anyString(), any());
         assertThat(labels.getAllValues()).first().asString().startsWith("Artist 0 — ");
         assertThat(labels.getAllValues()).last().asString().startsWith("Artist 9 — ");
+    }
+
+    @Test
+    void the_ranking_picks_the_ten_and_the_cards_then_go_by_kind_of_connection() {
+        whenSeedIs("Jeff Mills", "mbid-1");
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
+                new RelatedArtist("a", "Millsart", "reason", Connection.DIRECT),
+                new RelatedArtist("b", "Surgeon", "reason", Connection.CO_LISTEN),
+                new RelatedArtist("c", "Robert Hood", "reason", Connection.BRIDGE),
+                new RelatedArtist("d", "X-102", "reason", Connection.DIRECT)));
+        when(relatedArtists.mainRelease(anyString())).thenReturn(Optional.of("Title"));
+
+        tools.findSimilar("Jeff Mills", CONVERSATION);
+
+        ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
+        verify(contextService, times(4)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), anyString(), any());
+        assertThat(labels.getAllValues()).extracting(label -> label.split(" — ")[0])
+                .containsExactly("Millsart", "X-102", "Robert Hood", "Surgeon");
     }
 
     @Test
     void fewer_confirmed_releases_means_fewer_stacks_with_no_padding() {
         whenSeedIs("Drexciya", "mbid-1");
         when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
-                new RelatedArtist("no-releases", "Ghost", "reason"),
-                new RelatedArtist("unconfirmed", "Unknown", "reason"),
-                new RelatedArtist("real", "Arpanet", "reason")));
+                new RelatedArtist("no-releases", "Ghost", "reason", Connection.DIRECT),
+                new RelatedArtist("unconfirmed", "Unknown", "reason", Connection.DIRECT),
+                new RelatedArtist("real", "Arpanet", "reason", Connection.DIRECT)));
         when(relatedArtists.mainRelease("no-releases")).thenReturn(Optional.empty());
         when(relatedArtists.mainRelease("unconfirmed")).thenReturn(Optional.of("Nothing"));
         when(relatedArtists.mainRelease("real")).thenReturn(Optional.of("Wireless Internet"));
@@ -187,27 +207,27 @@ class DiscoveryAgentToolsTest {
 
         tools.findSimilar("Drexciya", CONVERSATION);
 
-        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
     void one_failed_search_does_not_cost_the_rest_of_the_answer() {
         whenSeedIs("Drexciya", "mbid-1");
         when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
-                new RelatedArtist("boom", "Boom", "reason"),
-                new RelatedArtist("real", "Arpanet", "reason")));
+                new RelatedArtist("boom", "Boom", "reason", Connection.DIRECT),
+                new RelatedArtist("real", "Arpanet", "reason", Connection.DIRECT)));
         when(relatedArtists.mainRelease("boom")).thenThrow(new IllegalStateException("catalog down"));
         when(relatedArtists.mainRelease("real")).thenReturn(Optional.of("Wireless Internet"));
 
         tools.findSimilar("Drexciya", CONVERSATION);
 
-        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), anyString(), any());
     }
 
     @Test
     void related_artists_that_all_fail_fall_back_to_the_styles_on_the_seed() {
         whenSeedIs("Symphony Of Love", "mbid-1");
-        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(new RelatedArtist("ghost", "Ghost", "reason")));
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(new RelatedArtist("ghost", "Ghost", "reason", Connection.DIRECT)));
         when(relatedArtists.mainRelease("ghost")).thenReturn(Optional.empty());
         when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
                 List.of(tagged("Symphony Of Love", "Spirit Of Love", "1993", "Acid")),

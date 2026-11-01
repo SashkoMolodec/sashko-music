@@ -187,7 +187,7 @@ public class ReleaseSearchFlowService {
             var found = contextService.findStack(ctx.conversationId(), stackId);
             if (found.isPresent()) return found.get();
         }
-        return new SearchStack(stackId, null, contextService.getSearchResults(ctx.conversationId()), 0);
+        return new SearchStack(stackId, null, null, contextService.getSearchResults(ctx.conversationId()), 0);
     }
 
     private void rememberPage(ConversationContext ctx, SearchStack stack, int index) {

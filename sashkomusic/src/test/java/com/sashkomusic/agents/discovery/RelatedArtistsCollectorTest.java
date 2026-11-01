@@ -1,5 +1,6 @@
 package com.sashkomusic.agents.discovery;
 
+import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzClient;
 import com.sashkomusic.mainagent.search.client.listenbrainz.ListenBrainzSimilarArtistsResponse;
@@ -13,7 +14,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,6 +100,25 @@ class RelatedArtistsCollectorTest {
 
         assertThat(collector.collect(DREXCIYA)).filteredOn(artist -> artist.name().equals("Dopplereffekt"))
                 .extracting(RelatedArtist::reason).containsExactly("Gerald Donald у складі");
+    }
+
+    @Test
+    void every_artist_carries_the_kind_of_tie_that_brought_it_in() {
+        when(listenBrainz.findSimilarArtists(DREXCIYA)).thenReturn(List.of(
+                new ListenBrainzSimilarArtistsResponse("aphex", "Aphex Twin", null, "Person", 90),
+                new ListenBrainzSimilarArtistsResponse("doppler", "Dopplereffekt", null, "Group", 80)));
+        stubDrexciya();
+
+        Map<String, Connection> connections = collector.collect(DREXCIYA).stream()
+                .collect(Collectors.toMap(RelatedArtist::name, RelatedArtist::connection));
+
+        assertThat(connections)
+                .containsEntry("James Stinson", Connection.DIRECT)
+                .containsEntry("Arpanet", Connection.DIRECT)
+                .containsEntry("Jeff Mills", Connection.BRIDGE)
+                .containsEntry("Aphex Twin", Connection.CO_LISTEN)
+                // Also co-listened, but a real connection is the better explanation.
+                .containsEntry("Dopplereffekt", Connection.DIRECT);
     }
 
     @Test

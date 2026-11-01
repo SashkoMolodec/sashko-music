@@ -14,7 +14,7 @@ Persists to `ChatStateStore` (flow_key: `"search"`):
 ```java
 record SearchState(SearchContext context, List<ReleaseMetadata> releases, List<SearchStack> stacks)
 record SearchContext(SearchEngine source, MetadataSearchRequest request, String rawInput, List<String> releaseIds, int currentPage)
-record SearchStack(String id, String label, List<ReleaseMetadata> releases, int currentPage)
+record SearchStack(String id, String label, String group, List<ReleaseMetadata> releases, int currentPage)
 ```
 
 **Стос (`SearchStack`) — одиниця показу.** Один хід може створити кілька: "порадь щось схоже" дає окремий
@@ -34,6 +34,7 @@ record SearchStack(String id, String label, List<ReleaseMetadata> releases, int 
 | `saveSearchContext(conversationId, source, rawInput, request, results)` | Один результат без стосів (URL-резолв, photo search) |
 | `beginStacks(conversationId)` | Межа ходу: чистить список стосів, лишає активний стос живим (кнопки на старих картках далі працюють) |
 | `openStack(conversationId, rawInput, request, label, results)` | Додає стос, робить його активним, повертає `stackId` |
+| `openStack(conversationId, rawInput, request, label, group, results)` | Те саме, але стос належить до групи: `group` читає лише вступ, на картці він не друкується |
 | `getStacks(conversationId)` / `findStack(conversationId, id)` | Стоси поточного ходу |
 | `updateStackPage(conversationId, stackId, page)` | Сторінка конкретного стосу |
 | `rememberQuery(conversationId, rawInput, request)` | Запам'ятати запит **без** зміни результатів — щоб ⛏️ мав що розширювати після пустого точкового пошуку |

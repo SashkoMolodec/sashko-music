@@ -11,12 +11,14 @@ import java.util.List;
  * A turn can produce several: "порадь щось схоже" answers with one stack per recommended release,
  * each scrolled with its own ⬅️/➡️ on its own message. {@code id} is what the {@code CARD:} callback
  * carries, {@code label} is the query that built the stack (shown on the card so three stacks in a
- * row stay distinguishable).
+ * row stay distinguishable). {@code group} says what kind of pick this is, for the intro only; most
+ * stacks have none.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record SearchStack(
         String id,
         String label,
+        String group,
         List<ReleaseMetadata> releases,
         int currentPage
 ) {
@@ -25,6 +27,6 @@ public record SearchStack(
     }
 
     public SearchStack withPage(int page) {
-        return new SearchStack(id, label, releases, page);
+        return new SearchStack(id, label, group, releases, page);
     }
 }
