@@ -86,6 +86,16 @@ public class FolderAudioScanner {
         }
     }
 
+    /** The folder a typed absolute path names, as written or by its tail under the downloads root; never a fuzzy guess. */
+    public Optional<Path> findExistingFolder(String path) {
+        String p = stripQuotes(path).trim();
+        if (!p.startsWith("/")) return Optional.empty();
+        Path direct = Paths.get(p);
+        if (Files.isDirectory(direct)) return Optional.of(direct);
+        Path root = Paths.get(downloadsBasePath).normalize();
+        return Files.isDirectory(root) ? findByPathTail(p, root) : Optional.empty();
+    }
+
     /** "/Volumes/any/own_copy/arnika" → tries root/Volumes/…, root/any/…, root/own_copy/arnika, root/arnika; first folder that exists wins. */
     private Optional<Path> findByPathTail(String query, Path root) {
         if (!query.startsWith("/")) return Optional.empty();

@@ -66,6 +66,16 @@ class FolderAudioScannerTest {
         assertThat(scanner.findClosestFolder("/Volumes/../../secret")).isEmpty();
     }
 
+    @Test
+    void findExistingFolderNeverGuesses() throws Exception {
+        Path arnika = downloads("own_copy/arnika");
+
+        assertThat(scanner.findExistingFolder("/Volumes/any/own_copy/arnika")).contains(arnika);
+        assertThat(scanner.findExistingFolder(arnika.toString())).contains(arnika);
+        assertThat(scanner.findExistingFolder("/Volumes/any/own_copy/arnik")).isEmpty();
+        assertThat(scanner.findExistingFolder("arnika")).isEmpty();
+    }
+
     private Path downloads(String relative) throws Exception {
         Path base = dir.resolve("downloads");
         ReflectionTestUtils.setField(scanner, "downloadsBasePath", base.toString());

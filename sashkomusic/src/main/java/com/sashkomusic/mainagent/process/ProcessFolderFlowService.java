@@ -57,7 +57,13 @@ public class ProcessFolderFlowService {
     private final DownloadContextHolder downloadContextHolder;
 
     public List<BotResponse> handleProcessCommand(ConversationContext ctx, String rawInput) {
-        return process(ctx, audioScanner.stripProcessPrefix(rawInput), "");
+        ProcessInput input = ProcessInput.split(audioScanner.stripProcessPrefix(rawInput), this::namesFolder);
+        return process(ctx, input.folder(), input.context());
+    }
+
+    private boolean namesFolder(String candidate) {
+        return audioScanner.findExistingFolder(pathMappingService.mapProcessPath(candidate)).isPresent()
+                || audioScanner.findExistingFolder(candidate).isPresent();
     }
 
     public List<BotResponse> process(ConversationContext ctx, String folderName) {
@@ -100,7 +106,7 @@ public class ProcessFolderFlowService {
                     ? searchContextService.getReleaseMetadata(knownReleaseId, ctx.conversationId())
                     : null;
 
-            List<BotResponse> invalid = validateSearchRequest(searchRequest, folder.name());
+            List<BotResponse> invalid = validateSearchRequest(searchRequest, folder);
             if (invalid != null && knownRelease == null) return invalid;
 
             ProcessFolderSearcher.SearchResults results = invalid == null
@@ -363,15 +369,15 @@ public class ProcessFolderFlowService {
         return percentage >= 50.0 ? top.getKey() : null;
     }
 
-    private List<BotResponse> validateSearchRequest(MetadataSearchRequest searchRequest, String folderName) {
+    private List<BotResponse> validateSearchRequest(MetadataSearchRequest searchRequest, FolderAudioScanner.ResolvedFolder folder) {
         if (searchRequest == null || searchRequest.release().isEmpty()) {
             return List.of(BotResponse.text("""
                     ❌ не вдалося розпізнати назву релізу з папки: `%s`
 
-                    допиши контексту:
-                    • /process Artist - Album
-                    • /process Artist - Album касета 1990 україна
-                    """.formatted(folderName)));
+                    допиши контексту після шляху:
+                    • `/process %s Artist - Album`
+                    • `/process %s Artist - Album касета 1990 україна`
+                    """.formatted(folder.name(), folder.path(), folder.path())));
         }
         return null;
     }
