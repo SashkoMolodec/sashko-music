@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  *       reason.</li>
  * </ol>
  */
-final class SearchRequestNormalizer {
+public final class SearchRequestNormalizer {
 
     private SearchRequestNormalizer() {}
 
@@ -44,7 +44,7 @@ final class SearchRequestNormalizer {
             "^\\s*(?:лейбл|label)\\s+(.+?)\\s*$",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
 
-    static MetadataSearchRequest normalize(String rawQuery, MetadataSearchRequest request) {
+    public static MetadataSearchRequest normalize(String rawQuery, MetadataSearchRequest request) {
         if (request == null) return null;
         String raw = rawQuery == null ? "" : rawQuery;
         return fillRecordingForBareTitle(raw, dropBracketedCountry(raw, keepLabelAsLabel(raw, request)));

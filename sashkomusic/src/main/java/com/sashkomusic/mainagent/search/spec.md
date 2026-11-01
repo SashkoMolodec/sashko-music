@@ -114,6 +114,11 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 ### `DiscogsClient` — structured params
 `addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). `mapToDomain` calls `filterByRequestedArtist` right after the type filter — Discogs' `artist=` param is a relevance hint, not an exact filter, so a query like "Alpi - Discontinuity" returns releases from every unrelated Discogs artist entity disambiguated as "Alpi", "Alpi (2)", "Alpi (3)", etc; the filter keeps only results whose extracted artist string case-insensitively equals the requested artist, falling back to the unfiltered list if that empties it (loose-but-present beats exact-but-empty). Grouping in `mapToDomain` keys on **artist + title**, not title alone — a title-only key merged unrelated releases that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known John Cage piece with a dozen reissues AND an unrelated electronic release; grouping by title alone mashed both into one release with garbage combined years/tags/label). Uses `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
 **Free-text `q` для трекових запитів (`textSearchForTrack`):** те, що юзер вбиває в пошук discogs.com, потрапляє в повнотекстовий індекс `q`, який покриває **треклист** — артиста й назву кожного треку. Структурні параметри цього не вміють: `artist=` бачить лише альбомного артиста, тому "Adjust (BE) - Mist" там дає нуль і деградує до голого `track=mist` по всіх артистах світу (реальний баг: 49 чужих релізів з треком "Mist"). Тому при `artist` + `recording` додатково виконується `q="<artist> <recording>"`, а результат мапиться з `request.withoutArtist()` — фільтр по альбомному артисту тут навмисно вимкнений, бо ціль саме компіляції з `Various`. Результати обох пошуків зливаються по `id`.
+**Кожен вхід користувацького пошуку нормалізує запит** — `DiscoveryAgentTools.search`, `searchDefault` (фото),
+`switchStrategyAndSearch` (⛏️) і `findForDownload` (текстове "скачай"): `SearchRequestNormalizer.normalize(raw,
+extractor.extract(raw))`. Раніше це робив лише шлях через DiscoveryAgent, і "скачай Adjust (BE) …" знову йшов як
+`country=BE`. `/process` (`ProcessFolderSearcher`) свідомо без нормалізатора: там назва папки — це альбом, і
+дописаний `recording` лише додав би пошуків треків.
 `textSearchForTrack` спрацьовує **тільки** коли заповнені і `artist`, і `recording` — тому порожній `recording`
 мовчки вимикає єдиний шлях до треків компіляцій. Це не лікується в клієнті: поле приходить із екстрактора, і
 гарантує його `SearchRequestNormalizer` (див. [agents/discovery/spec.md](../../agents/discovery/spec.md)).
@@ -126,8 +131,8 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 
 | Метод | Призначення |
 |-------|-------------|
-| `searchDefault(ctx, rawInput)` | Точковий агрегований пошук → один стос. Порожньо → `rememberQuery` + повідомлення з кнопками (💿, ⛏️) |
-| `searchWithFallback(query, engines...)` | Послідовний fallback по движках — лишився для download flow (`MusicDownloadFlowService`) |
+| `searchDefault(ctx, rawInput)` | Точковий агрегований пошук → один стос (вхід — фото-пошук). Порожньо → `rememberQuery` + повідомлення з кнопками (💿, ⛏️) |
+| `findForDownload(query)` | Текстове "скачай X" (`MusicDownloadFlowService.getDownloadOptions`): той самий точковий `AggregatedSearchService.search` з валідацією, що й картки. Раніше тут був послідовний MB → Discogs без валідації — перший непорожній каталог, і качався чужий реліз |
 | `switchStrategyAndSearch(ctx)` | DIG_DEEPER: той самий запит з вимкненою валідацією, стос з label "усе підряд" |
 | `buildStackResponse(ctx, stackId, page)` | Картка конкретного стосу; `stackId == null` → активний стос |
 | `buildPageResponse(ctx, page)` | Синонім `buildStackResponse(ctx, null, page)` |

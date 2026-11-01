@@ -232,7 +232,7 @@ public class MusicDownloadFlowService {
     public List<BotResponse> getDownloadOptions(ConversationContext ctx, String query) {
         log.info("Direct download request for conversationId={}, query: {}", ctx.conversationId(), query);
 
-        var searchResult = releaseSearchFlowService.searchWithFallback(query, SearchEngine.MUSICBRAINZ, SearchEngine.DISCOGS);
+        var searchResult = releaseSearchFlowService.findForDownload(query);
 
         if (searchResult.releases().isEmpty()) {
             return List.of(BotResponse.text("😔 **нич взагалі не знайшов у світі авдіо, спробуй по-іншому.**"));

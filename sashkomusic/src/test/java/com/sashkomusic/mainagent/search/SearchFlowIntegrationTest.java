@@ -13,6 +13,7 @@ import com.sashkomusic.shared.model.SearchEngine;
 import com.sashkomusic.shared.model.TrackMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -154,6 +155,36 @@ class SearchFlowIntegrationTest {
         searchFlow.searchDefault(CTX, "Adjust (BE) - Mist");
 
         verify(discogs, never()).getTracks(any(ReleaseMetadata.class));
+    }
+
+    @Test
+    void a_discogs_disambiguator_is_not_searched_as_a_country_outside_the_discovery_agent_either() {
+        // The model reads "(BE)" as country=BE and fills only `release` — the photo search used to
+        // send exactly that to the catalogs.
+        when(extractor.extract(any())).thenReturn(MetadataSearchRequest.create(
+                "Adjust (BE)", "Fractured Elements", "", DateRange.empty(),
+                "", "", "BE", "", "", "", "", Language.EN));
+
+        searchFlow.searchDefault(CTX, "Adjust (BE) - Fractured Elements");
+
+        ArgumentCaptor<MetadataSearchRequest> sent = ArgumentCaptor.forClass(MetadataSearchRequest.class);
+        verify(discogs).searchReleases(sent.capture());
+        assertThat(sent.getValue().country()).isEmpty();
+        assertThat(sent.getValue().recording()).isEqualTo("Fractured Elements");
+    }
+
+    @Test
+    void a_text_download_only_picks_a_release_that_is_the_one_asked_for() {
+        lookingFor("Roberto Carlos", "Roberto Carlos 1976", "");
+        when(musicBrainz.searchReleases(any())).thenReturn(List.of(
+                release("mb-1", "Roberto Carlos Tribute Band", "Roberto Carlos 1976 Live", SearchEngine.MUSICBRAINZ)));
+        when(discogs.searchReleases(any())).thenReturn(List.of(
+                release("dg-1", "Roberto Carlos", "Roberto Carlos 1976", SearchEngine.DISCOGS)));
+
+        var result = searchFlow.findForDownload("Roberto Carlos 1976");
+
+        assertThat(result.releases()).extracting(ReleaseMetadata::id).containsExactly("dg-1");
+        assertThat(result.engine()).isEqualTo(SearchEngine.DISCOGS);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.sashkomusic.mainagent.search;
 
 import com.sashkomusic.agents.discovery.SearchRequestExtractor;
+import com.sashkomusic.agents.discovery.SearchRequestNormalizer;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.shared.model.DateRange;
@@ -58,7 +59,7 @@ public class ReleaseSearchFlowService {
      * {@link AggregatedSearchService}.
      */
     public List<BotResponse> searchDefault(ConversationContext ctx, String rawInput) {
-        var searchRequest = searchRequestExtractor.extract(rawInput);
+        var searchRequest = extract(rawInput);
         var aggregated = aggregatedSearch.search(searchRequest);
 
         if (aggregated.isEmpty()) {
@@ -86,7 +87,7 @@ public class ReleaseSearchFlowService {
             return List.of(BotResponse.text("нема що копати — спочатку пошукай щось."));
         }
         if (searchRequest == null) {
-            searchRequest = searchRequestExtractor.extract(rawInput);
+            searchRequest = extract(rawInput);
         }
 
         var aggregated = aggregatedSearch.searchLoose(searchRequest);
@@ -109,22 +110,20 @@ public class ReleaseSearchFlowService {
                 .formatted(aggregated.rawCount(), rawInput);
     }
 
-    public SearchResult searchWithFallback(String query, SearchEngine... engines) {
-        var searchRequest = searchRequestExtractor.extract(query);
+    /**
+     * Text "скачай X" picks the first release it gets, so that release has to be the one asked for —
+     * the same validated three-catalog search the cards use, not the first catalog to answer.
+     */
+    public SearchResult findForDownload(String query) {
+        var searchRequest = extract(query);
+        var releases = aggregatedSearch.search(searchRequest).releases();
+        SearchEngine engine = releases.isEmpty() ? null : releases.getFirst().source();
+        return new SearchResult(releases, engine, searchRequest);
+    }
 
-        for (SearchEngine engine : engines) {
-            log.info("Trying to search in {}", engine);
-            var searchEngineService = searchEngines.get(engine);
-            var releases = searchEngineService.searchReleases(searchRequest);
-
-            if (!releases.isEmpty()) {
-                log.info("Found {} releases in {}", releases.size(), engine);
-                return new SearchResult(releases, engine, searchRequest);
-            }
-        }
-
-        log.warn("No releases found in any engine for query: {}", query);
-        return new SearchResult(List.of(), null, searchRequest);
+    /** The extractor is an LLM and two of its rules never hold — the normalizer settles them in code. */
+    private MetadataSearchRequest extract(String rawInput) {
+        return SearchRequestNormalizer.normalize(rawInput, searchRequestExtractor.extract(rawInput));
     }
 
     public record SearchResult(List<ReleaseMetadata> releases, SearchEngine engine,
