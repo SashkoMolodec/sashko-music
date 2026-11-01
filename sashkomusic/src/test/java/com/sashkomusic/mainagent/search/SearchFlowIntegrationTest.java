@@ -27,7 +27,10 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringJUnitConfig
@@ -48,6 +51,7 @@ class SearchFlowIntegrationTest {
     @BeforeEach
     void reset() {
         contextService.clearAllCaches();
+        clearInvocations(musicBrainz, discogs, bandcamp);
         lookingFor("Burial", "Untrue", "");
         when(musicBrainz.searchReleases(any())).thenReturn(List.of());
         when(discogs.searchReleases(any())).thenReturn(List.of());
@@ -95,6 +99,61 @@ class SearchFlowIntegrationTest {
 
         assertThat(resp.getFirst().text()).contains("radio universe");
         assertThat(contextService.getSearchResults(CTX.conversationId())).hasSize(1);
+    }
+
+    @Test
+    void the_same_single_from_every_catalog_does_not_switch_off_the_tracklist_check() {
+        lookingFor("Adjust (BE)", "Mist", "Mist");
+        var compilation = release("dg-c", "Various", "Radio Universe - Ultima", SearchEngine.DISCOGS);
+        when(musicBrainz.searchReleases(any())).thenReturn(List.of(release("mb-1", "Adjust (BE)", "Mist", SearchEngine.MUSICBRAINZ)));
+        when(bandcamp.searchReleases(any())).thenReturn(List.of(release("bc-1", "Adjust (BE)", "Mist", SearchEngine.BANDCAMP)));
+        when(discogs.searchReleases(any())).thenReturn(List.of(
+                release("dg-1", "Adjust (BE)", "Mist", SearchEngine.DISCOGS),
+                release("dg-2", "Adjust (BE)", "Mist", SearchEngine.DISCOGS),
+                release("dg-3", "Adjust (BE)", "Mist", SearchEngine.DISCOGS),
+                compilation));
+        when(discogs.getTracks(compilation)).thenReturn(List.of(new TrackMetadata(1, "Adjust (BE)", "Mist")));
+
+        searchFlow.searchDefault(CTX, "Adjust (BE) - Mist");
+
+        assertThat(contextService.getSearchResults(CTX.conversationId()))
+                .extracting(ReleaseMetadata::title).contains("Radio Universe - Ultima");
+    }
+
+    @Test
+    void titles_that_merely_contain_the_word_do_not_switch_off_the_tracklist_check() {
+        lookingFor("Adjust (BE)", "Mist", "Mist");
+        var compilation = release("dg-c", "Various", "Radio Universe - Ultima", SearchEngine.DISCOGS);
+        when(discogs.searchReleases(any())).thenReturn(List.of(
+                release("dg-1", "Adjust (BE)", "Mist Remixes", SearchEngine.DISCOGS),
+                release("dg-2", "Adjust (BE)", "Mist Rework", SearchEngine.DISCOGS),
+                release("dg-3", "Adjust (BE)", "Mist Edits", SearchEngine.DISCOGS),
+                release("dg-4", "Adjust (BE)", "Mist Dubs", SearchEngine.DISCOGS),
+                release("dg-5", "Adjust (BE)", "Mist Versions", SearchEngine.DISCOGS),
+                compilation));
+        when(discogs.getTracks(compilation)).thenReturn(List.of(new TrackMetadata(1, "Adjust (BE)", "Mist")));
+
+        searchFlow.searchDefault(CTX, "Adjust (BE) - Mist");
+
+        assertThat(contextService.getSearchResults(CTX.conversationId()))
+                .extracting(ReleaseMetadata::title).contains("Radio Universe - Ultima");
+    }
+
+    @Test
+    void five_distinct_exact_matches_skip_the_tracklist_check() {
+        lookingFor("Adjust (BE)", "Mist", "Mist");
+        var compilation = release("dg-c", "Various", "Radio Universe - Ultima", SearchEngine.DISCOGS);
+        when(discogs.searchReleases(any())).thenReturn(List.of(
+                release("dg-1", "Adjust (BE)", "Mist", SearchEngine.DISCOGS),
+                release("dg-2", "Adjust (BE) & A", "Mist", SearchEngine.DISCOGS),
+                release("dg-3", "Adjust (BE) & B", "Mist", SearchEngine.DISCOGS),
+                release("dg-4", "Adjust (BE) & C", "Mist", SearchEngine.DISCOGS),
+                release("dg-5", "Adjust (BE) & D", "Mist", SearchEngine.DISCOGS),
+                compilation));
+
+        searchFlow.searchDefault(CTX, "Adjust (BE) - Mist");
+
+        verify(discogs, never()).getTracks(any(ReleaseMetadata.class));
     }
 
     @Test

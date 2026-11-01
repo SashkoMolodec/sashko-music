@@ -37,7 +37,7 @@ public class AggregatedSearchService {
     private static final int LABEL_CAP = 60;
     /** Tracklist lookups cost one API call each — this is the ceiling per search. */
     private static final int TRACKLIST_BUDGET = 8;
-    /** Below this many confirmed matches a track query is worth spending the tracklist budget on. */
+    /** Below this many distinct EXACT/TRACK matches a track query is worth spending the tracklist budget on. */
     private static final int DEEP_CHECK_THRESHOLD = 5;
     private static final int ENGINE_TIMEOUT_SECONDS = 25;
 
@@ -110,7 +110,7 @@ public class AggregatedSearchService {
         }));
 
         int checked = 0;
-        if (scored.size() < DEEP_CHECK_THRESHOLD && !undecided.isEmpty()) {
+        if (strongMatches(scored) < DEEP_CHECK_THRESHOLD && !undecided.isEmpty()) {
             List<ReleaseMetadata> probe = undecided.stream().limit(TRACKLIST_BUDGET).toList();
             checked = probe.size();
             scored.addAll(confirmByTracklist(request, probe));
@@ -165,6 +165,20 @@ public class AggregatedSearchService {
                 .toList();
 
         return futures.stream().map(CompletableFuture::join).filter(java.util.Objects::nonNull).toList();
+    }
+
+    /**
+     * How many distinct releases settle the question without a tracklist lookup. A {@code PARTIAL}
+     * (title merely contains the word) says nothing about where the track lives, and the same single
+     * from three catalogs is one answer, not three — counting either let a lone single switch off the
+     * search for the compilation that actually carries the track.
+     */
+    private static long strongMatches(List<Scored> scored) {
+        return dedupe(scored.stream()
+                .filter(s -> s.match() == ReleaseMatchValidator.Match.EXACT
+                        || s.match() == ReleaseMatchValidator.Match.TRACK)
+                .map(Scored::release)
+                .toList()).size();
     }
 
     /** Same album from two catalogs is one entry — the higher-priority source keeps the slot. */
