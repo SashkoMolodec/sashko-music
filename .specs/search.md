@@ -58,7 +58,8 @@ User: "порадь щось з класичного detroit techno"
 ```
 `findSimilar` ("хочу схоже на X") будує кандидатів без LLM: зв'язки сцени з MusicBrainz (учасники, псевдоніми,
 спільні групи) плюс ListenBrainz co-listen. Один споріднений артист = один реліз = один стос, на картці видно
-причину. Максимум 10; це стеля, а не ціль. Алгоритм: [agents/discovery/spec.md](../sashkomusic/src/main/java/com/sashkomusic/agents/discovery/spec.md).
+причину. Максимум 10; це стеля, а не ціль. Картки йдуть групами за типом зв'язку (прямі, містки, co-listen), і
+вступ описує ці групи, спираючись лише на передані дані. Алгоритм: [agents/discovery/spec.md](../sashkomusic/src/main/java/com/sashkomusic/agents/discovery/spec.md).
 
 Кандидат, який не підтвердився в каталогах, мовчки пропускається — рекомендація, яку не можна відкрити,
 гірша за на один стос менше.
@@ -126,7 +127,7 @@ flow_key = "search"
 payload  = SearchState {
   context:  SearchContext { source, request, rawInput, releaseIds[], currentPage }   ← активний стос
   releases: ReleaseMetadata[]                                                        ← активний стос
-  stacks:   SearchStack[] { id, label, releases[], currentPage }                      ← усі стоси ходу
+  stacks:   SearchStack[] { id, label, group, releases[], currentPage }               ← усі стоси ходу
 }
 ```
 

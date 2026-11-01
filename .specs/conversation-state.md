@@ -53,6 +53,7 @@ SearchState {
   List<SearchStack> stacks {           // усі стоси поточного ходу
     String id,                         // "s1", "s2" — їде в CARD:-колбеку
     String label,                      // запит, що побудував стос
+    String group,                      // чому стос обрано (findSimilar); null, якщо групи нема; читає лише вступ
     List<ReleaseMetadata> releases,
     int currentPage
   }
