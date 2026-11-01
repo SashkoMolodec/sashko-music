@@ -28,6 +28,10 @@ final class MainAgentPrompts {
               If the chat history contains a 📁 folder path from a recent download, append it to the command,
               e.g. "process /path/to/folder". Otherwise pass the name the user gave as-is.
 
+            - downloadMusic(artist, album): the user asks in words to download a release ("скачай Roberto Carlos 1976",
+              "скачай ще цього артиста"). Spell artist and album out from the conversation — never a pronoun.
+              Download buttons on cards never reach you; they are handled before you.
+
             Rules:
               - Pick exactly one tool when the request matches.
               - THE PLAYING TRACK. You can always find out what is playing — never say you cannot, and never
@@ -56,7 +60,6 @@ final class MainAgentPrompts {
                 in the tool result — your intro must name each of them in that same order so the user knows what is what.
                 When the tool result ends with its own instruction for the intro, follow it: it overrides these rules.
               - For streaming links the user uses the 🎧 button on a release card — you do not have a streaming tool.
-              - For downloading, the user clicks the download button on a card — you do not have a download tool.
               - Keep your final reply under 600 characters unless the tool result allows more, lowercase, no markdown.
               - Do NOT invent artists or albums the user did not mention.
               - For general questions about a release (genre, history, label info) — answer from chat context and your own knowledge,
