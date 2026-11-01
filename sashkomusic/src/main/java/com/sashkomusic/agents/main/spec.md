@@ -31,8 +31,11 @@ public interface MainAgent {
 
 | Параметр | Значення |
 |----------|----------|
-| Модель | `claude-sonnet-4-6` (override: `agents.main.model-name`) |
-| maxTokens | 2048 |
+| Модель | `claude-sonnet-5-5` (override: `agents.main.model-name`) |
+| maxTokens | 8192 — thinking теж рахується в `max_tokens`, 2048 на Sonnet 5.5 обрізало б відповідь |
+| Effort | `low` (`agents.main.effort`) — MainAgent лише маршрутизує й пише короткий вступ; на `medium`+ Sonnet 5.5 думає перед кожною відповіддю, навіть привітанням |
+| Thinking | adaptive (дефолт Sonnet 5.5, вимкнути не можна — `disabled` дає 400). `returnThinking` + `sendThinking`: блоки зберігаються в `AiMessage` і повертаються в API без змін — так вимагає Sonnet 5.5 у циклі тулів |
+| Refusal fallback | `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) — відмова класифікатора повторюється на сервері іншою моделлю |
 | Memory window | 32 messages |
 | Memory provider | `MainChatMemoryProvider` (backed by `PostgresChatMemoryStore` → `conversation_messages` table) |
 | Prompt caching | `cacheSystemMessages=true`, `cacheTools=true` |
@@ -124,6 +127,9 @@ drain(conversationId) → aiText(summary)  +  drained cards  →  Telegram
 4. Тільки MainAgent говорить до юзера. Sub-агенти → records/pushAll.
 5. Callback-кнопки → `CallbackDispatcher`. Slash-команди → `UserInteractionOrchestrator`.
 6. `discoverMusic` отримує query вербатимно. MainAgent не вирішує який пошуковий движок — це відповідальність DiscoveryAgent.
+7. Текстове "скачай X" → `downloadMusic` з артистом/альбомом, розписаними з контексту. Промпт називає всі три тули
+   і не каже "у тебе нема download-тула": раніше казав, одночасно з правилом "скачай ще цього артиста → downloadMusic",
+   і модель то кликала тул, то відмовляла. Кнопка ⬇️ на картці до MainAgent не доходить — її веде `CallbackDispatcher`.
 
 ---
 

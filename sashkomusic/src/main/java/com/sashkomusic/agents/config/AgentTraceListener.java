@@ -112,13 +112,13 @@ public class AgentTraceListener implements ChatModelListener {
         return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
-    // Anthropic pricing per million tokens (May 2026): Sonnet 4.6 / Haiku 4.5
+    // Anthropic pricing per million tokens (Nov 2026): Sonnet 5.5 / Haiku 4.5; cache write = 5-minute tier
     private static double estimateCostUsd(String agent, int input, int output, int cacheRead, int cacheWrite) {
         boolean haiku = agent.toLowerCase().contains("haiku") || agent.toLowerCase().contains("discovery");
-        double inputPrice  = haiku ? 1.00  : 3.00;
-        double outputPrice = haiku ? 5.00  : 15.00;
-        double cacheReadP  = haiku ? 0.10  : 0.30;
-        double cacheWriteP = haiku ? 1.25  : 3.75;
+        double inputPrice  = haiku ? 1.00  : 2.00;
+        double outputPrice = haiku ? 5.00  : 10.00;
+        double cacheReadP  = haiku ? 0.10  : 0.20;
+        double cacheWriteP = haiku ? 1.25  : 2.50;
         return (input * inputPrice + output * outputPrice + cacheRead * cacheReadP + cacheWrite * cacheWriteP) / 1_000_000.0;
     }
 

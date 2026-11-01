@@ -15,14 +15,28 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 public class AgentModelsConfig {
 
+    /**
+     * Sonnet 5.5 always thinks (adaptive; {@code disabled} is a 400), so the knobs are effort and
+     * thinking-block handling rather than on/off. Thinking blocks are kept on the AiMessage and sent
+     * back unchanged — the tool loop needs them — and refused requests are retried server-side.
+     */
     @Bean("sonnetChatModel")
     public ChatModel sonnetChatModel(Environment env) {
-        return build(env, "agents.main.model-name", "claude-sonnet-4-6",
-                "agents.main.max-tokens", "2048");
+        String effort = env.getProperty("agents.main.effort", "low");
+        return builder(env, "agents.main.model-name", "claude-sonnet-5-5",
+                "agents.main.max-tokens", "8192", "main")
+                .returnThinking(true)
+                .sendThinking(true)
+                .beta("server-side-fallback-2026-07-01")
+                .customParameters(Map.of(
+                        "output_config", Map.of("effort", effort),
+                        "fallbacks", "default"))
+                .build();
     }
 
     @Bean("haikuChatModel")
