@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew :sashkomusic:test
 
 # Run a single test class
-./gradlew :sashkomusic:test --tests com.sashkomusic.agents.library.LibraryCommandParserTest
+./gradlew :sashkomusic:test --tests com.sashkomusic.agents.discovery.SearchRequestNormalizerTest
 
 # Run locally (requires infrastructure via docker compose)
 ./gradlew :sashkomusic:bootRun
@@ -274,7 +274,7 @@ FlowService  →  domain Service  →  Port / Repository
 Test infra: `spring-boot-starter-test` (JUnit 5, AssertJ, Mockito) + WireMock. No Testcontainers / H2 — design tests so they do not need real PostgreSQL or LLM.
 
 **Pure unit tests**
-- Plain JUnit. Use for parsers, formatters, calculators (e.g. `LibraryCommandParserTest`).
+- Plain JUnit. Use for parsers, formatters, calculators (e.g. `SearchRequestNormalizerTest`).
 - Prefer `@ParameterizedTest` + `@CsvSource` over many similar `@Test`s.
 
 **Integration tests — `@SpringJUnitConfig` slice (preferred for FlowServices)**
@@ -305,7 +305,7 @@ class MyTest {
 ```
 
 **What lives where**
-- `LibraryCommandParserTest` — pure unit example (regex parser, 23 cases).
+- `SearchRequestNormalizerTest` — pure unit example (`@ParameterizedTest` over query shapes).
 - `SearchFlowIntegrationTest` — slice example (MusicBrainz → Discogs fallback, engine switch).
 - `DownloadFlowIntegrationTest` — slice + event capture (`DL:` callback → `FilesSearchTaskEvent`).
 - `LibraryFlowIntegrationTest` — slice + event capture + `InMemoryChatStateStore` (`/np` UI + `RATE:` → `RateTrackTaskEvent` + Navidrome call).

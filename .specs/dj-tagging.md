@@ -118,8 +118,8 @@ AddCommentTaskEvent → libraryagent AddCommentListener
 ## manageLibrary tool (LLM path)
 
 Тегування з вільного тексту ("постав цьому треку 5 зірок") **не реалізоване**: у `LibraryAgentTools`
-немає ні `rateTrack`, ні `setEnergy`, ні `setFunction`, ні `addComment`, а `LibraryCommandParser`
-(regex-парсер під це) ніде не викликається — живий лишився тільки його тест. Єдиний шлях запису
+немає ні `rateTrack`, ні `setEnergy`, ні `setFunction`, ні `addComment` (мертвий regex-парсер
+`LibraryCommandParser` під це видалено). Єдиний шлях запису
 DJ-тегів — кнопки на картці `/np`.
 
 `LibraryAgentPrompts.SYSTEM` **не має** перелічувати ці тули: промпт із фантомним тулом гірший за
