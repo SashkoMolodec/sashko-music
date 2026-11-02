@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -93,6 +94,17 @@ class MarkerRemovalFlowTest {
         assertThat(holder.get(CTX.conversationId())).isEmpty();
         assertThat(flow.select(CTX, 0).get(0).text()).isEqualTo("контекст не знайдено — тисни 🏷 знову.");
         assertThat(events.stream(AddMarkerTaskEvent.class)).isEmpty();
+    }
+
+    /** Track tags load lazily, and the dispatcher's entry point calls showRemovable past the proxy. */
+    @Test
+    void callback_entry_points_run_in_a_transaction() throws Exception {
+        assertThat(SmartlistLabelFlowService.class
+                .getMethod("showRemovableFromCallback", ConversationContext.class, String.class, Integer.class)
+                .isAnnotationPresent(Transactional.class)).isTrue();
+        assertThat(SmartlistLabelFlowService.class
+                .getMethod("removeSelected", ConversationContext.class, int.class)
+                .isAnnotationPresent(Transactional.class)).isTrue();
     }
 
     private static Track track(long id, String comment) {

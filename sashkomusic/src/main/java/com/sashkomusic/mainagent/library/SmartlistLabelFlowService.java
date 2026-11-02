@@ -60,6 +60,8 @@ public class SmartlistLabelFlowService {
         return buildPage(all, 0, null, mode, targetId);
     }
 
+    /** Transactional itself: the dispatcher enters here, and the call to showRemovable bypasses the proxy. */
+    @Transactional
     public List<BotResponse> showRemovableFromCallback(ConversationContext ctx, String data, Integer messageId) {
         String[] p = data.split(":", 2);
         return showRemovable(ctx, p[0], Long.parseLong(p[1]), messageId);
