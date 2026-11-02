@@ -55,7 +55,7 @@ attribution lines from the session. Never force-push, and never push if the test
 | `com.sashkomusic.config` | Cross-cutting Spring config (`AsyncConfig` — `asyncExecutor` `ThreadPoolTaskExecutor`) | Domain logic, feature wiring |
 | `com.sashkomusic.events` | Spring Application Event records — **flat**: fields live on the event itself, no `XxxDto payload` envelope. Events carrying a conversation implement `shared.ConversationScoped` for `chatId()`. | Logic — events are pure data; envelope records; `*Producer` beans |
 | `com.sashkomusic.shared` | Shared kernel — types more than one package owns: `model` (`ReleaseMetadata`, `TrackMetadata`, `MetadataSearchRequest`, `SearchEngine`, `Language`, `DateRange`), `download` (`DownloadEngine`, `DownloadOption`), `task` (cross-package task payloads consumed by domain services), `ConversationScoped`. | Spring beans, logic, anything owned by exactly one package |
-| `com.sashkomusic.agents` | LLM agents (`main`, `discovery`) + deterministic agent services (`download`, `library`). Shared `contract` records + `bridge` accumulator. | Telegram I/O outside `bridge`; direct DB access |
+| `com.sashkomusic.agents` | LLM agents (`main`, `library`), MainAgent's discovery toolset (`discovery`), the per-turn `turn` package (`AgentTurn`, `ProgressNotifier`). | Telegram I/O outside `turn`; direct DB access (JPA repositories) |
 | `com.sashkomusic.mainagent` | Telegram bot entry, slash commands, FlowServices (search / download / library / streaming / process — orchestration only), session state, AI extractors that fit mainagent's concerns (`SearchRequestExtractor`, `DownloadBatchAnalyzer`). The `process` sub-package keeps **only** the Telegram-facing orchestration for `/process` and `/reprocess` (Flow / ContextHolder / OngoingFlow / messaging). All filesystem inspection + `.release-metadata.json` IO + folder-name LLM extraction belongs in libraryagent. | Direct DB access, file system ops |
 | `com.sashkomusic.downloadagent` | Soulseek/Bandcamp/Qobuz/Apple Music/YouTube Music download coordination, MusicSourcePort implementations | Telegram logic, user session state |
 | `com.sashkomusic.libraryagent` | File system watching, audio metadata extraction, DB persistence (Track/Release/Artist/Tag), tag-change detection, audio-analyzer REST bridge, `.release-metadata.json` read/write (Reader+Writer live together), folder-name LLM extraction (`FolderNameParser`), filesystem-based release identification (`ReleaseIdentifierService`). Owns the outbound clients its domain calls: `client/` — `NavidromeClient`, `ITunesAgentClient`, `AudioAnalyzerClient` (+ their `config/`). | Download coordination, Telegram |
@@ -66,13 +66,11 @@ attribution lines from the session. Never force-push, and never push if the test
 
 ```
 com.sashkomusic.agents
-├── contract           ← sealed AgentRequest / AgentResponse records (A2A-ready surface)
-├── config             ← Sonnet + Haiku ChatModel beans, memory providers, trace listener
-├── bridge             ← ChatResponseAccumulator — per-chatId BotResponse buffer drained by TelegramChatBot
-├── main               ← MainAgent @AiService (Sonnet) + MainAgentTools (delegates to sub-agents)             — see spec.md
-├── discovery          ← DiscoveryAgent @AiService (Haiku) + DiscoveryAgentTools (search engines + history)  — see spec.md
-├── download           ← DownloadAgentService — deterministic, wraps MusicDownloadFlowService                 — see spec.md
-└── library            ← LibraryAgent @AiService (Haiku) + LibraryAgentTools (search/move/trash/DJ tagging)  — see spec.md
+├── config             ← Sonnet / Haiku / web-search ChatModel beans, memory providers, trace listener
+├── turn               ← AgentTurn — one free-text turn, handed to every tool via InvocationParameters
+├── main               ← MainAgent @AiService (Sonnet) + MainAgentTools (library, download) + MainAgentService — see spec.md
+├── discovery          ← DiscoveryTools — MainAgent's search/recommend/similar/research tools (no LLM agent)   — see spec.md
+└── library            ← LibraryAgent @AiService (Haiku) + LibraryAgentTools (search/move/trash/smartlists)     — see spec.md
 ```
 
 ### Spec-Driven Development
@@ -86,7 +84,7 @@ agent:
 **Non-negotiable:** every code change inside `com.sashkomusic.agents` MUST include
 a corresponding `spec.md` update in the same edit session — no exceptions.
 This applies to: adding/removing/renaming tools, changing tool parameters or behavior,
-changing which path (LLM vs direct) a service takes, changing contracts (`*Request`/`*Result`).
+changing which path (LLM vs direct) a service takes, changing what a tool shows through `AgentTurn`.
 If you changed agent code without updating the spec, fix the spec before doing anything else.
 
 `spec.md` is the source of truth for agent contracts — code reviews and tests
@@ -94,10 +92,10 @@ must match it. If you find a code-vs-spec divergence, fix the spec OR the code
 in the same change.
 
 Decision split:
-- Free-text NL → `MainAgent.chat()` (LLM picks one tool) → optionally delegates to `DiscoveryAgent` (LLM) or to `DownloadAgentService` / `LibraryAgentService` (no LLM).
+- Free-text NL → `MainAgentService.chat()` → `MainAgent` (LLM) calls its own discovery tools, `downloadMusic` (no LLM), or delegates to `LibraryAgent` (LLM) via `manageLibrary`.
 - Button callbacks (`DL:`, `RATE:`, `STREAM:`, `PAGE:`, …) are routed by `mainagent.bot.CallbackDispatcher` (prefix → handler map) directly to FlowServices.
 - Slash commands (`/np`, `/process`, `/reprocess`) and the `стоп` keyword bypass the LLM and go straight to FlowServices via `UserInteractionOrchestrator`. No web app handler — no `/app` command, no `telegram.webapp.url`.
-- Only `MainAgent` talks to the user — sub-agents return records / push `BotResponse` into `ChatResponseAccumulator`.
+- Only `MainAgent` talks to the user — tools return text for it and put cards into the `AgentTurn` (`turn.show`, card stacks); `MainAgentService` lays out intro → shown cards → stack cards.
 
 ## Telegram Entry Layer
 
@@ -106,7 +104,7 @@ TelegramChatBot.consume
   ├─ text → UserInteractionOrchestrator.handleUserRequest
   │         ├─ for each OngoingFlow → if appliesTo → handle (multi-turn dialogue)
   │         ├─ slash command / "стоп"
-  │         └─ runMainAgent → MainAgent.chat → tools → accumulator drain
+  │         └─ runMainAgent → MainAgentService.chat → MainAgent + tools (AgentTurn) → reply + cards
   └─ callback → UserInteractionOrchestrator.handleCallback → CallbackDispatcher.dispatch
 ```
 
@@ -230,8 +228,7 @@ FlowService  →  domain Service  →  Port / Repository
 - `*ContextHolder` — per-chat/session state for one workflow only. Singleton bean, persisted through `ChatStateStore` (one `FLOW_KEY` per holder). Survives JVM restart. Do NOT use in-process `Map<Long, T>` for any state that the user would notice after a restart.
 - `*Listener` — event transport only. No business decisions. There are no `*Producer` classes: publishers inject `ApplicationEventPublisher` and call `publishEvent(new SomeEvent(...))` directly. Do not reintroduce a bean whose only job is to log and republish.
 - `*Handler` (e.g. `DownloadFlowHandler`) — one strategy implementation. Injected via `Map<Engine, Handler>`.
-- LangChain4j agent interface (`MainAgent`, `DiscoveryAgent`) — system prompt is a `String` constant in a sibling `*Prompts` class; tools are a sibling `*Tools` Spring component; built in a `*Config` via `AiServices.builder()`.
-- Agent contracts (`AgentRequest` / `AgentResponse`) live in `agents.contract`. Sub-agents return their typed `*Result` record; transports may be swapped (in-process → A2A HTTP) without changing callers.
+- LangChain4j agent interface (`MainAgent`, `LibraryAgent`) — system prompt is a `String` constant in a sibling `*Prompts` class; tools are a sibling `*Tools` Spring component; built in a `*Config` via `AiServices.builder()`. The interface method takes `InvocationParameters` (`AgentTurn.parameters()`); a tool that needs the conversation or shows cards declares an `InvocationParameters` parameter and reads `AgentTurn.of(...)` — never `@ToolMemoryId` plus suffix parsing, never a singleton buffer.
 
 ## Coding Practices
 
@@ -270,7 +267,7 @@ FlowService  →  domain Service  →  Port / Repository
 - A `*Service` that exists only to call 2–3 other services is overhead. Inline into the caller (e.g. the `clearAllCaches` lesson — `UtilFlowService` was inlined into `UserInteractionOrchestrator`).
 
 **Match prompt location to consumer**
-- Single-purpose LangChain4j interfaces live next to their caller package, not in a shared `ai/` bag. `SearchRequestExtractor` lives under `agents.discovery`; `DownloadBatchAnalyzer` under `mainagent.download`; `FolderNameParser` under `mainagent.process`.
+- Single-purpose LangChain4j interfaces live next to their caller package, not in a shared `ai/` bag. `SearchRequestExtractor`, `ReleaseRecommender` and `MusicResearcher` live under `agents.discovery`; `DownloadBatchAnalyzer` under `mainagent.download`; `FolderNameParser` under `mainagent.process`.
 
 ## Testing
 
@@ -328,8 +325,7 @@ When adding a new flow test, mirror one of the above — do NOT introduce `@Spri
 4. `mainagent/download/<Source>DownloadFlowHandler.java` — новий `DownloadFlowHandler`
 5. `mainagent/download/config/DownloadSourceConfig.java` — зареєструвати в map
 6. Інші handlers (`QobuzDownloadFlowHandler`, `YouTubeMusicDownloadFlowHandler`) — додати кнопку в `buildSearchResultsResponse`
-7. `agents/download/spec.md` — оновити таблицю джерел
-8. `mainagent/download/spec.md` — оновити таблицю handlers і кнопки
+7. `mainagent/download/spec.md` — оновити таблицю handlers і кнопки
 
 ### Нова slash-команда або OngoingFlow
 1. `mainagent/bot/UserInteractionOrchestrator` — додати routing (тільки для slash-команд; OngoingFlow — без змін тут)
@@ -344,8 +340,9 @@ When adding a new flow test, mirror one of the above — do NOT introduce `@Spri
 
 ### Новий tool у MainAgent
 1. `agents/main/spec.md` — описати tool (умова, параметри, return, side-effect) **ДО коду**
-2. `MainAgentTools` — додати `@Tool` метод
-3. Якщо новий sub-agent — новий `*AgentService` + `agents/*/spec.md`
+2. `MainAgentTools` (бібліотека/завантаження) або `DiscoveryTools` (пошук) — додати `@Tool` метод; картки — через `AgentTurn`
+3. `MainAgentPrompts` — правило, коли його кликати
+4. Новий LLM sub-agent — тільки якщо йому потрібна власна пам'ять і великий окремий набір тулів (як `LibraryAgent`); інакше це тул MainAgent
 
 ### Нова Spring подія між пакетами
 1. `events/` — новий **плаский** record-клас події (поля прямо на події, без `XxxDto payload`).

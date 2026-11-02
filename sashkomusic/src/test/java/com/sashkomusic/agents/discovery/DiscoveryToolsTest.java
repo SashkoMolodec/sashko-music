@@ -2,6 +2,8 @@ package com.sashkomusic.agents.discovery;
 
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
+import com.sashkomusic.agents.turn.AgentTurn;
+import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -28,9 +31,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class DiscoveryAgentToolsTest {
+class DiscoveryToolsTest {
 
-    private static final String CONVERSATION = "42:d";
+    private static final String CONVERSATION = "42";
 
     private final AggregatedSearchService aggregatedSearch = mock(AggregatedSearchService.class);
     private final SearchContextService contextService = mock(SearchContextService.class);
@@ -39,9 +42,13 @@ class DiscoveryAgentToolsTest {
 
     private final MusicBrainzClient musicBrainz = mock(MusicBrainzClient.class);
     private final RelatedArtistsCollector relatedArtists = mock(RelatedArtistsCollector.class);
+    private final MusicResearcher researcher = mock(MusicResearcher.class);
 
-    private final DiscoveryAgentTools tools = new DiscoveryAgentTools(
-            aggregatedSearch, contextService, extractor, recommender, musicBrainz, relatedArtists);
+    private final DiscoveryTools tools = new DiscoveryTools(
+            aggregatedSearch, contextService, extractor, recommender, musicBrainz, relatedArtists, researcher);
+
+    private final List<String> progress = new ArrayList<>();
+    private final AgentTurn turn = new AgentTurn(ConversationContext.dm(42L), progress::add);
 
     @BeforeEach
     void alwaysFindSomething() {
@@ -60,10 +67,10 @@ class DiscoveryAgentToolsTest {
                 Juan Atkins — Deep Space
                 """);
 
-        String result = tools.search("detroit techno класичне", CONVERSATION);
+        String result = tools.search("detroit techno класичне", turn.parameters());
 
         verify(recommender).recommend("detroit techno класичне");
-        verify(contextService, times(3)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        verify(contextService, times(3)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
         assertThat(result).contains("card stacks");
     }
 
@@ -72,11 +79,11 @@ class DiscoveryAgentToolsTest {
         whenExtracted(MetadataSearchRequest.create("Burial", "Untrue", "", DateRange.empty(),
                 "", "", "", "", "", "", "", Language.EN));
 
-        String result = tools.search("Burial Untrue", CONVERSATION);
+        String result = tools.search("Burial Untrue", turn.parameters());
 
         verify(recommender, never()).recommend(anyString());
-        verify(contextService).openStack(eq(CONVERSATION), eq("Burial Untrue"), any(), eq(null), any());
-        assertThat(result).contains("found 1 matching releases");
+        verify(contextService).openStack(eq(CONVERSATION), eq("Burial Untrue"), any(), eq(null), any(), any());
+        assertThat(result).startsWith("showed 1 card stack for 'Burial Untrue'");
     }
 
     @Test
@@ -88,7 +95,7 @@ class DiscoveryAgentToolsTest {
                 Derrick May — Innovator
                 """);
 
-        tools.exploreAndRecommend("ambient", CONVERSATION);
+        tools.exploreAndRecommend("ambient", turn.parameters());
 
         ArgumentCaptor<MetadataSearchRequest> requests = ArgumentCaptor.forClass(MetadataSearchRequest.class);
         verify(aggregatedSearch, times(2)).search(requests.capture());
@@ -115,10 +122,10 @@ class DiscoveryAgentToolsTest {
             return new AggregatedSearchService.Aggregated(found, found.size(), List.of(SearchEngine.DISCOGS), 0);
         });
 
-        tools.exploreAndRecommend("detroit techno", CONVERSATION);
+        tools.exploreAndRecommend("detroit techno", turn.parameters());
 
         ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
-        verify(contextService, times(3)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any());
+        verify(contextService, times(3)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any(), any());
         assertThat(labels.getAllValues()).containsExactly(
                 "Model 500 — Classics", "Derrick May — Innovator", "Juan Atkins — Deep Space");
     }
@@ -129,7 +136,7 @@ class DiscoveryAgentToolsTest {
                 "", "", "", "", "techno", "", "", Language.EN));
         when(recommender.recommend(anyString())).thenReturn("Detroit techno began in the mid-1980s.");
 
-        String result = tools.exploreAndRecommend("techno", CONVERSATION);
+        String result = tools.exploreAndRecommend("techno", turn.parameters());
 
         verify(aggregatedSearch, never()).search(any());
         assertThat(result).contains("no concrete releases");
@@ -150,11 +157,11 @@ class DiscoveryAgentToolsTest {
                 Emmanuel Top — Acid Phase
                 """);
 
-        String result = tools.findSimilar("Symphony Of Love — Spirit Of Love", CONVERSATION);
+        String result = tools.findSimilar("Symphony Of Love — Spirit Of Love", turn.parameters());
 
         // Styles capped at 3, year turned into a decade — a usable recommendation topic.
         verify(recommender).recommend("Acid Techno Trance 1990s");
-        verify(contextService, times(2)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        verify(contextService, times(2)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
         assertThat(result).contains("card stacks");
     }
 
@@ -165,7 +172,7 @@ class DiscoveryAgentToolsTest {
                 new RelatedArtist("mbid-2", "Arpanet", "псевдонім Gerald Donald", Connection.DIRECT)));
         when(relatedArtists.mainRelease("mbid-2")).thenReturn(Optional.of("Wireless Internet"));
 
-        String result = tools.findSimilar("Drexciya", CONVERSATION);
+        String result = tools.findSimilar("Drexciya", turn.parameters());
 
         String label = "Arpanet — Wireless Internet · псевдонім Gerald Donald";
         ArgumentCaptor<MetadataSearchRequest> request = ArgumentCaptor.forClass(MetadataSearchRequest.class);
@@ -175,7 +182,10 @@ class DiscoveryAgentToolsTest {
         verify(contextService).openStack(eq(CONVERSATION), eq(label), any(), eq(label),
                 eq(Connection.DIRECT.describe("Drexciya")), any());
         verify(recommender, never()).recommend(anyString());
-        assertThat(result).contains("card stacks");
+        assertThat(result).startsWith("showed 1 card stack — " + label)
+                .contains("Source: artists connected to Drexciya");
+        assertThat(turn.openedStacks()).extracting(stack -> stack.group())
+                .containsExactly(Connection.DIRECT.describe("Drexciya"));
     }
 
     @Test
@@ -186,7 +196,7 @@ class DiscoveryAgentToolsTest {
                 .toList());
         when(relatedArtists.mainRelease(anyString())).thenReturn(Optional.of("Title"));
 
-        tools.findSimilar("Drexciya", CONVERSATION);
+        tools.findSimilar("Drexciya", turn.parameters());
 
         verify(aggregatedSearch, times(12)).search(any());
         ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
@@ -205,7 +215,7 @@ class DiscoveryAgentToolsTest {
                 new RelatedArtist("d", "X-102", "reason", Connection.DIRECT)));
         when(relatedArtists.mainRelease(anyString())).thenReturn(Optional.of("Title"));
 
-        tools.findSimilar("Jeff Mills", CONVERSATION);
+        tools.findSimilar("Jeff Mills", turn.parameters());
 
         ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
         verify(contextService, times(4)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), anyString(), any());
@@ -230,7 +240,7 @@ class DiscoveryAgentToolsTest {
                     0, List.of(), 0);
         });
 
-        tools.findSimilar("Drexciya", CONVERSATION);
+        tools.findSimilar("Drexciya", turn.parameters());
 
         verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), anyString(), any());
     }
@@ -244,7 +254,7 @@ class DiscoveryAgentToolsTest {
         when(relatedArtists.mainRelease("boom")).thenThrow(new IllegalStateException("catalog down"));
         when(relatedArtists.mainRelease("real")).thenReturn(Optional.of("Wireless Internet"));
 
-        tools.findSimilar("Drexciya", CONVERSATION);
+        tools.findSimilar("Drexciya", turn.parameters());
 
         verify(contextService, times(1)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), anyString(), any());
     }
@@ -259,7 +269,7 @@ class DiscoveryAgentToolsTest {
                 1, List.of(SearchEngine.DISCOGS), 0));
         when(recommender.recommend(anyString())).thenReturn("Hardfloor — TB Resuscitation");
 
-        tools.findSimilar("Symphony Of Love", CONVERSATION);
+        tools.findSimilar("Symphony Of Love", turn.parameters());
 
         verify(recommender).recommend("Acid 1990s");
     }
@@ -273,10 +283,10 @@ class DiscoveryAgentToolsTest {
                         release("X-102", "Discovers the Rings of Saturn")),
                 3, List.of(SearchEngine.DISCOGS), 0));
 
-        String result = tools.search("лейбл Tresor", CONVERSATION);
+        String result = tools.search("лейбл Tresor", turn.parameters());
 
         verify(recommender, never()).recommend(anyString());
-        verify(contextService, times(2)).openStack(eq(CONVERSATION), eq("лейбл Tresor"), any(), eq("Tresor"), any());
+        verify(contextService, times(2)).openStack(eq(CONVERSATION), eq("лейбл Tresor"), any(), eq("Tresor"), any(), any());
         assertThat(result).contains("Waveform Transmission Vol. 1", "Discovers the Rings of Saturn")
                 .doesNotContain("Vol. 3");
     }
@@ -288,9 +298,9 @@ class DiscoveryAgentToolsTest {
                 IntStream.range(0, 20).mapToObj(i -> release("Artist " + i, "Title")).toList(),
                 20, List.of(SearchEngine.DISCOGS), 0));
 
-        tools.search("лейбл Warp", CONVERSATION);
+        tools.search("лейбл Warp", turn.parameters());
 
-        verify(contextService, times(10)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any());
+        verify(contextService, times(10)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
     }
 
     @Test
@@ -299,10 +309,11 @@ class DiscoveryAgentToolsTest {
         when(aggregatedSearch.search(any())).thenReturn(
                 new AggregatedSearchService.Aggregated(List.of(), 7, List.of(), 0));
 
-        String result = tools.search("лейбл Nonexistent", CONVERSATION);
+        String result = tools.search("лейбл Nonexistent", turn.parameters());
 
         verify(contextService).rememberQuery(eq(CONVERSATION), eq("лейбл Nonexistent"), any());
-        verify(contextService, never()).openStack(anyString(), anyString(), any(), anyString(), any());
+        verify(contextService, never()).openStack(any(), any(), any(), any(), any(), any());
+        verify(contextService, never()).beginStacks(any());
         assertThat(result).contains("none were the requested");
     }
 
@@ -314,10 +325,91 @@ class DiscoveryAgentToolsTest {
         when(aggregatedSearch.search(any())).thenReturn(
                 new AggregatedSearchService.Aggregated(List.of(), 0, List.of(), 0));
 
-        String result = tools.findSimilar("Nonexistent Thing", CONVERSATION);
+        String result = tools.findSimilar("Nonexistent Thing", turn.parameters());
 
         verify(recommender, never()).recommend(anyString());
         assertThat(result).contains("spelling");
+    }
+
+    @Test
+    void the_first_stack_of_a_turn_drops_the_previous_answers_stacks_and_only_the_first() {
+        when(recommender.recommend(anyString())).thenReturn("""
+                Model 500 — Classics
+                Derrick May — Innovator
+                Juan Atkins — Deep Space
+                """);
+
+        tools.exploreAndRecommend("detroit techno", turn.parameters());
+        whenExtracted(MetadataSearchRequest.create("Burial", "Untrue", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+        tools.search("Burial Untrue", turn.parameters());
+
+        verify(contextService, times(1)).beginStacks(CONVERSATION);
+        assertThat(turn.openedStacks()).extracting(stack -> stack.label())
+                .containsExactly("Model 500 — Classics", "Derrick May — Innovator", "Juan Atkins — Deep Space", null);
+    }
+
+    @Test
+    void a_turn_that_finds_nothing_leaves_the_stacks_already_in_the_chat_alone() {
+        whenExtracted(MetadataSearchRequest.create("Nobody", "Nothing", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+        when(aggregatedSearch.search(any())).thenReturn(
+                new AggregatedSearchService.Aggregated(List.of(), 0, List.of(), 0));
+
+        String result = tools.search("Nobody Nothing", turn.parameters());
+
+        verify(contextService, never()).beginStacks(any());
+        assertThat(turn.openedStacks()).isEmpty();
+        assertThat(result).contains("nothing found", "artist=Nobody");
+    }
+
+    @Test
+    void several_searches_in_one_turn_ping_the_chat_once() {
+        whenExtracted(MetadataSearchRequest.create("Burial", "Untrue", "", DateRange.empty(),
+                "", "", "", "", "", "", "", Language.EN));
+
+        tools.search("Burial Untrue", turn.parameters());
+        tools.search("Burial Rival Dealer", turn.parameters());
+
+        assertThat(progress).containsExactly("🔍 шукаю...");
+    }
+
+    @Test
+    void research_relays_the_sourced_answer_and_opens_no_stacks() {
+        when(researcher.research("history of the Tresor label")).thenReturn("tresor заснував дімітрі гегеманн у 1991.");
+
+        String result = tools.researchMusic("history of the Tresor label", turn.parameters());
+
+        assertThat(result).isEqualTo("tresor заснував дімітрі гегеманн у 1991.");
+        assertThat(progress).containsExactly("🌐 шукаю в мережі...");
+        assertThat(turn.openedStacks()).isEmpty();
+    }
+
+    @Test
+    void failed_research_says_so_instead_of_inviting_an_answer_from_memory() {
+        when(researcher.research(anyString())).thenThrow(new IllegalStateException("529 overloaded"));
+
+        assertThat(tools.researchMusic("хто такий Gerald Donald", turn.parameters()))
+                .contains("could not check");
+    }
+
+    @Test
+    void the_tracklist_comes_from_the_release_on_screen_in_the_main_conversation() {
+        ReleaseMetadata first = release("Burial", "Untrue");
+        ReleaseMetadata second = new ReleaseMetadata("discogs:release:2", null, SearchEngine.DISCOGS, "Burial",
+                "Rival Dealer", 100, List.of("2013"), List.of("EP"), 0, 0, 1, List.of(), null, List.of(), null);
+        when(contextService.getSearchResults(CONVERSATION)).thenReturn(List.of(first, second));
+        when(contextService.getCurrentPage(CONVERSATION)).thenReturn(1);
+        when(contextService.getMetadataWithTracks("discogs:release:2", CONVERSATION)).thenReturn(second.withTracks(
+                List.of(new com.sashkomusic.shared.model.TrackMetadata(1, "Burial", "Rival Dealer"))));
+
+        assertThat(tools.getTrackList(turn.parameters())).isEqualTo("Burial — Rival Dealer (2013)\n1. Rival Dealer");
+    }
+
+    @Test
+    void a_tool_outside_a_turn_is_a_wiring_bug() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tools.getTrackList(null))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private void whenExtracted(MetadataSearchRequest request) {

@@ -1,5 +1,6 @@
 package com.sashkomusic.mainagent.bot.newtopic;
 
+import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.mainagent.bot.BotResponse;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import dev.langchain4j.data.message.AiMessage;
@@ -101,7 +102,7 @@ public class NewTopicFlowService {
     }
 
     private String buildContextFromAllMemories(String conversationId) {
-        for (String id : List.of(conversationId, conversationId + ":d", conversationId + ":lib")) {
+        for (String id : List.of(conversationId, LibraryAgentService.memoryId(conversationId))) {
             String context = buildContextString(chatMemoryStore.getMessages(id));
             if (!context.isBlank()) return context;
         }

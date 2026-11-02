@@ -9,6 +9,7 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.events.ChatContextClearedEvent;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,7 @@ import java.util.stream.Collectors;
 /**
  * ChatMemoryProvider для MainAgent. Кешує MessageWindowChatMemory по conversationId,
  * щоб in-memory view залишалась узгодженою зі store. Дає append-методи для cross-agent
- * context (коли /discovery або /library пишуть summary у memory MainAgent).
+ * context (коли /library чи /np пишуть summary у memory MainAgent).
  * Automatically summarizes the main conversation when it approaches MAX_MESSAGES.
  */
 @Slf4j
@@ -48,10 +49,7 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
                         .id(id)
                         .chatMemoryStore(store)
                         .build());
-        String id = memoryId.toString();
-        if (!id.endsWith(":d") && !id.endsWith(":lib")) {
-            maybeSummarize(memoryId, memory);
-        }
+        maybeSummarize(memoryId, memory);
         return memory;
     }
 
@@ -145,11 +143,10 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
         store.deleteMessages(memoryId);
     }
 
-    /** Clear chat memory across all agent suffixes ({@code ""}, {@code ":d"}, {@code ":lib"}) for one conversation. */
+    /** Clear the conversation's memory in both agents — MainAgent's and LibraryAgent's. */
     public void clearAllForConversation(String conversationId) {
         clear(conversationId);
-        store.deleteMessages(conversationId + ":d");
-        store.deleteMessages(conversationId + ":lib");
+        store.deleteMessages(LibraryAgentService.memoryId(conversationId));
     }
 
     @EventListener

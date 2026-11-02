@@ -1,5 +1,6 @@
 package com.sashkomusic.agents.main;
 
+import com.sashkomusic.agents.discovery.DiscoveryTools;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
@@ -14,11 +15,12 @@ public class MainAgentConfig {
     public MainAgent mainAgent(
             @Qualifier("sonnetChatModel") ChatModel sonnetChatModel,
             @Qualifier("mainMemoryProvider") ChatMemoryProvider memoryProvider,
-            MainAgentTools tools) {
+            MainAgentTools tools,
+            DiscoveryTools discoveryTools) {
         return AiServices.builder(MainAgent.class)
                 .chatModel(sonnetChatModel)
                 .chatMemoryProvider(memoryProvider)
-                .tools(tools)
+                .tools(tools, discoveryTools)
                 .build();
     }
 }

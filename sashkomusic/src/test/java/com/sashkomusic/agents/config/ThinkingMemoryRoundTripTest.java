@@ -25,7 +25,7 @@ class ThinkingMemoryRoundTripTest {
                 .thinking("")
                 .attributes(Map.of("thinking_signature", "sig-abc"))
                 .toolExecutionRequests(List.of(ToolExecutionRequest.builder()
-                        .id("toolu_1").name("discoverMusic").arguments("{\"query\":\"Burial\"}").build()))
+                        .id("toolu_1").name("search").arguments("{\"query\":\"Burial\"}").build()))
                 .build();
 
         List<ChatMessage> restored = ChatMessageDeserializer.messagesFromJson(

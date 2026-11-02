@@ -19,7 +19,7 @@ CallbackDispatcher
   ├─ "SEARCH_ALT:" → MusicDownloadFlowService.handleSearchAlternative()
   └─ "CANCEL_DL:"  → MusicDownloadFlowService.handleDownloadCancel()
 
-DownloadAgentService (через MainAgentTools.downloadMusic)
+MainAgentTools.downloadMusic (текстове "скачай X", без LLM-посередника)
   └─ MusicDownloadFlowService.getDownloadOptions()   ← пошук без попереднього DL: кліку
 
 FileSearchResultEvent (async, від downloadagent)

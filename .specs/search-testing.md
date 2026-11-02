@@ -34,19 +34,19 @@ Claude дивиться в логи, як запит ішов, і звіряє �
 | Що юзер зробив | Хто обробляє | Скільки стосів |
 |---|---|---|
 | Вільний текст | `UserInteractionOrchestrator` → `MainAgent` (Sonnet) → тул | залежить від тулу |
-| → `discoverMusic(query)` | `DiscoveryAgent` (Haiku) → один із тулів нижче | |
+| → discovery-тули MainAgent (`DiscoveryTools`) | Sonnet обирає тул сам | |
 | &nbsp;&nbsp;`search` — названа річ | екстрактор → нормалізатор → `AggregatedSearchService` | 1 (до 3 за відповідь) |
 | &nbsp;&nbsp;`search("лейбл X")` | те саме, `isLabelLookup()` → `searchLabel` | до 10 |
 | &nbsp;&nbsp;`search` без анкера | guard перекидає в `exploreAndRecommend` | до 3 |
 | &nbsp;&nbsp;`exploreAndRecommend` | `ReleaseRecommender` (web search) → пошук кожного | до 3 |
 | &nbsp;&nbsp;`findSimilar` | `RelatedArtistsCollector` (MusicBrainz + ListenBrainz) | до 10 |
 | &nbsp;&nbsp;`digDeeper`, `getTrackList` | останній запит без валідації / треки поточного релізу | 1 / 0 |
-| &nbsp;&nbsp;вбудований `web_search` | дослідницьке питання без прохання знайти | 0 |
+| &nbsp;&nbsp;`researchMusic` | дослідницьке питання без прохання знайти → `MusicResearcher` (Haiku + web_search) | 0 |
 | → `manageLibrary` | `LibraryAgent` (власна бібліотека, не каталоги) | 0 |
-| → `downloadMusic(artist, album)` | `DownloadAgent` → `findForDownload` (той самий валідований пошук) | 0 карток |
+| → `downloadMusic(artist, album)` | `MusicDownloadFlowService` → `findForDownload` (той самий валідований пошук) | 0 карток |
 | Посилання `http(s)://…` | `showByUrl` → `MetadataUrlFetcher` (без LLM) | 1 |
 | Фото | `PhotoSearchFlowService` → vision-екстрактор → `searchDefault` | 1 |
-| `/discovery <запит>` | напряму `DiscoveryAgentService`, без MainAgent | як тул |
+| `/discovery <запит>` | аліас вільного тексту: `MainAgentService.chat(<запит>)` | як тул |
 | Кнопки `CARD:`, `DIG_DEEPER`, `DL:`, `STREAM:` | `CallbackDispatcher`, без LLM | |
 
 Шлях пошуку (`search`):
@@ -96,7 +96,7 @@ Claude дивиться в логи, як запит ішов, і звіряє �
 | ID | Запит | Очікуваний шлях | Дивись |
 |---|---|---|---|
 | C1 | `порадь щось з класичного detroit techno` | `exploreAndRecommend`, `ReleaseRecommender` → 3 рядки → пошук кожного | До 3 стосів, кожен з label `Artist — Title`; усі підтверджені каталогами |
-| C2 | `пошукай detroit techno, класичне, витоки, в інтернеті` | **STEP 0**: перший же виклик — тул, не есе | Haiku не пішов у `web_search` і не написав прозу |
+| C2 | `пошукай detroit techno, класичне, витоки, в інтернеті` | правило 1 промпту: перший же виклик — пошуковий тул, не есе | MainAgent не пішов у `researchMusic` і не написав прозу |
 | C3 | `хочу дарк ембієнт 90-х` | explore, `style` + `dateRange` | Рекомендації справді з 90-х |
 | C4 | `trance 1994` через `search` | guard: `no artist/title anchor — handling as an explore ask` | Спрацював перекид, а не browse-дамп |
 | C5 | дуже вузька тема (`польський дарк-джаз 1973`) | `research returned no concrete releases` або менше 3 стосів | Відповідь чесна ("знайшов менше"), без вигаданих релізів |
@@ -112,9 +112,9 @@ Claude дивиться в логи, як запит ішов, і звіряє �
 | D3 | обскурний артист/вініл, якого нема в MusicBrainz | `No confirmed related releases … falling back to the seed's own styles` → `Style fallback` → explore | Стилі взято з картки seed-релізу; результат не пустий |
 | D4 | `схоже на альбом Burial — Untrue` | **відомо**: береться лише артист (`seedArtist`), назва релізу впливає лише на fallback | Два різні альбоми одного артиста дадуть однаковий результат |
 | D5 | `хочу схоже` при відкритій картці | seed = поточний реліз (`currentRelease`), екстрактор не викликається | Seed — саме той реліз, що на екрані |
-| D6 | `схоже до того що зараз грає?` | `manageLibrary("що зараз грає")`, потім `discoverMusic("<артист> — <назва>")` | Два виклики за хід (дозволений виняток); ім'я не "те що грає" |
-| D7 | `хочу щось таке як мій альбом X` | `manageLibrary("розкажи про X")` → `discoverMusic` з жанрами/лейблом | Два виклики; жанри з бібліотеки потрапили в запит |
-| D8 | `маю щось схоже на X у бібліотеці?` | **тільки** `manageLibrary`, без `discoverMusic` | Контрольний кейс роутингу: слово "в мене/маю" не має вести в каталоги |
+| D6 | `схоже до того що зараз грає?` | `manageLibrary("що зараз грає")`, потім `findSimilar("<артист> — <назва>")` | Два виклики за хід (дозволений виняток); ім'я не "те що грає" |
+| D7 | `хочу щось таке як мій альбом X` | `manageLibrary("розкажи про X")` → `findSimilar` / `exploreAndRecommend` з жанрами/лейблом | Два виклики; жанри з бібліотеки потрапили в запит |
+| D8 | `маю щось схоже на X у бібліотеці?` | **тільки** `manageLibrary`, без `findSimilar` | Контрольний кейс роутингу: слово "в мене/маю" не має вести в каталоги |
 | D9 | `схоже на Tresor` (лейбл) або `схоже на dub techno` (жанр) | **відомо**: окремої логіки нема; назва йде в пошук артиста | Мовчки пішло до тезки-артиста чи до fallback; чи вступ це чесно каже |
 | D10 | будь-який D | кожен `Related artist '…' skipped` у логах | Скільки кандидатів відсіялось і чому (нема релізу / нема в каталогах); чи 10 — наслідок, чи стеля |
 
@@ -131,10 +131,10 @@ Claude дивиться в логи, як запит ішов, і звіряє �
 | E7 | фото з підписом `копай` | `🔎 розпізнав з фото: …`, далі прямий пошук Soulseek (`directSoulseekSearchFlowService`), не картки каталогів | Підпис спрацював саме як ключове слово; без підпису йде E6 |
 | E8 | `копай Burial Untrue` (текст на початку) | `directSoulseekSearchFlowService` — **Soulseek, не каталоги** | Не плутати з ⛏️ |
 | E9 | `скачай Roberto Carlos 1976` | `downloadMusic` → `Direct download request` → `findForDownload` (валідований) → `Auto-selected release` | Обраний реліз той самий, що показав би `search`; не "перший непорожній каталог" |
-| E10 | `/discovery знайди Burial` | `Discovery agent handling request`, без MainAgent | **Відомо**: summary показується сирий, з інструкціями для вступу |
+| E10 | `/discovery знайди Burial` | той самий хід MainAgent, що й `знайди Burial` | Вступ + картки, як у вільному тексті; жодних сирих інструкцій для вступу |
 | E11 | кнопка ⛏️ після пустого/вузького пошуку | `DIG_DEEPER` → `searchLoose`, стос "усе підряд" | Показано більше, ніж було; запит той самий |
 | E12 | `які треки на цьому альбомі` при відкритій картці | `getTrackList`, без `search` | Треки саме `currentPage` активного стосу; повний нумерований список |
-| E13 | `розкажи про лейбл Tresor` (без "знайди") | вбудований `web_search`, 0 стосів, рядок `🌐 server-tool-results` | Не було виклику `search`; агент не пише "дивись картки" |
+| E13 | `розкажи про лейбл Tresor` (без "знайди") | `researchMusic`, 0 стосів, `[agent=web-search]` з `🌐 server-tool-results` | Не було виклику `search`; агент не пише "дивись картки" |
 
 ### F. Стан, межі, збої
 
@@ -157,16 +157,15 @@ Claude дивиться в логи, як запит ішов, і звіряє �
 
 ```bash
 cd /opt/sashko-music/sashko-music
-docker compose logs --since 10m sashkomusic 2>&1 | grep -E "Discovery agent handling|tool=|Aggregated search|skipped|falling back|Style fallback|failed|anchor|server-tool|TOTAL|ERROR|Fetching|URL not|Direct download|Auto-selected"
+docker compose logs --since 10m sashkomusic 2>&1 | grep -E "tool=|Aggregated search|skipped|falling back|Style fallback|failed|anchor|server-tool|TOTAL|ERROR|Fetching|URL not|Direct download|Auto-selected"
 ```
 
 Що яка лінія каже:
 
 | Рядок у лозі | Що з нього видно |
 |---|---|
-| `[agent=main] tool=discoverMusic args=…` | Що MainAgent передав далі (чи розрезолвив займенники) |
-| `Discovery agent handling request … query='…'` | Що дійшло до DiscoveryAgent |
-| `[agent=discovery] tool=search args=…` | Який тул обрав Haiku і з яким запитом |
+| `[agent=main] tool=search args=…` | Який тул обрав MainAgent і з яким запитом (чи розрезолвив займенники) |
+| `[agent=web-search] …` | Виклики `MusicResearcher` / `ReleaseRecommender` |
 | `Aggregated search: raw=N confirmed=M tracklistsChecked=K artist='' release='' recording=''` | `raw` — що віддали каталоги, `confirmed` — що пройшло валідатор; поля, які витяг екстрактор |
 | `search('…') has no artist/title anchor` | Спрацював guard, запит пішов в explore |
 | `No confirmed related releases … falling back` / `Style fallback for` | `findSimilar` не знайшов зв'язків, пішов по стилях |
@@ -218,11 +217,10 @@ docker compose logs --since 10m sashkomusic 2>&1 | grep -E "Discovery agent hand
 
 | Що | Де | Наслідок для тестів |
 |---|---|---|
-| `findSimilar` для альбому/треку бере лише артиста | `DiscoveryAgentTools.findSimilar` | D4: результат не залежить від альбому |
+| `findSimilar` для альбому/треку бере лише артиста | `DiscoveryTools.findSimilar` | D4: результат не залежить від альбому |
 | Окремої логіки для лейбла й жанру в `findSimilar` нема | там само | D9: непередбачуваний результат; план стратегій у обговоренні |
 | Голе ім'я лейбла без слова "лейбл" читається як артист | `SearchRequestExtractor` | B4 |
-| Вступ у `findSimilar` інколи містить епітети поза даними ("детройтське коло") | `formatGrouped` + промпт | D1, D2: дивитись на кожен факт, не лише на імена |
-| `/discovery` показує сирий `summary()` з інструкціями | `handleDiscoverySlash` | E10 |
+| Вступ у `findSimilar` інколи містить епітети поза даними ("детройтське коло") | `StackReport.formatGrouped` + промпт | D1, D2: дивитись на кожен факт, не лише на імена |
 | `MainAgent` працює з дефолтним effort Sonnet 5.5 | `AgentModelsConfig` (`customParameters` зламані в langchain4j 1.10.0) | Час відповіді та `TOTAL` вищі, ніж планували |
 | Лічильник `maxRetries=3` у моделі | `AgentModelsConfig.builder` | Повільний запит може бути трьома спробами; дивитись на повтори в логах |
 

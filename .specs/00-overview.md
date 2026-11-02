@@ -15,13 +15,13 @@ Telegram ─────► TelegramChatBot
                ├─ slash commands   ──► FlowServices
                ├─ OngoingFlows     ──► FlowServices
                ├─ callbacks        ──► CallbackDispatcher ──► FlowServices
-               └─ free text        ──► MainAgent (Sonnet LLM)
-                                         └─ @Tool methods ──► sub-agents
+               └─ free text        ──► MainAgentService → MainAgent (Sonnet LLM)
+                                         └─ @Tool methods (AgentTurn)
 
-Sub-agents:
-  DiscoveryAgentService   ← Haiku LLM + search engines (MusicBrainz, Discogs, Bandcamp)
-  DownloadAgentService    ← deterministic, delegates to downloadagent via events
-  LibraryAgentService     ← deterministic, regex parser, delegates to libraryagent via events
+MainAgent tools:
+  DiscoveryTools          ← search engines (MusicBrainz, Discogs, Bandcamp), ListenBrainz, web research (Haiku)
+  downloadMusic           ← deterministic, MusicDownloadFlowService → downloadagent via events
+  manageLibrary           ← LibraryAgent (Haiku LLM) → libraryagent services / events
 
 Spring Events (async):
   mainagent ◄──► downloadagent   (search, download, cancel, errors)
@@ -86,11 +86,11 @@ Spring Events (async):
 - **sm-audio-analyzer** — Python/Essentia: BPM, MFCC, danceability, loudness
 
 ## Module index
-- [search.md](search.md) — музичний пошук (DiscoveryAgent, 3 джерела, пагінація)
+- [search.md](search.md) — музичний пошук (discovery-тули MainAgent, 3 джерела, пагінація)
 - [download.md](download.md) — завантаження (5 движків, вибір варіанту, cancel)
 - [library-processing.md](library-processing.md) — /process, /reprocess, теги, аудіо-аналіз
 - [dj-tagging.md](dj-tagging.md) — /np, рейтинг, енергія, функція, коментарі
 - [streaming.md](streaming.md) — посилання на стрімінгові платформи
-- [ai-agents.md](ai-agents.md) — MainAgent, DiscoveryAgent, prompts, memory
+- [ai-agents.md](ai-agents.md) — MainAgent, LibraryAgent, AgentTurn, memory
 - [conversation-state.md](conversation-state.md) — ChatStateStore, всі context holders
 - [events.md](events.md) — всі Spring events, async map

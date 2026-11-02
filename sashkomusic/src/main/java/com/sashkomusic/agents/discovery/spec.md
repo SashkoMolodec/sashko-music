@@ -1,69 +1,63 @@
-# DiscoveryAgent — Spec
+# Discovery tools — Spec
 
 > Feature flow: [/.specs/search.md](../../../../../../.specs/search.md)
 
 ## Purpose
-Пошук і дослідження музики по 3 джерелах. Отримує вільний запит, сам вирішує стратегію (який тул, скільки
-пошуків, чи послабити фільтри). Повертає відформатований summary для MainAgent і будує release картки через
-accumulator.
+Тули пошуку й дослідження музики по 3 джерелах, підключені **прямо до MainAgent** (`DiscoveryTools`, другий
+tool-об'єкт у `MainAgentConfig`). Окремого LLM-агента тут більше нема: колишній `DiscoveryAgent` (Haiku, пам'ять
+`conversationId + ":d"`) повторював маршрутизацію MainAgent, а його текст викидався, коли були картки. Стратегію
+(який тул, скільки пошуків, чи послабити фільтри) тепер обирає MainAgent за правилами свого промпту
+([main/spec.md](../main/spec.md)).
 
 **Точковість замість розмитості.** Кожен пошук іде в MusicBrainz + Discogs + Bandcamp **одночасно**, результати
 валідуються проти запитаного артиста/назви/треку, і невалідні відкидаються (`AggregatedSearchService` +
 `ReleaseMatchValidator`, див. [mainagent/search/spec.md](../../mainagent/search/spec.md)). Один пошук = одна
 конкретна річ = один стос карток. Гортати в Telegram десятки випадкових релізів — це не результат.
 
-Викликається двома шляхами (обидва — LLM path):
-1. **Free-text**: `MainAgentTools.discoverMusic()` → `DiscoveryAgentService.handle()`
-2. **Slash**: `UserInteractionOrchestrator` → `/discovery <query>` → `DiscoveryAgentService.handle()`
-
-Direct (no-LLM) path з `preferredEngine` **видалено**: після агрегації вибирати движок нема сенсу — опитуються
-всі три. Поле прибране з `DiscoverRequest`, щоб не лишати параметр, який мовчки ігнорується. Залишковий `DiscoveryAgentTools.runSearch()` (no-LLM вхід без викликачів) теж прибраний.
+Пакет також тримає однопризначенні LLM-інтерфейси, які тули викликають у коді: `SearchRequestExtractor` (+
+`SearchRequestNormalizer`), `ReleaseRecommender`, `MusicResearcher`. Жоден з них не має пам'яті й тулів.
 
 ---
 
-## LangChain4j interface
+## Як тул отримує розмову
 
-```java
-public interface DiscoveryAgent {
-    @SystemMessage(DiscoveryAgentPrompts.SYSTEM)
-    String chat(@MemoryId String conversationId, @UserMessage String userMessage);
-}
-```
+Кожен `@Tool` приймає `InvocationParameters parameters` і бере `AgentTurn turn = AgentTurn.of(parameters)`
+(див. "AgentTurn" у [main/spec.md](../main/spec.md)). `turn.conversationId()` — основний ID розмови: стан пошуку
+(`SearchContextService`, flow_key `search`) пишеться і читається прямо під ним. Суфікса `:d`, `copySearchContext`
+і стрипання суфікса в тулах більше нема.
 
-| Параметр        | Значення |
-|-----------------|----------|
-| `conversationId`| `conversationId + ":d"` — ізольований від MainAgent memory ID |
-| `userMessage`   | Query вербатимно |
-| Return          | Рядок який `DiscoveryAgentService` використовує як fallback summary |
+**Межа ходу для стосів.** Перший стос, який відкриває хід, спершу скидає стоси попередньої відповіді:
+`if (turn.claimStackReset()) searchContextService.beginStacks(conversationId)`. Далі кожен `openStack` додає стос і
+`turn.stackOpened(stack)`. Хід, що нічого не знайшов (промах, треклист, research), стан не чіпає, тож стоси й
+⬅️/➡️ на вже надісланих картках працюють далі. `MainAgentService` після ходу шле по повідомленню на кожен
+`turn.openedStacks()`.
 
-Чому окремий `:d` memory ID: якби Main і Discovery ділили memory, `tool_use` без `tool_result` в history викликав би помилку Claude API.
+**Результат тула** — текст для вступу MainAgent, що будує `StackReport`:
+- один стос → `"showed 1 card stack for '<query>' on <sources>: "` + агрегат (`StackReport.describe`);
+- кілька стосів → `StackReport.forMainAgent(stacks)` + рядок `Source: <звідки вони>`.
 
----
-
-## Модель і пам'ять
+## Модель для web search
 
 | Параметр      | Значення |
 |---------------|----------|
-| Модель        | `claude-haiku-4-5-20251001` (override: `agents.discovery.model-name`) |
-| ChatModel bean| `discoveryChatModel` (`AgentModelsConfig`) — **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool. Інші споживачі того ж біна: `ListenLinkWebSearch` (`AiExtractorsConfig`, резолвер лінку "де послухати", див. [.specs/streaming.md](../../../../../../.specs/streaming.md)) і `ReleaseRecommender` (`DiscoveryAgentConfig`, research для `exploreAndRecommend` — без пам'яті й без тулів) |
-| maxTokens     | 1024 |
-| Memory window | 16 messages |
-| Memory store  | `PostgresChatMemoryStore`, ключ: `conversationId + ":d"` |
+| ChatModel bean| `webSearchChatModel` (`AgentModelsConfig`) — Haiku (`agents.haiku.model-name`), **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool (`max_uses=3`). Споживачі: `MusicResearcher` і `ReleaseRecommender` (`DiscoveryToolsConfig`), `ListenLinkWebSearch` (`AiExtractorsConfig`, див. [.specs/streaming.md](../../../../../../.specs/streaming.md)) |
+| maxTokens     | 1024 (`agents.haiku.max-tokens`) |
+| Memory        | немає — кожен виклик самодостатній, контекст розмови розрезолвлює MainAgent перед викликом тула |
 
-Memory **не очищається** між викликами `handle()` — тому `digDeeper` може читати попередній контекст пошуку (engine + results) з `:d` history.
-
-**Web search — server-side, не local `@Tool`:** `discoveryChatModel` будується з `.serverTools(List.of(AnthropicServerTool.builder().type("web_search_20250305").name("web_search")...build()))`. Модель викликає `web_search` напряму на інфраструктурі Anthropic — результат приходить у **тій самій** відповіді API (`web_search_tool_result` content block), без жодного client-side виконання. Замінює колишній local `@Tool webSearch()` + `WebSearchService` (jsoup-скрапінг `html.duckduckgo.com`, крихкий: капчі, відсутність URL у відповіді). Верифіковано живим викликом до `claude-haiku-4-5-20251001` перед вмиканням.
+Модель викликає `web_search` напряму на інфраструктурі Anthropic — результат приходить у **тій самій** відповіді
+API, без client-side виконання. На Sonnet цей server tool свідомо не вішається: його блоки змішувались би з
+thinking-блоками в пам'яті й циклі тулів MainAgent.
 
 ---
 
-## Tools (`DiscoveryAgentTools`)
+## Tools (`DiscoveryTools`)
 
-### `search(query, conversationId)` — точковий пошук
+### `search(query)` — точковий пошук
 0. **Guard lookup vs explore.** Якщо у витягнутому запиті немає ані артиста, ані назви релізу/треку
    (`MetadataSearchRequest.hasLookupAnchor() == false`) — валідувати результат нема проти чого, тобто це
    насправді explore-запит, який приїхав не в той тул. Такий виклик **автоматично** перекидається в
    `exploreAndRecommend`. Розділення lookup/explore описане в промпті (STEP 0), але промпт — це рекомендація
-   моделі, а не гарантія: "пошукай detroit techno класичне" Haiku стабільно віддає в `search`. Гарантію дає
+   моделі, а не гарантія: "пошукай detroit techno класичне" модель стабільно віддає в `search`. Гарантію дає
    саме цей код. Виняток — **лейбл**: це названа річ, і перевірити результат є проти чого, тому такий запит іде
    в `searchLabel` (нижче), а не в explore.
 1. `SearchRequestExtractor.extract(query)` → `MetadataSearchRequest` → **`SearchRequestNormalizer.normalize(query, request)`**.
@@ -86,7 +80,7 @@ Memory **не очищається** між викликами `handle()` — т
 2. `AggregatedSearchService.search(request)` — три каталоги паралельно + валідація + (за потреби) підтвердження треклистом.
 3. Порожньо → `searchContextService.rememberQuery(...)` (щоб `digDeeper` мав що розширювати) і повернути **перелік застосованих фільтрів** з інструкцією повторити з меншою їх кількістю. Окремо розрізняється `rawCount > 0` ("каталоги віддали N, але жоден не той артист/назва" → швидше проблема написання) від чистого нуля.
 4. Знайшло → `searchContextService.openStack(conversationId, query, request, label=null, releases)` — **власний стос** на цей виклик.
-5. Return: `"found N matching releases for '<query>' on <sources> — card stack shown to the user"`.
+5. Return: `"showed 1 card stack for '<query>' on <sources>: <агрегат>"`.
 
 **Викликається кілька разів за хід.** Питає юзер про три речі — три виклики, три стоси, три повідомлення з
 картками. Ліміт — 3 на відповідь (більше не читається в Telegram).
@@ -106,18 +100,18 @@ Memory **не очищається** між викликами `handle()` — т
 
 Це перші збіги за релевантністю каталогу, а не найкращі роботи лейблу. Кількість "пару" не враховується: показується все підтверджене до стелі.
 
-### `exploreAndRecommend(topic, conversationId)` — research → N стосів
+### `exploreAndRecommend(topic)` — research → N стосів
 Для відкритих запитів ("порадь щось", "що послухати з детройт-техно", "хочу дарк ембієнт 90-х"):
-1. `ReleaseRecommender` (окремий `@AiService` на `discoveryChatModel`, тобто **з web search**) → рівно 5 рядків `Artist — Release Title`, у написанні каталогів, найкращі першими. Показується до 3; два зайві — запас на кандидатів, яких нема в каталогах. Коли рекомендатор давав рівно 3, "запасна" спроба в коді нічого не мала, і один непідтверджений пік давав 2 стоси.
+1. `ReleaseRecommender` (окремий `@AiService` на `webSearchChatModel`, тобто **з web search**) → рівно 5 рядків `Artist — Release Title`, у написанні каталогів, найкращі першими. Показується до 3; два зайві — запас на кандидатів, яких нема в каталогах. Коли рекомендатор давав рівно 3, "запасна" спроба в коді нічого не мала, і один непідтверджений пік давав 2 стоси.
 2. Парсинг рядків детермінований (split по тире), **без** повторного виклику екстрактора — зайві LLM-хопи ні до чого.
 3. Усі кандидати шукаються **паралельно** (той самий точковий агрегований пошук, `SIMILAR_SEARCH_CONCURRENCY` потоків, як у `findSimilar`); раніше — по черзі, і 3–4 повних пошуки по трьох каталогах складались у півхвилини. Кандидати без підтвердження мовчки пропускаються (рекомендація, яку не відкрити, гірша за на один стос менше).
 4. Перші 3 підтверджені **в порядку рекомендатора** → `openStack(..., label="Artist — Title", ...)`. Стоси відкриваються вже після всіх пошуків — `openStack` це read-modify-write стану чату.
-5. Return: перелік стосів + звідки вони, аби MainAgent написав вступ.
+5. Return: `StackReport.forMainAgent(stacks)` + звідки вони, аби MainAgent написав вступ.
 
 Чому одним тулом, а не "research → LLM сам викликає search × 3": цикл всередині тула детермінований і гарантує
-форму відповіді (N стосів), а Haiku при трьох послідовних тул-викликах легко зривається на прозу.
+форму відповіді (N стосів), а модель при трьох послідовних тул-викликах легко зривається на прозу.
 
-### `findSimilar(seedQuery, conversationId)` — схоже на X → до 10 стосів
+### `findSimilar(seedQuery)` — схоже на X → до 10 стосів
 Real similarity, never invented from the LLM's own knowledge. Детермінований кодовий шлях, LLM релізів не вибирає:
 1. Seed resolution: if `seedQuery` blank → the release currently in view (same `currentPage` lookup as
    `getTrackList`); artist і title там уже розділені каталогом, тому `MetadataSearchRequest` будується
@@ -158,7 +152,7 @@ Real similarity, never invented from the LLM's own knowledge. Детерміно
   Названо не більше двох джерел, щоб label не розтягував картку.
 - **Тип зв'язку:** кожен артист несе `Connection` (`DIRECT`, `BRIDGE`, `CO_LISTEN`), тобто джерело, з якого він
   прийшов. Текст групи з іменем seed-а кладеться в `SearchStack.group` і доходить до вступу (див.
-  `formatForMainAgent`). Причина на картці лишається, бо вона пояснює один реліз, а група пояснює логіку вибору.
+  `StackReport.forMainAgent`). Причина на картці лишається, бо вона пояснює один реліз, а група пояснює логіку вибору.
 - **`mainRelease`:** `MusicBrainzClient.browseReleaseGroups(mbid)` (`type=album|ep|single`, без бутлегів).
   Album → EP → Single, без вторинних типів
   (Compilation, Live тощо) раніше за ті, що з ними; при рівності найраніший. Якщо релізів нема, артист пропускається.
@@ -178,46 +172,37 @@ Real similarity, never invented from the LLM's own knowledge. Детерміно
 
 Тригер: "хочу схоже", "порадь щось подібне", "similar to X". Distinct from `manageLibrary`'s library-scoped `findSimilarInLibrary` (audio-feature similarity over the user's own analyzed tracks) — this tool finds NEW music via MusicBrainz relations and ListenBrainz, not what the user already owns.
 
-### Web search — no longer a local tool
-Research questions ("розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X") are handled by
-Anthropic's server-side `web_search` tool attached to `discoveryChatModel` (see above), not a
-`DiscoveryAgentTools` method. `DiscoveryAgentPrompts.SYSTEM` tells the model it has this capability
-and to use it for any factual/research question instead of answering from memory. There is no
-`ChatResponseAccumulator` push for this anymore (was `"🌐 виходимо у світ божий…"`) — the search runs
-inside the same API call, so there's no client-side moment to hook a progress message into;
-`MainAgentTools.discoverMusic()`'s generic `"🔍 шукаю..."` progress ping still covers this case.
 
-### `digDeeper(conversationId)`
-Читає попередній `rawInput` + `MetadataSearchRequest` з `:d` контексту і ганяє `AggregatedSearchService.searchLoose()` —
-той самий запит **без валідації**, стос із label "усе підряд". "Наступний движок по колу" більше не існує:
-всі три опитуються завжди, тому єдина вісь, по якій ще можна копнути — суворість.
+### `researchMusic(question)` — факти з мережі
+Дослідницькі питання без прохання показати релізи ("розкажи про X", "хто такий X", "що за лейбл Y", "дискографія X").
+1. `turn.progress("🌐 шукаю в мережі...")`.
+2. `MusicResearcher.research(question)` — Haiku з web search, 3-5 речень українською без markdown, тільки факти з
+   джерел, опційно голий URL найкращого джерела окремим рядком.
+3. Return: відповідь дослідника; MainAgent переказує її, не додаючи фактів з пам'яті.
+4. Помилка → `"web research failed — tell the user you could not check this right now"`.
+
+`question` має бути самодостатнім: займенники ("він", "цей лейбл") MainAgent розписує з розмови.
+Стосів не відкриває, карток не показує.
+
+### `digDeeper()`
+Читає попередній `rawInput` + `MetadataSearchRequest` зі стану пошуку розмови і ганяє
+`AggregatedSearchService.searchLoose()` — той самий запит **без валідації**, стос із label "усе підряд".
+"Наступний движок по колу" більше не існує: всі три опитуються завжди, тому єдина вісь, по якій ще можна
+копнути — суворість.
 Тригер: "копай", "ще копай", "покажи все", "dig deeper".
 
-### `getTrackList(conversationId)`
-Читає `searchResults` з основного (не `:d`) conversationId — бере реліз по `currentPage` (яка зберігається у `SearchContext.currentPage` в ChatStateStore). Lazy-fetches повний треклист через `getMetadataWithTracks()`. Повертає пронумерований список треків.
-Тригер: "які треки", "tracklist", "що на альбомі".
-
-**Важливо:** `conversationId` що передається в tool — це `:d` ID. Метод сам стрипає суфікс: `mainId = conversationId.endsWith(":d") ? conversationId.substring(0, len-2) : conversationId`, після чого читає `SearchContext` під основним ID.
+### `getTrackList()`
+Бере реліз на екрані: `searchResults` + `currentPage` (`SearchContext.currentPage` в ChatStateStore) під
+`turn.conversationId()`. Lazy-fetches повний треклист через `getMetadataWithTracks()`. Повертає пронумерований
+список треків, який MainAgent виводить дослівно.
+Тригер: "які треки", "tracklist", "що на альбомі" — для релізу, якого **нема** в бібліотеці.
 
 ---
 
-## DiscoveryAgentService — відповідальність
+## `StackReport` — текст для вступу
 
-`handle(DiscoverRequest)`:
-1. `searchContextService.beginStacks(conversationId + ":d")` — **межа ходу**. Стоси попередньої відповіді
-   перестають рахуватись як "щойно знайдене"; активний стос лишається, тому ⬇️/🎧 на старих картках працюють.
-2. `discoveryAgent.chat()` — агент робить скільки завгодно тул-викликів, кожен пошуковий тул додає свій стос.
-3. `buildResult()`: стоси = все, що цей хід наробив.
-   - Стосів нема (тільки `getTrackList`, тільки research-відповідь, або промах) → `DiscoverResult.empty(summary)`,
-     картки на екрані не чіпаються.
-   - Є → `copySearchContext(:d → основний)` + **по одному повідомленню на стос** у accumulator
-     (`buildStackResponse(ctx, stackId, 0)`) + `DiscoverResult.found(formatForMainAgent(stacks), ...)`.
-
-Визначення "чи був пошук у цьому ході" — це тепер просто "чи є стоси". Попередня евристика (порівняння
-`rawInput`/`engine` до і після виклику) не вміла відрізнити два різні пошуки в одному ході від жодного.
-
-`formatForMainAgent(stacks)`:
-- один стос → агрегат як раніше: кількість, джерела, діапазон років, типи, топ-3 лейбли, топ-5 тегів;
+`forMainAgent(stacks)`:
+- один стос → агрегат: кількість, джерела, діапазон років, типи, топ-3 лейбли, топ-5 тегів;
 - кілька стосів → по рядку на стос (`• <label> — <агрегат>`) + інструкція представити всі;
 - більше 3 стосів → ті самі рядки, але інструкція описати спільне між ними, не називаючи кожен (вступ обмежений 600 символами);
 - є стоси з `group` (`findSimilar`) → рядки згруповані за типом зв'язку, групи йдуть у порядку показу карток, а
@@ -231,57 +216,25 @@ inside the same API call, so there's no client-side moment to hook a progress me
 додає власний контекст. Це інструкція моделі, а не гарантія: перевірено на живих даних (Drexciya, Jeff Mills,
 по 4 прогони Sonnet), вигаданих людей і зв'язків не було, але епітети сцени на кшталт "детройтське коло" трапляються.
 
-**Не перелічує кожен реліз** — MainAgent читає тільки `.summary()`.
-
-**`DiscoveryAgentPrompts.SYSTEM` ключові правила:**
-- **Один пошук — одна конкретна річ.** Питають про кілька — кілька викликів `search` (макс 3), не один злитий запит.
-- **lookup vs explore:** названий реліз/трек/артист → `search`; сцена/жанр/епоха без назви → `exploreAndRecommend`.
-  Помилка роутингу не фатальна — `search` сам перекине безанкорний запит в explore (див. Tools → `search`, крок 0).
-- **Запит будується з контексту розмови:** "того самого артиста, але 90-ті" → `search("<артист> 1990-1999")`,
-  ніколи займенник чи голе уточнення. Це і є "контекст як фільтри".
-- **Порожній результат → повтор з меншою кількістю фільтрів** (тул сам каже, які застосував; слабкі —
-  рік, лейбл, стиль, формат, країна — знімаються першими; артист+назва лишаються). Максимум два повтори,
-  далі — одне уточнююче питання юзеру.
-- **STEP 0 (перевіряється першим, перекриває всі інші правила):** якщо повідомлення містить дієслово
-  пошуку/показу ("пошукай", "знайди", "покажи", "find", "search") стосовно музики/жанру/артиста — **обов'язково**
-  викликати пошуковий тул як першу дію. Названий реліз/трек/артист → `search`; сцена/жанр/епоха без конкретної
-  назви → `exploreAndRecommend`. Слова типу "в інтернеті", "в мережі", "online", "класичне", "витоки", "топ" —
-  це описові уточнення query, а НЕ сигнал перейти в research/web-search режим (навіть слово "інтернет" саме по
-  собі нічого не означає — `search` і так шукає по онлайн-каталогах). Це найчастіша точка провалу: Haiku
-  схильний трактувати "пошукай ... класичне, витоки, в інтернеті" як дослідницьке питання і відповідати
-  прозою без жодного виклику tool — STEP 0 явно забороняє цю поведінку і дає приклад правильної дії
-  (`search("detroit techno класичне витоки")`, не есе про історію жанру).
-- Для SEARCH-запитів: передати повний, розрезолвлений query в `search`.
-- Для рекомендацій/експлору: `exploreAndRecommend`, ніколи не радити релізи з власної пам'яті.
-- Для TRACKLIST-запитів: **завжди** викликати `getTrackList` — ніколи не відповідати з пам'яті.
-- Для "ще копай"/"dig deeper": викликати `digDeeper`, не `search`.
-- Для "хочу схоже"/similarity-запитів: **завжди** викликати `findSimilar`, ніколи не вигадувати артистів самому.
-- Для запитів про лейбл ("релізи з X", "ще щось з того лейблу"): `search("лейбл <назва>")`, назву розрезолвити з контексту.
-- Для чисто дослідницьких питань без прохання знайти/показати релізи (bio, discography, label info): використати
-  вбудований web search, не відповідати з пам'яті. Ніколи не писати "дивись картки нижче", якщо в цьому виклику
-  не викликався `search`/`findSimilar`.
-- Якщо `getTrackList` повернув треки — вивести **повний** пронумерований список дослівно.
-
 ---
 
 ## Hard rules
-1. DiscoveryAgent сам вирішує стратегію — який тул, скільки пошуків, коли послабити фільтри. MainAgent передає тільки query.
-2. `search()` опитує всі три каталоги одночасно і показує **тільки** підтверджені збіги. Розмитий результат — не результат.
-3. `digDeeper()` читає `:d` контекст — не очищати пам'ять між викликами.
-4. Відповідь DiscoveryAgent — рядок для MainAgent (не для юзера напряму).
-5. Якщо нічого не знайшов → попросити уточнення (рік, лейбл, жанр, країна).
-6. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки зв'язки MusicBrainz,
+1. `search()` опитує всі три каталоги одночасно і показує **тільки** підтверджені збіги. Розмитий результат — не результат.
+2. Тули не говорять до юзера: вони повертають текст для MainAgent і відкривають стоси; картки шле `MainAgentService`.
+3. Якщо нічого не знайшов → повернути застосовані фільтри, щоб MainAgent повторив з меншою кількістю або спитав уточнення.
+4. `findSimilar()` ніколи не вигадує схожих артистів з власного знання LLM — тільки зв'язки MusicBrainz,
    ListenBrainz co-listen дані або (fallback) стилі, які реальний каталог написав на самому seed-релізі.
-7. `exploreAndRecommend()` показує тільки те, що підтвердилось у каталогах — рекомендація без картки не показується.
-7a. Група стосу береться з джерела зв'язку в коді, а не з LLM: модель описує групи, але не визначає їх.
-8. Жоден запит без анкера (артист/назва/трек/лейбл) не доходить до показу як "пошук" — або explore, або нічого.
-9. `beginStacks()` викликає `DiscoveryAgentService` раз на хід; тули стоси не чистять.
+5. `exploreAndRecommend()` показує тільки те, що підтвердилось у каталогах — рекомендація без картки не показується.
+6. Група стосу береться з джерела зв'язку в коді, а не з LLM: модель описує групи, але не визначає їх.
+7. Жоден запит без анкера (артист/назва/трек/лейбл) не доходить до показу як "пошук" — або explore, або нічого.
+8. Стоси скидає тільки перший `openStack` ходу (`AgentTurn.claimStackReset`) — інакше другий пошук у тому ж ході затер би стос першого.
+9. Стан пошуку живе під основним `conversationId`; жодних суфіксних ключів.
 
 ---
 
 ## Out of scope
-- Говорити до користувача напряму — тільки через summary → MainAgent
-- Вибір джерела завантаження — DownloadAgent / кнопка DL
+- Говорити до користувача напряму — тільки через результат тула → MainAgent
+- Вибір джерела завантаження — `downloadMusic` / кнопка DL
 - Бібліотечні операції → LibraryAgent
 
 ---
@@ -293,4 +246,4 @@ inside the same API call, so there's no client-side moment to hook a progress me
   абзац у промпті `SearchRequestExtractor`. Промпт — рекомендація, нормалізатор — гарантія.
 - Змінити кількість стосів у рекомендації → `MAX_RECOMMENDATIONS`; у `findSimilar` → `MAX_SIMILAR_STACKS`; у лейблі → `MAX_LABEL_STACKS`.
 - Новий тип зв'язку або джерело схожості → `RelatedArtistsCollector`, не тули.
-- Новий тип запиту (напр., RAG) → новий `@Tool` тут + рядок у таблиці Tools.
+- Новий тул → `@Tool` у `DiscoveryTools` + рядок у таблиці Tools у [main/spec.md](../main/spec.md) + правило в `MainAgentPrompts`.

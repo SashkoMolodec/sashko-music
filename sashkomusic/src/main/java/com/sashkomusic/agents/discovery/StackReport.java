@@ -1,18 +1,8 @@
 package com.sashkomusic.agents.discovery;
 
-import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
-import com.sashkomusic.agents.contract.DiscoverRequest;
-import com.sashkomusic.agents.contract.DiscoverResult;
-import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.bot.ConversationContext;
-import com.sashkomusic.mainagent.search.ReleaseSearchFlowService;
-import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchStack;
 import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.shared.model.SearchEngine;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,10 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-@Slf4j
-@Service
-@RequiredArgsConstructor
-public class DiscoveryAgentService {
+/** Turns the stacks a search tool opened into the facts MainAgent writes its intro from. */
+final class StackReport {
 
     private static final int MAX_STACKS_NAMED_IN_INTRO = 3;
     /** Groups need room: each one has to say how it connects, which 600 characters cannot do for three. */
@@ -35,71 +23,22 @@ public class DiscoveryAgentService {
             + "however well you know it. This overrides your usual rules about length, adding your own context "
             + "and naming every stack.";
 
-    private final DiscoveryAgent discoveryAgent;
-    private final SearchContextService searchContextService;
-    private final ReleaseSearchFlowService releaseSearchFlowService;
-    private final ChatResponseAccumulator accumulator;
-
-    public DiscoverResult handle(DiscoverRequest request) {
-        log.info("Discovery agent handling request: conversationId={}, query='{}'",
-                request.conversationId(), request.query());
-
-        String discoveryMemoryId = request.conversationId() + ":d";
-        // Turn boundary: stacks left over from the previous answer stop counting as "just found", so
-        // this turn shows exactly the stacks it built — however many tool calls that took.
-        searchContextService.beginStacks(discoveryMemoryId);
-
-        return handleViaLlm(request, discoveryMemoryId);
-    }
-
-    private DiscoverResult handleViaLlm(DiscoverRequest request, String discoveryMemoryId) {
-        String summary;
-        try {
-            summary = discoveryAgent.chat(discoveryMemoryId, request.query());
-        } catch (Exception ex) {
-            log.error("Discovery agent failure: {}", ex.getMessage(), ex);
-            return DiscoverResult.empty("вибач, шось накрилось");
-        }
-        return buildResult(request.conversationId(), discoveryMemoryId, summary);
-    }
-
-    private DiscoverResult buildResult(String conversationId, String discoveryMemoryId, String summary) {
-        List<SearchStack> stacks = searchContextService.getStacks(discoveryMemoryId).stream()
-                .filter(stack -> !stack.releases().isEmpty())
-                .toList();
-
-        if (stacks.isEmpty()) {
-            // Nothing was searched this turn (tracklist question, research answer, or a miss) —
-            // DiscoveryAgent's own words are the answer and the cards on screen stay untouched.
-            return DiscoverResult.empty(summary != null ? summary : "нич не знайшов");
-        }
-
-        searchContextService.copySearchContext(discoveryMemoryId, conversationId);
-        ConversationContext ctx = ConversationContext.from(conversationId);
-        List<BotResponse> cards = stacks.stream()
-                .flatMap(stack -> releaseSearchFlowService.buildStackResponse(ctx, stack.id(), 0).stream())
-                .toList();
-        accumulator.replaceAll(conversationId, cards);
-
-        List<ReleaseMetadata> all = stacks.stream().flatMap(stack -> stack.releases().stream()).toList();
-        SearchEngine engine = all.isEmpty() ? null : all.getFirst().source();
-        return DiscoverResult.found(formatForMainAgent(stacks), all, engine);
-    }
+    private StackReport() {}
 
     /**
      * What MainAgent reads to write its intro. One stack collapses to the old aggregate line; several
      * are listed separately, because with three stacks on screen the intro has to address all three.
      * Grouped stacks are listed by group, since the groups are the reasoning the intro has to explain.
      */
-    static String formatForMainAgent(List<SearchStack> stacks) {
+    static String forMainAgent(List<SearchStack> stacks) {
         if (stacks.size() == 1) {
             return describe(stacks.getFirst().releases());
         }
-        if (stacks.stream().anyMatch(DiscoveryAgentService::hasGroup)) {
+        if (stacks.stream().anyMatch(StackReport::hasGroup)) {
             return formatGrouped(stacks);
         }
         String perStack = stacks.stream()
-                .map(DiscoveryAgentService::stackLine)
+                .map(StackReport::stackLine)
                 .collect(Collectors.joining("\n"));
         // The intro is capped at 600 characters, which ten stacks cannot each get a mention in.
         String instruction = stacks.size() > MAX_STACKS_NAMED_IN_INTRO
@@ -113,7 +52,7 @@ public class DiscoveryAgentService {
                 stack -> hasGroup(stack) ? stack.group() : UNGROUPED, LinkedHashMap::new, Collectors.toList()));
         String perGroup = groups.entrySet().stream()
                 .map(group -> "[%s]\n%s".formatted(group.getKey(), group.getValue().stream()
-                        .map(DiscoveryAgentService::stackLine)
+                        .map(StackReport::stackLine)
                         .collect(Collectors.joining("\n"))))
                 .collect(Collectors.joining("\n"));
         String instruction = ("Write one plain paragraph of at most %d characters, with no markdown, headings or "
@@ -135,7 +74,7 @@ public class DiscoveryAgentService {
                 describe(stack.releases()));
     }
 
-    private static String describe(List<ReleaseMetadata> releases) {
+    static String describe(List<ReleaseMetadata> releases) {
         String sources = releases.stream()
                 .map(ReleaseMetadata::source)
                 .filter(Objects::nonNull)

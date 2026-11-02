@@ -1,7 +1,6 @@
 package com.sashkomusic.agents.library;
 
-import com.sashkomusic.agents.contract.LibraryRequest;
-import com.sashkomusic.agents.contract.LibraryResult;
+import com.sashkomusic.agents.turn.AgentTurn;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,19 +10,27 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class LibraryAgentService {
 
+    private static final String MEMORY_SUFFIX = ":lib";
+
     private final LibraryAgent libraryAgent;
 
-    public LibraryResult handle(LibraryRequest request) {
-        log.info("Library agent handling: conversationId={}, command='{}'",
-                request.conversationId(), request.naturalCommand());
+    /**
+     * LibraryAgent's own memory key. It cannot share MainAgent's: the two agents' tool_use/tool_result
+     * pairs would interleave, and the Claude API rejects a history with an unanswered tool_use.
+     */
+    public static String memoryId(String conversationId) {
+        return conversationId + MEMORY_SUFFIX;
+    }
+
+    /** Runs one library command in {@code turn}; the reply is a status line for MainAgent, never null. */
+    public String handle(AgentTurn turn, String command) {
+        log.info("Library agent handling: conversationId={}, command='{}'", turn.conversationId(), command);
         try {
-            String libraryMemoryId = request.conversationId() + ":lib";
-            String summary = libraryAgent.chat(libraryMemoryId, request.naturalCommand());
-            return LibraryResult.ok(summary != null && !summary.isBlank() ? summary : "готово");
+            String summary = libraryAgent.chat(memoryId(turn.conversationId()), command, turn.parameters());
+            return summary != null && !summary.isBlank() ? summary : "готово";
         } catch (Exception ex) {
-            log.error("Library agent failure for conversation {}: {}",
-                    request.conversationId(), ex.getMessage(), ex);
-            return LibraryResult.failed("шось накрилось: " + ex.getMessage());
+            log.error("Library agent failure for conversation {}: {}", turn.conversationId(), ex.getMessage(), ex);
+            return "шось накрилось: " + ex.getMessage();
         }
     }
 }

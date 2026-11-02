@@ -13,15 +13,15 @@ Telegram Update
             ├─ "стоп"                    → clearAllCaches(ctx)
             ├─ OngoingFlow.appliesTo(ctx) → OngoingFlow.handle(ctx, text)
             ├─ /np /process /reprocess /newtopic → FlowService
-            └─ runMainAgent(ctx, text)
-                 ├─ accumulator.begin(conversationId)
-                 ├─ MainAgent.chat(conversationId, text)
-                 │    └─ [tool calls]
-                 │         ├─ findMusic    → DiscoveryAgentService
-                 │         ├─ downloadMusic → DownloadAgentService
-                 │         ├─ discussRelease → SearchContextService (read-only)
-                 │         └─ manageLibrary → LibraryAgentService
-                 ├─ accumulator.drain(conversationId)
+            └─ runMainAgent(ctx, text) → MainAgentService.chat(ctx, text)
+                 ├─ turn = new AgentTurn(ctx, progress → ProgressNotifier)
+                 ├─ MainAgent.chat(conversationId, text, turn.parameters())     ← Sonnet
+                 │    └─ [tool calls, each gets the turn via InvocationParameters]
+                 │         ├─ search / exploreAndRecommend / findSimilar / digDeeper / getTrackList → DiscoveryTools
+                 │         ├─ researchMusic → MusicResearcher (Haiku + web_search, no memory)
+                 │         ├─ downloadMusic → MusicDownloadFlowService (no LLM)
+                 │         └─ manageLibrary → LibraryAgentService → LibraryAgent (Haiku, memory ":lib")
+                 ├─ reply = [aiText] + turn.shown() + one message per turn.openedStacks()
                  └─ chatBot.sendResponse(ctx, each response)
 ```
 
@@ -59,49 +59,52 @@ conversation_messages
   updated_at      TIMESTAMPTZ
 ```
 
-| Agent         | Memory ID               | maxMessages | Приклад ключа            |
-|---------------|-------------------------|-------------|--------------------------|
-| MainAgent     | `conversationId`        | 32          | `"-1003551198668"`       |
-| DiscoveryAgent| `conversationId + ":d"` | 16          | `"-1003551198668:d"`     |
+| Agent         | Memory ID                 | maxMessages | Приклад ключа            |
+|---------------|---------------------------|-------------|--------------------------|
+| MainAgent     | `conversationId`          | 32          | `"-1003551198668"`       |
+| LibraryAgent  | `conversationId + ":lib"` | 16          | `"-1003551198668:lib"`   |
 
-**Чому різні ID:** якби обидва агенти використовували однаковий ключ, то після
-`tool_use` від MainAgent наступний виклик DiscoveryAgent дописував би `SYSTEM+USER`
-одразу після незакритого `tool_use` — Claude API відхиляє таку послідовність.
+**Чому різні ID:** LibraryAgent викликається зсередини тула MainAgent, тобто поки `tool_use`
+MainAgent ще не має відповіді. Спільний ключ дописав би `SYSTEM+USER` одразу після незакритого
+`tool_use` — Claude API відхиляє таку послідовність. Ключ дає `LibraryAgentService.memoryId(...)`.
+Колишні ключі `:d` (DiscoveryAgent) прибрані міграцією V21.
 
 **Window semantics:** `MessageWindowChatMemory` автоматично витискає найстаріші
 повідомлення коли вікно переповнюється. Кожен хід розмови:
 - Без tool: 2 messages (USER + AI)
 - З tool:   4 messages (USER + AI(tool_use) + TOOL_RESULT + AI(text))
 
-**Очищення (команда "стоп"):** `UserInteractionOrchestrator.clearAllCaches(ctx)` видаляє
-обидва memory IDs: `conversationId` і `conversationId + ":d"`.
+**Очищення (`/clearctx`, "стоп"):** `ChatContextClearedEvent` → `MainChatMemoryProvider.clearAllForConversation`
+видаляє обидва memory IDs: `conversationId` і `conversationId + ":lib"`.
 
 ---
 
-## Bridge: ChatResponseAccumulator
+## AgentTurn
 
-In-memory буфер `ConcurrentHashMap<String, List<BotResponse>>`.
-Ключ — `conversationId`. Дизайн: один `chat()` call за раз на conversationId.
+Один хід вільного тексту — локальний об'єкт, не singleton-буфер. `MainAgentService` створює його на
+повідомлення і передає в `MainAgent.chat` як `InvocationParameters`; LangChain4j прокидає їх у кожен тул
+з параметром `InvocationParameters` (в JSON-схему тула він не потрапляє), а `manageLibrary` передає той самий
+об'єкт у `LibraryAgent`.
 
 ```
-begin(id)    — очистити stale стан з попереднього call
-push(id, r)  — додати один BotResponse
-pushAll(id)  — додати список
-drain(id)    — забрати всі і очистити буфер
+AgentTurn.of(parameters)   — хід, у якому працює тул (поза ходом → IllegalStateException)
+turn.context()             — куди відповідати (замість @ToolMemoryId і розбору суфіксів)
+turn.show(responses)       — картки / підтвердження / прев'ю, повз LLM
+turn.progress(text)        — "🔍 шукаю..." напряму в Telegram, кожен текст раз на хід
+turn.claimStackReset()     — перший стос ходу скидає стоси попередньої відповіді
+turn.stackOpened(stack)    — стос, який MainAgentService покаже після відповіді
 ```
 
-Sub-агенти push-ають в accumulator під час виконання tool.
-Після `chat()` orchestrator drain-ає і надсилає все в Telegram.
+Хід, що впав, забирає свої картки з собою — нема що чистити і нема "stale" стану для наступного ходу.
 
 ### ProgressNotifier
-Обходить accumulator — надсилає через `TelegramClient` напряму.
-Використовується для `"🔍 шукаю..."` до початку tool execution.
+Надсилає через `TelegramClient` напряму; `AgentTurn.progress` — єдиний його споживач в агентах.
 
 ---
 
 ## Async Events
 
-Для операцій що не повертають результат синхронно (завантаження, теги):
+Для операцій що не повертають результат синхронно (завантаження, теги) — повний список у CLAUDE.md, Spring Event Map:
 
 ```
 Publisher                Event                          Listener (mainagent)
@@ -145,7 +148,7 @@ chat_state
 |------------|-----------------------|----------------------------------|
 | `dj_tag`   | `DjTagContextHolder`  | trackId + waitingForComment flag |
 | `download` | `DownloadContextHolder`| options per releaseId            |
-| `search`   | `SearchContextService`| *(in-memory поки що)*            |
+| `search`   | `SearchContextService`| результати, стоси, поточна сторінка |
 | `process`  | `ProcessFolderContextHolder` | pending folder selection  |
 
 Персистується через `JpaChatStateStore` (Postgres). Виживає після рестарту.

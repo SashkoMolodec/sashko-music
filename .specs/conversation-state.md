@@ -135,7 +135,7 @@ Map<String conversationId, DownloadContext {
 | Agent | Table | Window | Memory ID |
 |-------|-------|--------|-----------|
 | MainAgent | `ai_message` | 32 msgs | `conversationId` |
-| DiscoveryAgent | `ai_message` | 16 msgs | `conversationId + ":d"` |
+| LibraryAgent | `ai_message` | 16 msgs | `conversationId + ":lib"` |
 
 ---
 
@@ -179,5 +179,5 @@ Telegram group topics отримують `topicId`, DMs — тільки `chatId
   ├─ ProcessFolderContextHolder.clearAll()
   ├─ DjTagContextHolder.clear(conversationId)
   ├─ SearchContextService.clearAllCaches()     // в-пам'яті кеш + DB для conversationId
-  └─ LLM memory.clear(conversationId)         // MainAgent + DiscoveryAgent
+  └─ LLM memory.clear(conversationId)         // MainAgent + LibraryAgent (":lib")
 ```

@@ -6,7 +6,7 @@ import dev.langchain4j.service.V;
 
 /**
  * Last-resort listen-link source, used only when every structured lookup in
- * {@link ListenLinkResolver} came up empty. Backed by {@code discoveryChatModel}, the one model
+ * {@link ListenLinkResolver} came up empty. Backed by {@code webSearchChatModel}, the one model
  * bean carrying Anthropic's server-side web_search tool.
  */
 public interface ListenLinkWebSearch {

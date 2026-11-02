@@ -33,8 +33,8 @@ final class LibraryAgentPrompts {
                 - findSimilarInLibrary(releaseQuery): find releases already OWNED that sound like a given release —
                   pure audio-feature similarity (BPM, timbre, danceability), not genre tags.
                   Use ONLY when the user wants something from THEIR OWN library ("маю щось схоже?", "що в мене є
-                  схоже на X", "similar in my library"). If they want to discover something NEW, that's discoverMusic
-                  (MainAgent), not this tool.
+                  схоже на X", "similar in my library"). If they want to discover something NEW, that's MainAgent's
+                  findSimilar, not this tool.
                   releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.
                 - getReleaseInfo(releaseQuery): everything known about a release in the library — label, year,
                   genres, sub-library, per-track DJ tags and audio features (avg BPM, danceability, loudness).

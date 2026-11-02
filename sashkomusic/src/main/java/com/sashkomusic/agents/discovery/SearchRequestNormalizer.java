@@ -39,7 +39,7 @@ public final class SearchRequestNormalizer {
             "\\b(track|трек\\w*|song|пісн\\w*|сингл\\w*|single)\\b",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
 
-    /** The exact form DiscoveryAgent is told to pass for a label: "лейбл Tresor". */
+    /** The exact form MainAgent is told to pass for a label: "лейбл Tresor". */
     private static final Pattern LABEL_QUERY = Pattern.compile(
             "^\\s*(?:лейбл|label)\\s+(.+?)\\s*$",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);

@@ -27,7 +27,7 @@ record SearchStack(String id, String label, String group, List<ReleaseMetadata> 
 (compact constructor), тому старі сесії десеріалізуються без помилки.
 
 `currentPage` — індекс поточної відкритої release картки (0-based). Оновлюється при кожному `CARD:`
-переключенні. Читається `DiscoveryAgentTools.getTrackList()` аби знати для якого релізу показувати треклист.
+переключенні. Читається `DiscoveryTools.getTrackList()` аби знати для якого релізу показувати треклист.
 
 | Метод | Що робить |
 |-------|-----------|
@@ -114,9 +114,9 @@ Implementations: `MusicBrainzClient`, `DiscogsClient`, `BandcampClient`.
 ### `DiscogsClient` — structured params
 `addDiscogsParameters` maps `MetadataSearchRequest` fields onto Discogs' own structured filters (`artist`, `release_title`, `track`, `year`, `format`, `catno`, `label`, `style`, `country`) instead of concatenating everything into the free-text `q` param — `q` is relevance-ranked full-text search, so "trance 1994" in `q` matched titles containing "trance" literally, not releases tagged trance from 1994. `type=release` only (was `master,release` — `mapToDomain` already filtered to `"release"` type, so `master` was pure noise). `mapToDomain` calls `filterByRequestedArtist` right after the type filter — Discogs' `artist=` param is a relevance hint, not an exact filter, so a query like "Alpi - Discontinuity" returns releases from every unrelated Discogs artist entity disambiguated as "Alpi", "Alpi (2)", "Alpi (3)", etc; the filter keeps only results whose extracted artist string case-insensitively equals the requested artist, falling back to the unfiltered list if that empties it (loose-but-present beats exact-but-empty). Grouping in `mapToDomain` keys on **artist + title**, not title alone — a title-only key merged unrelated releases that happen to share a generic title (e.g. "Imaginary Landscapes" is both a well-known John Cage piece with a dozen reissues AND an unrelated electronic release; grouping by title alone mashed both into one release with garbage combined years/tags/label). Uses `LinkedHashMap` — a plain `groupingBy` uses a `HashMap` and silently destroys Discogs' relevance ordering.
 **Free-text `q` для трекових запитів (`textSearchForTrack`):** те, що юзер вбиває в пошук discogs.com, потрапляє в повнотекстовий індекс `q`, який покриває **треклист** — артиста й назву кожного треку. Структурні параметри цього не вміють: `artist=` бачить лише альбомного артиста, тому "Adjust (BE) - Mist" там дає нуль і деградує до голого `track=mist` по всіх артистах світу (реальний баг: 49 чужих релізів з треком "Mist"). Тому при `artist` + `recording` додатково виконується `q="<artist> <recording>"`, а результат мапиться з `request.withoutArtist()` — фільтр по альбомному артисту тут навмисно вимкнений, бо ціль саме компіляції з `Various`. Результати обох пошуків зливаються по `id`.
-**Кожен вхід користувацького пошуку нормалізує запит** — `DiscoveryAgentTools.search`, `searchDefault` (фото),
+**Кожен вхід користувацького пошуку нормалізує запит** — `DiscoveryTools.search`, `searchDefault` (фото),
 `switchStrategyAndSearch` (⛏️) і `findForDownload` (текстове "скачай"): `SearchRequestNormalizer.normalize(raw,
-extractor.extract(raw))`. Раніше це робив лише шлях через DiscoveryAgent, і "скачай Adjust (BE) …" знову йшов як
+extractor.extract(raw))`. Раніше це робив лише агентний пошук, і "скачай Adjust (BE) …" знову йшов як
 `country=BE`. `/process` (`ProcessFolderSearcher`) свідомо без нормалізатора: там назва папки — це альбом, і
 дописаний `recording` лише додав би пошуків треків.
 `textSearchForTrack` спрацьовує **тільки** коли заповнені і `artist`, і `recording` — тому порожній `recording`
@@ -157,7 +157,7 @@ extractor.extract(raw))`. Раніше це робив лише шлях чер�
 
 ## Similar-music lookup (`ListenBrainzClient`)
 
-`labs.api.listenbrainz.org/similar-artists/json` — free, no API key, CC0-licensed co-listen data. Used only by `DiscoveryAgentTools.findSimilar()` (see `agents/discovery/spec.md`) via `MusicBrainzClient.findArtistMbid()` → `ListenBrainzClient.findSimilarArtists()`.
+`labs.api.listenbrainz.org/similar-artists/json` — free, no API key, CC0-licensed co-listen data. Used only by `DiscoveryTools.findSimilar()` (see `agents/discovery/spec.md`) via `MusicBrainzClient.findArtistMbid()` → `ListenBrainzClient.findSimilarArtists()`.
 
 **Покриття цієї пари — не вся музика.** Обскурний вініл (1993, лейбл на 3 релізи) у MusicBrainz часто
 відсутній узагалі, тому `findArtistMbid` віддає empty і ланцюжок обривається на першому кроці. Для цього
@@ -169,11 +169,11 @@ extractor.extract(raw))`. Раніше це робив лише шлях чер�
 ## Hard rules
 1. `SearchContextService` — єдиний writer в `ChatStateStore` для `flow_key = "search"`.
 2. `getReleaseMetadata(releaseId)` без `conversationId` → тільки in-memory cache, не ходить в store.
-3. Discovery flow зберігає під `conversationId + ":d"`, потім `copySearchContext` дублює під основний ID.
+3. Discovery-тули пишуть прямо під основний `conversationId` — суфіксних ключів нема.
 4. `DownloadContextHolder` — окремий holder з flow_key `"dl_ctx"`, не тут.
-5. `currentPage` читається `getTrackList` (DiscoveryAgent) щоб знати який реліз показати.
+5. `currentPage` читається `getTrackList` (`DiscoveryTools`) щоб знати який реліз показати.
 6. Жоден результат не потрапляє юзеру без перевірки `ReleaseMatchValidator` — крім явного "копай глибше".
-7. `beginStacks` викликає **власник ходу** (`DiscoveryAgentService`, `searchDefault`), не окремі тули — інакше другий тул у тому ж ході затер би стос першого.
+7. `beginStacks` викликається раз на хід: у агентному ході — перший `openStack` (`AgentTurn.claimStackReset`), у прямих пошуках — `searchDefault`. Інакше другий пошук у тому ж ході затер би стос першого.
 
 ---
 

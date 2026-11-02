@@ -5,7 +5,7 @@ import dev.langchain4j.service.UserMessage;
 
 /**
  * Turns an open-ended ask ("порадь класичне detroit techno") into concrete release names that the
- * catalogs can then be searched for. Runs on {@code discoveryChatModel}, the one model bean carrying
+ * catalogs can then be searched for. Runs on {@code webSearchChatModel}, the one model bean carrying
  * Anthropic's server-side web search, so picks are grounded in something other than the model's
  * memory of what a genre sounds like.
  */

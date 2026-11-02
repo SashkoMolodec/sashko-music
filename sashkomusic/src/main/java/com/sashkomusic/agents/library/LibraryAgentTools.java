@@ -2,18 +2,16 @@ package com.sashkomusic.agents.library;
 
 import org.springframework.context.ApplicationEventPublisher;
 import com.sashkomusic.events.MoveReleaseTaskEvent;
-import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
+import com.sashkomusic.agents.turn.AgentTurn;
 import com.sashkomusic.libraryagent.config.LibraryConfig;
 import com.sashkomusic.libraryagent.domain.entity.Artist;
 import com.sashkomusic.libraryagent.domain.entity.Track;
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
-import com.sashkomusic.libraryagent.domain.repository.TrackRepository;
 import com.sashkomusic.libraryagent.domain.service.LibraryInfoService;
 import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.libraryagent.domain.service.LibrarySimilarityService;
 import com.sashkomusic.libraryagent.domain.smartlist.SmartlistService;
 import com.sashkomusic.mainagent.bot.BotResponse;
-import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.library.LastReleaseContextHolder;
 import com.sashkomusic.mainagent.library.NowPlayingResolver;
 import com.sashkomusic.mainagent.library.RemoveReleaseFlowService;
@@ -22,7 +20,7 @@ import com.sashkomusic.mainagent.process.ProcessFolderFlowService;
 import com.sashkomusic.mainagent.process.ReprocessReleasesFlowService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.agent.tool.ToolMemoryId;
+import dev.langchain4j.invocation.InvocationParameters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,11 +40,9 @@ public class LibraryAgentTools {
 
     private final ApplicationEventPublisher eventPublisher;
     private final LibrarySearchService librarySearchService;
-    private final TrackRepository trackRepository;
     private final LibraryConfig libraryConfig;
     private final LastReleaseContextHolder lastReleaseContextHolder;
     private final RemoveReleaseFlowService removeReleaseFlowService;
-    private final ChatResponseAccumulator accumulator;
     private final ProcessFolderFlowService processFolderFlowService;
     private final ReprocessReleasesFlowService reprocessReleasesFlowService;
     private final SmartlistCreationFlowService smartlistCreationFlowService;
@@ -66,7 +62,7 @@ public class LibraryAgentTools {
             After this call the playing release is the 'this' referent, so findSimilarInLibrary("this")
             or moveReleaseToSublibrary("this", ...) can follow in the same turn without naming it.
             """)
-    public String nowPlayingTrack(@ToolMemoryId String conversationId) {
+    public String nowPlayingTrack(InvocationParameters parameters) {
         Optional<NowPlayingResolver.NowPlaying> resolved = nowPlayingResolver.resolve();
         if (resolved.isEmpty()) {
             return "плеєр зараз нічого не грає (ні navidrome, ні icecast)";
@@ -75,7 +71,7 @@ public class LibraryAgentTools {
         if (!playing.inLibrary()) {
             return playing.summary() + " — цього треку немає в бібліотеці, тому локальних тегів нема";
         }
-        lastReleaseContextHolder.set(mainConversationId(conversationId), playing.releaseId(),
+        lastReleaseContextHolder.set(AgentTurn.of(parameters).conversationId(), playing.releaseId(),
                 playing.releaseTitle(), playing.track().artistName());
         return playing.summary();
     }
@@ -86,7 +82,7 @@ public class LibraryAgentTools {
             Use when the user wants to understand WHAT the playing track is like — "який це за звучанням",
             "що в ньому особливого", "яке в нього bpm", "хочу таке саме" — before suggesting anything similar.
             """)
-    public String getPlayingTrackDetails(@ToolMemoryId String conversationId) {
+    public String getPlayingTrackDetails(InvocationParameters parameters) {
         Optional<NowPlayingResolver.NowPlaying> resolved = nowPlayingResolver.resolve();
         if (resolved.isEmpty()) {
             return "плеєр зараз нічого не грає (ні navidrome, ні icecast)";
@@ -95,7 +91,7 @@ public class LibraryAgentTools {
         if (!playing.inLibrary()) {
             return playing.summary() + " — цього треку немає в бібліотеці, тому локальних тегів нема";
         }
-        lastReleaseContextHolder.set(mainConversationId(conversationId), playing.releaseId(),
+        lastReleaseContextHolder.set(AgentTurn.of(parameters).conversationId(), playing.releaseId(),
                 playing.releaseTitle(), playing.track().artistName());
         return playing.summary() + "\n" + libraryInfoService.trackInfo(playing.track().id()).orElse("");
     }
@@ -105,13 +101,13 @@ public class LibraryAgentTools {
     @Tool("Search the user's own processed music library (full-text). Use for 'чи є в мене', 'in my library', or any 'do I have X' question.")
     public String searchOwnLibrary(
             @P("search query — artist, album, genre tag, or combination") String query,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
         List<LibrarySearchResult> results = librarySearchService.search(query, 5);
         if (results.isEmpty()) {
             return "нічого не знайдено у твоїй бібліотеці за запитом: " + query;
         }
         LibrarySearchResult top = results.get(0);
-        lastReleaseContextHolder.set(mainConversationId(conversationId), top.releaseId(), top.title(), top.artists());
+        lastReleaseContextHolder.set(AgentTurn.of(parameters).conversationId(), top.releaseId(), top.title(), top.artists());
 
         var sb = new StringBuilder("Знайдено у твоїй бібліотеці (").append(results.size()).append("):\n");
         for (LibrarySearchResult r : results) {
@@ -132,22 +128,14 @@ public class LibraryAgentTools {
             """)
     public String getTrackListFromLibrary(
             @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
-            @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        ReleaseRef ref = resolveRelease(releaseQuery, mainId);
+            InvocationParameters parameters) {
+        ReleaseRef ref = resolveRelease(releaseQuery, AgentTurn.of(parameters).conversationId());
         if (ref == null) {
             return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
         }
-        List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(ref.id());
-        if (tracks.isEmpty()) {
-            return "реліз знайдено (%s), але треки не знайдено у БД".formatted(ref.label());
-        }
-        var sb = new StringBuilder(ref.label()).append("\n");
-        for (Track t : tracks) {
-            if (t.getTrackNumber() != null) sb.append(t.getTrackNumber()).append(". ");
-            sb.append(t.getTitle()).append("\n");
-        }
-        return sb.toString().strip();
+        return libraryInfoService.trackList(ref.id())
+                .map(tracks -> ref.label() + "\n" + tracks)
+                .orElse("реліз знайдено (%s), але треки не знайдено у БД".formatted(ref.label()));
     }
 
     @Tool("""
@@ -160,8 +148,8 @@ public class LibraryAgentTools {
             """)
     public String getReleaseInfo(
             @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
-            @ToolMemoryId String conversationId) {
-        ReleaseRef ref = resolveRelease(releaseQuery, mainConversationId(conversationId));
+            InvocationParameters parameters) {
+        ReleaseRef ref = resolveRelease(releaseQuery, AgentTurn.of(parameters).conversationId());
         if (ref == null) {
             return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
         }
@@ -178,9 +166,8 @@ public class LibraryAgentTools {
             """)
     public String findSimilarInLibrary(
             @P("release reference: full text query, or 'this'/'оцей' to use the last-referenced release") String releaseQuery,
-            @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        ReleaseRef ref = resolveRelease(releaseQuery, mainId);
+            InvocationParameters parameters) {
+        ReleaseRef ref = resolveRelease(releaseQuery, AgentTurn.of(parameters).conversationId());
         if (ref == null) {
             return "не знайшов реліз у бібліотеці — уточни назву або пошукай спочатку";
         }
@@ -205,14 +192,14 @@ public class LibraryAgentTools {
     public String moveReleaseToSublibrary(
             @P("release reference: full text query, or 'this' / 'оцей' to use the last-referenced release") String releaseQuery,
             @P("target sublibrary name (must be one of those from listSublibraries)") String sublibrary,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
         if (sublibrary == null || sublibrary.isBlank()) {
             return "не вказана цільова бібліотека";
         }
         if (!libraryConfig.getSublibraries().contains(sublibrary)) {
             return "невідома бібліотека '" + sublibrary + "', доступні: " + libraryConfig.getSublibraries();
         }
-        String mainId = mainConversationId(conversationId);
+        String mainId = AgentTurn.of(parameters).conversationId();
         ReleaseRef ref = resolveRelease(releaseQuery, mainId);
         if (ref == null) {
             return "не знайшов реліз — уточни назву";
@@ -224,13 +211,13 @@ public class LibraryAgentTools {
     @Tool("Send a release to trash (soft delete: files moved to /trash, DB row removed). Always shows confirmation buttons.")
     public String trashRelease(
             @P("release reference: full text query, or 'this' / 'оцей' for last-referenced") String releaseQuery,
-            @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
-        ReleaseRef ref = resolveRelease(releaseQuery, mainId);
+            InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
+        ReleaseRef ref = resolveRelease(releaseQuery, turn.conversationId());
         List<BotResponse> card = ref == null
                 ? removeReleaseFlowService.presentConfirmationByQuery(releaseQuery)
                 : removeReleaseFlowService.presentConfirmationByReleaseId(ref.id());
-        accumulator.pushAll(mainId, card);
+        turn.show(card);
         return "показав картку підтвердження видалення";
     }
 
@@ -247,12 +234,10 @@ public class LibraryAgentTools {
             """)
     public String processFolder(
             @P("folder name or path (relative to downloads root), or empty to use the most recent download") String folderHint,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
         String hint = folderHint == null ? "" : folderHint.trim();
-        String mainId = mainConversationId(conversationId);
-        List<BotResponse> responses = processFolderFlowService.process(
-                ConversationContext.from(mainId), hint);
-        accumulator.pushAll(mainId, responses);
+        AgentTurn turn = AgentTurn.of(parameters);
+        turn.show(processFolderFlowService.process(turn.context(), hint));
         return "запустив обробку папки '" + (hint.isBlank() ? "(last download)" : hint) + "'";
     }
 
@@ -268,7 +253,7 @@ public class LibraryAgentTools {
             @P("path or release reference, or 'all' for everything") String target,
             @P("true to skip metadata refetch, false otherwise") boolean skipRetag,
             @P("true to force reprocess even if up-to-date, false otherwise") boolean force,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
         if (target == null || target.isBlank()) {
             return "не вказано що реобробляти — назви шлях або 'all'";
         }
@@ -277,7 +262,7 @@ public class LibraryAgentTools {
         if (force) cmd.append(" --force");
         cmd.append(' ').append(target.trim());
         ReprocessReleasesFlowService.ReprocessResult result =
-                reprocessReleasesFlowService.handle(ConversationContext.from(mainConversationId(conversationId)), cmd.toString());
+                reprocessReleasesFlowService.handle(AgentTurn.of(parameters).context(), cmd.toString());
         return result.message();
     }
 
@@ -295,11 +280,11 @@ public class LibraryAgentTools {
     public String createSmartlist(
             @P("smartlist name (short, unique)") String name,
             @P("natural-language description of the membership rules") String naturalDescription,
-            @ToolMemoryId String conversationId) {
-        String mainId = mainConversationId(conversationId);
+            InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
         SmartlistCreationFlowService.StartResult result =
-                smartlistCreationFlowService.startCreate(ConversationContext.from(mainId), name, naturalDescription);
-        accumulator.pushAll(mainId, result.responses());
+                smartlistCreationFlowService.startCreate(turn.context(), name, naturalDescription);
+        turn.show(result.responses());
         return result.agentSummary();
     }
 
@@ -370,12 +355,6 @@ public class LibraryAgentTools {
     // ───────────────── helpers ─────────────────
 
     private record ReleaseRef(Long id, String label) {}
-
-    private static String mainConversationId(String memoryId) {
-        return memoryId != null && memoryId.endsWith(":lib")
-                ? memoryId.substring(0, memoryId.length() - 4)
-                : memoryId;
-    }
 
     protected ReleaseRef resolveRelease(String releaseQuery, String conversationId) {
         String q = releaseQuery == null ? "" : releaseQuery.trim().toLowerCase();

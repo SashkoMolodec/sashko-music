@@ -15,20 +15,17 @@
 ### 1. Точковий пошук — `search` tool
 ```
 User: "трек Adjust (BE) - Mist"
-  └─ MainAgent.chat() → discoverMusic(query)
-       └─ DiscoveryAgentService.handle()
-            ├─ beginStacks(conversationId + ":d")           ← межа ходу
-            └─ DiscoveryAgent.chat() → search("Adjust (BE) Mist")
-                 ├─ SearchRequestExtractor → {artist:"Adjust (BE)", release:"Mist", recording:"Mist"}
-                 ├─ AggregatedSearchService.search(request)
-                 │    ├─ MB ‖ Discogs ‖ Bandcamp  (паралельно)
-                 │    ├─ ReleaseMatchValidator: викидає все, що не той артист/назва
-                 │    ├─ deep pass: довантажує треклисти компіляцій (бюджет 8) → підтверджує по треку
-                 │    └─ дедуп + ранжування + cap 20
-                 └─ openStack(...) → stack "s1"
-       ├─ copySearchContext(":d" → основний)
-       ├─ buildStackResponse(ctx, "s1", 0) → картка в accumulator
-       └─ DiscoverResult.found(summary для MainAgent)
+  └─ MainAgentService.chat() → MainAgent.chat() → search("Adjust (BE) Mist")   ← тул DiscoveryTools
+       ├─ SearchRequestExtractor → {artist:"Adjust (BE)", release:"Mist", recording:"Mist"}
+       ├─ AggregatedSearchService.search(request)
+       │    ├─ MB ‖ Discogs ‖ Bandcamp  (паралельно)
+       │    ├─ ReleaseMatchValidator: викидає все, що не той артист/назва
+       │    ├─ deep pass: довантажує треклисти компіляцій (бюджет 8) → підтверджує по треку
+       │    └─ дедуп + ранжування + cap 20
+       ├─ перший стос ходу → beginStacks(conversationId)      ← межа ходу (AgentTurn.claimStackReset)
+       ├─ openStack(conversationId, ...) → stack "s1" → turn.stackOpened
+       └─ "showed 1 card stack for … : <агрегат>" → MainAgent пише вступ
+  └─ після ходу: [вступ] + buildStackResponse(ctx, "s1", 0)
 ```
 
 ### 1a. Lookup vs explore — де проходить межа

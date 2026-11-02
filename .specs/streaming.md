@@ -59,7 +59,7 @@ caption→text має сенс тільки коли редагується ме
 3. Discogs без відео / `MUSICBRAINZ` → yt-music scraper пошук за artist+title
    (`sm-scraper` `/ytmusic/search`). Сам скрапер уже деградує з альбому на **окремий трек** того ж
    артиста, якщо альбому нема — це і є фолбек "хоча б один трек"
-4. Нічого не зматчилось → `ListenLinkWebSearch` — LLM web search на `discoveryChatModel`
+4. Нічого не зматчилось → `ListenLinkWebSearch` — LLM web search на `webSearchChatModel`
 
 **Apple Music — окремо від цього ланцюжка** (`ListenLinkResolver.appleMusic`, рядок 🍏): Discogs
 показує Apple-плеєр на сторінці релізу, але через API його не віддає — тому альбом шукається

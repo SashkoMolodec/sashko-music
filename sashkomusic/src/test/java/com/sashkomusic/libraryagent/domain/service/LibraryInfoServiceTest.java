@@ -76,6 +76,18 @@ class LibraryInfoServiceTest {
     }
 
     @Test
+    void track_list_is_numbered_in_track_order() {
+        assertThat(sut.trackList(7L)).contains("3. Archangel\n4. Near Dark");
+    }
+
+    @Test
+    void a_release_with_no_tracks_has_no_track_list() {
+        when(trackRepository.findByReleaseIdOrderByTrackNumberAsc(8L)).thenReturn(List.of());
+
+        assertThat(sut.trackList(8L)).isEmpty();
+    }
+
+    @Test
     void unanalyzed_release_is_reported_not_invented() {
         when(trackTagRepository.findAllByTrackIds(anyList())).thenReturn(List.of());
         when(trackAnalysisRepository.findByTrackIdIn(anyCollection())).thenReturn(List.of());

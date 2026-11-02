@@ -37,31 +37,35 @@ public class AgentModelsConfig {
                 .build();
     }
 
+    /** Shared by LibraryAgent, the summarizer and the extractor AiServices — labelled "haiku" in cost traces. */
     @Bean("haikuChatModel")
     @Primary
     public ChatModel haikuChatModel(Environment env) {
-        return build(env, "agents.discovery.model-name", "claude-haiku-4-5-20251001",
-                "agents.discovery.max-tokens", "1024");
+        return builder(env, "agents.haiku.model-name", "claude-haiku-4-5-20251001",
+                "agents.haiku.max-tokens", "1024", "haiku")
+                .build();
     }
 
     /**
-     * Dedicated model bean for DiscoveryAgent (NOT the shared {@code haikuChatModel} — LibraryAgent
-     * and the various extractor AiServices also use that one, and giving every one of them a
-     * web-search tool it never needs would grow every request's tool schema for no reason).
+     * Haiku with Anthropic's server-side web_search, for the single-shot services that need the web:
+     * {@code MusicResearcher}, {@code ReleaseRecommender}, {@code ListenLinkWebSearch}. Kept apart from
+     * the shared {@code haikuChatModel} — giving every extractor a web-search tool it never needs would
+     * grow every request's tool schema for no reason — and off Sonnet, whose memory and tool loop carry
+     * thinking blocks that server-tool blocks would have to be interleaved with.
      * Anthropic's server-side web_search tool runs entirely on Anthropic's infrastructure — the
      * model calls it and gets results back within the same API response, no client-side execution
      * or WebSearchService/jsoup-DuckDuckGo-scraping needed. Verified live against this exact model
      * (claude-haiku-4-5-20251001) before wiring it in.
      */
-    @Bean("discoveryChatModel")
-    public ChatModel discoveryChatModel(Environment env) {
+    @Bean("webSearchChatModel")
+    public ChatModel webSearchChatModel(Environment env) {
         AnthropicServerTool webSearch = AnthropicServerTool.builder()
                 .type("web_search_20250305")
                 .name("web_search")
                 .addAttribute("max_uses", 3)
                 .build();
-        return builder(env, "agents.discovery.model-name", "claude-haiku-4-5-20251001",
-                "agents.discovery.max-tokens", "1024", "discovery")
+        return builder(env, "agents.haiku.model-name", "claude-haiku-4-5-20251001",
+                "agents.haiku.max-tokens", "1024", "web-search")
                 .serverTools(List.of(webSearch))
                 .build();
     }
@@ -71,15 +75,6 @@ public class AgentModelsConfig {
         return new PostgresChatMemoryStore(jdbcTemplate);
     }
 
-    @Bean("discoveryMemoryProvider")
-    public ChatMemoryProvider discoveryMemoryProvider(ChatMemoryStore store) {
-        return convId -> MessageWindowChatMemory.builder()
-                .maxMessages(16)
-                .id(convId)
-                .chatMemoryStore(store)
-                .build();
-    }
-
     @Bean("libraryMemoryProvider")
     public ChatMemoryProvider libraryMemoryProvider(ChatMemoryStore store) {
         return convId -> MessageWindowChatMemory.builder()
@@ -87,12 +82,6 @@ public class AgentModelsConfig {
                 .id(convId)
                 .chatMemoryStore(store)
                 .build();
-    }
-
-    private ChatModel build(Environment env, String modelKey, String modelDefault,
-                            String tokensKey, String tokensDefault) {
-        String agentName = modelKey.startsWith("agents.main") ? "main" : "discovery";
-        return builder(env, modelKey, modelDefault, tokensKey, tokensDefault, agentName).build();
     }
 
     private AnthropicChatModel.AnthropicChatModelBuilder builder(Environment env, String modelKey, String modelDefault,

@@ -24,27 +24,38 @@ The agent is a `@AiService` running on **Haiku** with its own memory id `<conver
 ```java
 public interface LibraryAgent {
     @SystemMessage(LibraryAgentPrompts.SYSTEM)
-    String chat(@MemoryId String conversationId, @UserMessage String userMessage);
+    String chat(@MemoryId String memoryId, @UserMessage String userMessage, InvocationParameters turn);
 }
 ```
 
 Built in `LibraryAgentConfig` with `haikuChatModel` + `libraryMemoryProvider` (16-message window, backed by `PostgresChatMemoryStore` → `conversation_messages` table under key `<conversationId>:lib`).
 
-`LibraryAgentService.handle(LibraryRequest)` calls `libraryAgent.chat(conversationId + ":lib", naturalCommand)`
-and wraps the reply into `LibraryResult.ok(summary)`. Same contract — transports unchanged.
-
 ---
 
-## Contract
+## Entry point
 
 ```java
-record LibraryRequest(String conversationId, String naturalCommand)
-record LibraryResult(boolean success, String summary)
+String LibraryAgentService.handle(AgentTurn turn, String command)
+static String LibraryAgentService.memoryId(String conversationId)   // conversationId + ":lib"
 ```
 
-`summary` — short Ukrainian status string surfaced back to MainAgent. For slash path (`/library <query>`),
-`UserInteractionOrchestrator` also calls `MainChatMemoryProvider.appendUserAndAi(conversationId, "/library " + query, summary)`
+`handle` calls `libraryAgent.chat(memoryId(turn.conversationId()), command, turn.parameters())` and returns the
+reply — a short Ukrainian status string surfaced back to MainAgent (`"готово"` when the model returns nothing).
+A model failure returns `"шось накрилось: <message>"` instead of throwing, so MainAgent can still answer the user.
+There are no request/result records: the call is in-process, and the cards the tools show travel in the `AgentTurn`.
+
+For the slash path (`/library <query>`) `UserInteractionOrchestrator` creates the `AgentTurn` itself, sends
+`turn.shown()` (plus the summary as text when no card has buttons) and calls
+`MainChatMemoryProvider.appendUserAndAi(conversationId, "/library " + query, summary)`
 so MainAgent sees the activity in its persistent memory (`conversation_messages` under `<conversationId>`).
+
+### How a tool gets the conversation
+
+Tools that need the conversation take `InvocationParameters parameters` and read `AgentTurn.of(parameters)`:
+`turn.conversationId()` is the **main** conversation id (the key `LastReleaseContextHolder` and the FlowServices use),
+`turn.context()` the Telegram target, `turn.show(...)` the way to put a card in front of the user. The `:lib`
+memory id never reaches tool code. Tools that need neither (`listSublibraries`, smartlist list/rename/delete) take
+no turn.
 
 ---
 
@@ -56,19 +67,19 @@ so MainAgent sees the activity in its persistent memory (`conversation_messages`
 |------|---------|--------|
 | `nowPlayingTrack()` | "що зараз грає", і **завжди першим** коли юзер каже "це" / "той трек що грає" / "схоже на те що грає", а в розмові трек не названий | `NowPlayingResolver.resolve()` — Navidrome → Icecast fallback → пошук рядка плеєра в БД. Повертає артиста, назву, реліз, рік, жанри й уже проставлені DJ-теги; робить реліз, що грає, референтом `"this"` (пише `LastReleaseContextHolder`) |
 | `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X" | `LibrarySearchService.search(query, 5)`; updates `LastReleaseContextHolder` |
-| `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease`; reads tracks from `TrackRepository` ordered by track number; returns formatted list |
+| `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease` → `LibraryInfoService.trackList(releaseId)` (read-only, ordered by track number); returns `<label>\n<1. title …>` |
 | `getReleaseInfo(releaseQuery)` | "розкажи про X", "що за альбом X", "який в нього bpm / лейбл / жанр", і щоб зрозуміти, що юзер має на увазі під "хочу щось таке як мій альбом X" | Resolves release via `resolveRelease` → `LibraryInfoService.releaseInfo` (read-only): артисти, рік, лейбл, sublibrary, жанри, середні аудіо-фічі (BPM, danceability, loudness, dynamic complexity, onset rate, spectral centroid, dissonance) і по кожному треку BPM + DJ-теги (рейтинг / енергія / функція / комент). Тільки читання. |
 | `getPlayingTrackDetails()` | "який він за звучанням", "яке bpm", "хочу таке саме" про трек, що грає | `NowPlayingResolver.resolve()` (як `nowPlayingTrack`, теж ставить референт `"this"`) + `LibraryInfoService.trackInfo` — аудіо-профіль треку з `tracks_analyzed` і DJ-теги. Трек не в бібліотеці → тільки summary плеєра. |
 | `findSimilarInLibrary(releaseQuery)` | "маю щось схоже?", "що в мене є схоже на X", "similar in my library" — similarity within the OWN collection | Resolves release → `LibrarySimilarityService.pickRepresentativeTrack` + `.findSimilarToTrack` — pure audio-feature (BPM/MFCC/timbre) cosine similarity over `tracks_analyzed`, z-score normalized. No external API, no LLM guessing. |
 | `moveReleaseToSublibrary(releaseQuery, sublibrary)` | "посунь / перенеси / move ... у vault / working" | Resolves release → publishes `MoveReleaseTaskEvent` |
-| `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → pushes confirmation card (RM_OK/RM_NO buttons) into accumulator |
+| `trashRelease(releaseQuery)` | "видали / прибери реліз" | Resolves release → `turn.show(confirmation card)` (RM_OK/RM_NO buttons) |
 | `listSublibraries()` | "які vaults", "куди можна перенести" | Returns config list `library.sublibraries` |
 
 ### Smartlists (dynamic M3U playlists)
 
 | Tool | Trigger | Action |
 |------|---------|--------|
-| `createSmartlist(name, naturalDescription)` | "створи смартлист X — ...", "make smartlist <name> with <rules>" | `SmartlistDslExtractor` (Haiku) → DSL; stores `SmartlistDraft` via `ChatStateStore` (flow_key `smartlist_create`); pushes preview card (top-5 tracks + DSL summary) with `SM:OK` / `SM:NO` buttons into accumulator. User can refine via free text (handled by `SmartlistCreationOngoingFlow`). |
+| `createSmartlist(name, naturalDescription)` | "створи смартлист X — ...", "make smartlist <name> with <rules>" | `SmartlistDslExtractor` (Haiku) → DSL; stores `SmartlistDraft` via `ChatStateStore` (flow_key `smartlist_create`); pushes preview card (top-5 tracks + DSL summary) with `SM:OK` / `SM:NO` buttons via `turn.show(...)`. User can refine via free text (handled by `SmartlistCreationOngoingFlow`). |
 | `listSmartlists()` | "які смартлисти", "list smartlists" | `SmartlistService.list()` — name, track count, DSL summary |
 | `renameSmartlist(oldName, newName)` | "перейменуй смартлист X на Y" | `SmartlistService.rename` — DB row + `.m3u8` file renamed |
 | `deleteSmartlist(name)` | "видали смартлист X" | `SmartlistService.delete` — DB row + `.m3u8` file removed |
@@ -145,7 +156,8 @@ On disk: `lib/<sublibrary>/<artist>/<album>/…`. Navidrome multi-library and Tr
 1. **All catalog ops are file-system + DB transactions.** Move and trash always go through libraryagent events so DB and disk stay in sync.
 2. `trashRelease` NEVER deletes immediately — always shows a confirmation card. The buttons (`RM_OK:` / `RM_NO:`) are the only path to actual deletion.
 3. Each task event MUST carry `conversationId` so result events can route back to the user.
-4. Sub-agents do NOT call `chatBot.sendMessage` directly — only via `ChatResponseAccumulator` (for tool-time pushes) or via dedicated `*CompleteListener` (for async completion).
+4. Tools do NOT call `chatBot.sendMessage` directly — only via `AgentTurn.show` (for tool-time cards) or via dedicated `*CompleteListener` (for async completion).
+7. Tools never touch JPA repositories — reads go through `libraryagent` domain services (`LibraryInfoService`, `LibrarySearchService`, `LibrarySimilarityService`, `SmartlistService`).
 5. `MoveReleaseTaskEvent` → libraryagent: only listener allowed to mutate `release.directoryPath`, `release.sublibrary`, `track.localPath` for relocation purposes.
 6. Track-level tools require `DjTagContextHolder` (active `/np`). Without it, return `"нема активного треку — спочатку /np"` and DO NOT publish events.
 
@@ -153,9 +165,9 @@ On disk: `lib/<sublibrary>/<artist>/<album>/…`. Navidrome multi-library and Tr
 
 ## Out of scope
 
-- Telegram I/O (handled by `ChatResponseAccumulator` + `TelegramChatBot`)
+- Telegram I/O (handled by `AgentTurn` → `UserInteractionOrchestrator` → `TelegramChatBot`)
 - Filesystem writes outside relocation / trash (those belong to `processFolder` services)
-- Direct discovery — searches that hit external APIs go to `DiscoveryAgent`
+- Direct discovery — searches that hit external APIs are MainAgent's discovery tools ([discovery/spec.md](../discovery/spec.md))
 - Slash command parsing (`/np`) — handled by `UserInteractionOrchestrator`. Release removal goes through the `trashRelease` tool; no dedicated slash exists.
 
 ---
@@ -166,6 +178,8 @@ Read-only, у `libraryagent/domain/service`. Збирає в текст для L
 `track_tags` (`RATING` у WMP-шкалі → зірки, `DJ_ENERGY`, `DJ_FUNCTION`, `COMM`) і `tracks_analyzed` (лише без `error_message`).
 Релізні аудіо-фічі — середнє по проаналізованих треках; непроаналізовані позначаються явно ("нема аналізу"), без вигаданих значень.
 Не мутує теги — DJ-тегування лишається на кнопках `/np`.
+
+`trackList(releaseId)` — треклист релізу (`номер. назва`, за номером треку) для `getTrackListFromLibrary`; порожній, якщо треків нема.
 
 ---
 

@@ -1,13 +1,10 @@
 package com.sashkomusic.mainagent.bot;
 
-import com.sashkomusic.agents.bridge.ChatResponseAccumulator;
 import com.sashkomusic.agents.config.AgentTraceListener;
 import com.sashkomusic.agents.config.MainChatMemoryProvider;
-import com.sashkomusic.agents.contract.DiscoverRequest;
-import com.sashkomusic.agents.contract.LibraryRequest;
-import com.sashkomusic.agents.discovery.DiscoveryAgentService;
 import com.sashkomusic.agents.library.LibraryAgentService;
-import com.sashkomusic.agents.main.MainAgent;
+import com.sashkomusic.agents.main.MainAgentService;
+import com.sashkomusic.agents.turn.AgentTurn;
 import com.sashkomusic.events.ChatContextClearedEvent;
 import com.sashkomusic.events.ChatHardResetEvent;
 import com.sashkomusic.mainagent.library.MarkersFlowService;
@@ -40,10 +37,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class UserInteractionOrchestrator {
 
-    private final MainAgent mainAgent;
-    private final ChatResponseAccumulator responseAccumulator;
+    private final MainAgentService mainAgentService;
     private final CallbackDispatcher callbackDispatcher;
-    private final DiscoveryAgentService discoveryAgentService;
     private final LibraryAgentService libraryAgentService;
     private final List<OngoingFlow> ongoingFlows;
     private final NowPlayingFlowService nowPlayingFlowService;
@@ -116,24 +111,12 @@ public class UserInteractionOrchestrator {
     }
 
     private List<BotResponse> runMainAgent(ConversationContext ctx, String rawInput) {
-        responseAccumulator.begin(ctx.conversationId());
-        String summary;
         try {
-            summary = mainAgent.chat(ctx.conversationId(), rawInput);
+            return mainAgentService.chat(ctx, rawInput);
         } catch (Exception ex) {
             log.error("Main agent failure for conversation {}: {}", ctx.conversationId(), ex.getMessage(), ex);
             return List.of(BotResponse.text("шось не то, попробуй ще раз"));
         }
-
-        List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
-        // Comment first, then whatever cards/results the tool call produced — reads as
-        // "here's what I found and why" followed by the results, not the other way round.
-        List<BotResponse> all = new ArrayList<>();
-        if (summary != null && !summary.isBlank()) {
-            all.add(BotResponse.aiText(summary));
-        }
-        all.addAll(drained);
-        return all;
     }
 
     private List<BotResponse> processOngoingFlow(ConversationContext ctx, String rawInput) {
@@ -158,7 +141,9 @@ public class UserInteractionOrchestrator {
             return handleLibrarySlash(ctx, rawInput.substring("/library ".length()).trim());
         }
         if (rawInput.startsWith("/discovery ")) {
-            return handleDiscoverySlash(ctx, rawInput.substring("/discovery ".length()).trim());
+            // Discovery is MainAgent's own toolset now, so the slash is just free text without the prefix.
+            String query = rawInput.substring("/discovery ".length()).trim();
+            return query.isEmpty() ? List.of(BotResponse.text("вкажи запит: /discovery <запит>")) : runMainAgent(ctx, query);
         }
         if (rawInput.startsWith("/clearctx")) {
             return clearContext(ctx);
@@ -206,30 +191,13 @@ public class UserInteractionOrchestrator {
 
     private List<BotResponse> handleLibrarySlash(ConversationContext ctx, String query) {
         if (query.isEmpty()) return List.of(BotResponse.text("вкажи команду: /library <запит>"));
-        responseAccumulator.begin(ctx.conversationId());
-        var result = libraryAgentService.handle(new LibraryRequest(ctx.conversationId(), query));
-        List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
-        List<BotResponse> all = new ArrayList<>(drained);
-        boolean hasCard = drained.stream().anyMatch(r -> r.buttons() != null || r.buttonRows() != null);
-        if (!hasCard && !result.summary().isBlank()) all.add(BotResponse.text(result.summary()));
-        if (!result.summary().isBlank()) {
-            mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/library " + query, result.summary());
-        }
-        return all;
-    }
-
-    private List<BotResponse> handleDiscoverySlash(ConversationContext ctx, String query) {
-        if (query.isEmpty()) return List.of(BotResponse.text("вкажи запит: /discovery <запит>"));
-        responseAccumulator.begin(ctx.conversationId());
-        var result = discoveryAgentService.handle(DiscoverRequest.of(ctx.conversationId(), query));
-        List<BotResponse> drained = responseAccumulator.drain(ctx.conversationId());
-        List<BotResponse> all = new ArrayList<>();
-        if (result.summary() != null && !result.summary().isBlank()) all.add(BotResponse.aiText(result.summary()));
-        all.addAll(drained);
-        String summary = result.summary() != null ? result.summary() : "";
-        if (!summary.isBlank()) {
-            mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/discovery " + query, summary);
-        }
+        AgentTurn turn = AgentTurn.withoutProgress(ctx);
+        String summary = libraryAgentService.handle(turn, query);
+        List<BotResponse> shown = turn.shown();
+        List<BotResponse> all = new ArrayList<>(shown);
+        boolean hasCard = shown.stream().anyMatch(r -> r.buttons() != null || r.buttonRows() != null);
+        if (!hasCard) all.add(BotResponse.text(summary));
+        mainMemoryProvider.appendUserAndAi(ctx.conversationId(), "/library " + query, summary);
         return all;
     }
 

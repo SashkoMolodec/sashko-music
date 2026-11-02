@@ -1,4 +1,4 @@
-package com.sashkomusic.agents.bridge;
+package com.sashkomusic.agents.turn;
 
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import lombok.RequiredArgsConstructor;

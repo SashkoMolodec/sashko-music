@@ -61,6 +61,16 @@ public class LibraryInfoService {
         });
     }
 
+    /** "1. Title" lines in track order; empty when the release has no tracks in the DB. */
+    @Transactional(readOnly = true)
+    public Optional<String> trackList(Long releaseId) {
+        List<Track> tracks = trackRepository.findByReleaseIdOrderByTrackNumberAsc(releaseId);
+        if (tracks.isEmpty()) return Optional.empty();
+        return Optional.of(tracks.stream()
+                .map(t -> (t.getTrackNumber() != null ? t.getTrackNumber() + ". " : "") + t.getTitle())
+                .collect(Collectors.joining("\n")));
+    }
+
     private String describeRelease(Release release) {
         var sb = new StringBuilder();
         String artists = release.getArtists().stream().map(Artist::getName).sorted()

@@ -2,8 +2,10 @@ package com.sashkomusic.agents.discovery;
 
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
+import com.sashkomusic.agents.turn.AgentTurn;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import com.sashkomusic.mainagent.search.SearchStack;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.MetadataSearchRequest;
@@ -11,7 +13,7 @@ import com.sashkomusic.shared.model.ReleaseMetadata;
 import com.sashkomusic.shared.model.SearchEngine;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.agent.tool.ToolMemoryId;
+import dev.langchain4j.invocation.InvocationParameters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -29,10 +31,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
+/**
+ * MainAgent's discovery tools — search, recommend, similar, research. Each tool reads its conversation
+ * from the {@link AgentTurn} and opens card stacks that {@code MainAgentService} sends after the reply.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DiscoveryAgentTools {
+public class DiscoveryTools {
 
     /** Three stacks is what still reads as an answer in a Telegram chat rather than as a dump. */
     private static final int MAX_RECOMMENDATIONS = 3;
@@ -45,6 +51,8 @@ public class DiscoveryAgentTools {
     private static final int MAX_LABEL_STACKS = 10;
     /** Beyond three styles the recommendation topic stops describing anything in particular. */
     private static final int MAX_STYLE_SEEDS = 3;
+    /** One ping per turn, however many searches the model runs in it. */
+    private static final String SEARCHING = "🔍 шукаю...";
 
     private final AggregatedSearchService aggregatedSearch;
     private final SearchContextService searchContextService;
@@ -52,6 +60,7 @@ public class DiscoveryAgentTools {
     private final ReleaseRecommender releaseRecommender;
     private final MusicBrainzClient musicBrainzClient;
     private final RelatedArtistsCollector relatedArtistsCollector;
+    private final MusicResearcher musicResearcher;
 
     @Tool("""
             Pinpoint search for ONE specific thing — a release, a track, or an artist's records.
@@ -65,11 +74,13 @@ public class DiscoveryAgentTools {
             """)
     public String search(
             @P("resolved query: artist + title (+ optional year/label), e.g. 'Adjust (BE) Mist'") String query,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
+        turn.progress(SEARCHING);
         MetadataSearchRequest request = extractRequest(query);
 
         if (request.isLabelLookup()) {
-            return searchLabel(conversationId, request, query);
+            return searchLabel(turn, request, query);
         }
 
         // The lookup-vs-explore split is a routing decision the model makes, and it gets it wrong:
@@ -79,9 +90,9 @@ public class DiscoveryAgentTools {
         // way an explore ask should be answered — researched picks, each its own stack.
         if (!request.hasLookupAnchor()) {
             log.info("search('{}') has no artist/title anchor — handling as an explore ask", query);
-            return exploreAndRecommend(query, conversationId);
+            return explore(turn, query);
         }
-        return runStack(conversationId, request, query, null);
+        return runStack(turn, request, query);
     }
 
     @Tool("""
@@ -92,12 +103,18 @@ public class DiscoveryAgentTools {
             """)
     public String exploreAndRecommend(
             @P("what to recommend, e.g. 'класичне detroit techno, витоки'") String topic,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
+        turn.progress(SEARCHING);
+        return explore(turn, topic);
+    }
+
+    private String explore(AgentTurn turn, String topic) {
         List<Candidate> candidates = researchCandidates(topic);
         if (candidates.isEmpty()) {
             return "research returned no concrete releases for '" + topic + "' — ask the user to narrow the topic";
         }
-        return buildStacks(conversationId, candidates, "researched picks for '" + topic + "'");
+        return buildStacks(turn, candidates, "researched picks for '" + topic + "'");
     }
 
     @Tool("""
@@ -109,11 +126,13 @@ public class DiscoveryAgentTools {
             """)
     public String findSimilar(
             @P("artist or release name to find similar music to, or empty to use the release currently in view") String seedQuery,
-            @ToolMemoryId String conversationId) {
+            InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
+        turn.progress(SEARCHING);
         String seed;
         MetadataSearchRequest seedRequest;
         if (seedQuery == null || seedQuery.isBlank()) {
-            ReleaseMetadata current = currentRelease(conversationId);
+            ReleaseMetadata current = currentRelease(turn.conversationId());
             if (current == null) {
                 return "no release in view and no seed given — search for something first or name an artist";
             }
@@ -133,12 +152,12 @@ public class DiscoveryAgentTools {
                 .map(relatedArtistsCollector::collect)
                 .orElse(List.of());
 
-        List<String> found = openSimilarStacks(conversationId, seedArtist, related);
-        if (found.isEmpty()) {
+        List<SearchStack> opened = openSimilarStacks(turn, seedArtist, related);
+        if (opened.isEmpty()) {
             log.info("No confirmed related releases for '{}' — falling back to the seed's own styles", seedArtist);
-            return similarByStyle(seed, seedRequest, conversationId);
+            return similarByStyle(turn, seed, seedRequest);
         }
-        return describeStacks(found, "artists connected to " + seedArtist + " by MusicBrainz relations and ListenBrainz co-listen data");
+        return report(opened, "artists connected to " + seedArtist + " by MusicBrainz relations and ListenBrainz co-listen data");
     }
 
     /**
@@ -147,7 +166,7 @@ public class DiscoveryAgentTools {
      * The searches run side by side because ten in a row would hold the bot for a minute; the
      * stacks are opened afterwards because openStack is a read-modify-write of the chat state.
      */
-    private List<String> openSimilarStacks(String conversationId, String seedArtist, List<RelatedArtist> related) {
+    private List<SearchStack> openSimilarStacks(AgentTurn turn, String seedArtist, List<RelatedArtist> related) {
         List<ConfirmedRelease> confirmed;
         try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
             List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
@@ -166,13 +185,12 @@ public class DiscoveryAgentTools {
                     .toList();
         }
 
-        List<String> found = new ArrayList<>();
+        List<SearchStack> opened = new ArrayList<>();
         for (ConfirmedRelease release : confirmed) {
-            searchContextService.openStack(conversationId, release.label(), release.request(),
-                    release.label(), release.connection().describe(seedArtist), release.releases());
-            found.add("%s (%d releases)".formatted(release.label(), release.releases().size()));
+            opened.add(openStack(turn, release.label(), release.request(),
+                    release.label(), release.connection().describe(seedArtist), release.releases()));
         }
-        return found;
+        return opened;
     }
 
     /** The related artist's main release, if it has one and the catalogs back it up; otherwise null. */
@@ -196,21 +214,24 @@ public class DiscoveryAgentTools {
      * One stack per artist, so the answer shows the label's roster rather than one prolific artist.
      * The validator has already dropped everything that is not really on this label.
      */
-    private String searchLabel(String conversationId, MetadataSearchRequest request, String query) {
+    private String searchLabel(AgentTurn turn, MetadataSearchRequest request, String query) {
         var aggregated = aggregatedSearch.search(request);
         if (aggregated.isEmpty()) {
-            return reportMiss(conversationId, request, query, aggregated);
+            return reportMiss(turn, request, query, aggregated);
         }
         Map<String, ReleaseMetadata> byArtist = new LinkedHashMap<>();
         aggregated.releases().forEach(release ->
                 byArtist.putIfAbsent(release.artist().toLowerCase(Locale.ROOT), release));
 
-        List<String> found = new ArrayList<>();
-        byArtist.values().stream().limit(MAX_LABEL_STACKS).forEach(release -> {
-            searchContextService.openStack(conversationId, query, request, request.label(), List.of(release));
-            found.add(release.artist() + " — " + release.title());
-        });
-        return describeStacks(found, "releases on the label " + request.label());
+        // The cards wear the label's name; the intro needs to know which record each stack is.
+        List<SearchStack> named = byArtist.values().stream()
+                .limit(MAX_LABEL_STACKS)
+                .map(release -> {
+                    SearchStack stack = openStack(turn, query, request, request.label(), null, List.of(release));
+                    return new SearchStack(stack.id(), release.artist() + " — " + release.title(), null, stack.releases(), 0);
+                })
+                .toList();
+        return report(named, "releases on the label " + request.label());
     }
 
     /**
@@ -219,7 +240,7 @@ public class DiscoveryAgentTools {
      * catalogs what the seed itself sounds like and recommend from that, instead of handing the model
      * a dead end it can only turn into "уточни назву".
      */
-    private String similarByStyle(String seed, MetadataSearchRequest seedRequest, String conversationId) {
+    private String similarByStyle(AgentTurn turn, String seed, MetadataSearchRequest seedRequest) {
         var aggregated = aggregatedSearch.search(seedRequest);
         Optional<ReleaseMetadata> top = aggregated.releases().stream().findFirst();
         if (top.isEmpty()) {
@@ -238,7 +259,7 @@ public class DiscoveryAgentTools {
 
         String topic = String.join(" ", styles) + decadeOf(top.get()).map(d -> " " + d).orElse("");
         log.info("Style fallback for '{}': recommending on '{}'", seed, topic);
-        return exploreAndRecommend(topic, conversationId);
+        return explore(turn, topic);
     }
 
     /** "1993" → "1990s" — a decade is a usable recommendation filter, an exact year is not. */
@@ -256,7 +277,10 @@ public class DiscoveryAgentTools {
             returned is shown. Use when the user says "копай", "ще копай", "покажи все", "dig deeper",
             i.e. the pinpoint answer was too narrow or missed a differently-spelled pressing.
             """)
-    public String digDeeper(@ToolMemoryId String conversationId) {
+    public String digDeeper(InvocationParameters parameters) {
+        AgentTurn turn = AgentTurn.of(parameters);
+        turn.progress(SEARCHING);
+        String conversationId = turn.conversationId();
         MetadataSearchRequest request;
         String lastQuery;
         try {
@@ -273,12 +297,13 @@ public class DiscoveryAgentTools {
         if (aggregated.isEmpty()) {
             return "nothing at all on any source for '" + lastQuery + "'";
         }
-        searchContextService.openStack(conversationId, lastQuery, request, "усе підряд", aggregated.releases());
-        return "found %d unfiltered results for '%s' — card stack shown".formatted(aggregated.releases().size(), lastQuery);
+        openStack(turn, lastQuery, request, "усе підряд", null, aggregated.releases());
+        return "showed 1 card stack with %d unfiltered results for '%s'".formatted(aggregated.releases().size(), lastQuery);
     }
 
     @Tool("Get the track list of the release the user is currently viewing. Use when the user asks about tracks, tracklist, or song names of the current release.")
-    public String getTrackList(@ToolMemoryId String conversationId) {
+    public String getTrackList(InvocationParameters parameters) {
+        String conversationId = AgentTurn.of(parameters).conversationId();
         List<ReleaseMetadata> results;
         try {
             results = searchContextService.getSearchResults(conversationId);
@@ -287,9 +312,7 @@ public class DiscoveryAgentTools {
         }
         if (results.isEmpty()) return "no release context — search for a release first";
 
-        // currentPage is saved by ReleaseSearchFlowService under the main conversationId (without ":d")
-        String mainId = conversationId.endsWith(":d") ? conversationId.substring(0, conversationId.length() - 2) : conversationId;
-        int page = searchContextService.getCurrentPage(mainId);
+        int page = searchContextService.getCurrentPage(conversationId);
         ReleaseMetadata r = results.get(Math.min(page, results.size() - 1));
         ReleaseMetadata withTracks = searchContextService.getMetadataWithTracks(r.id(), conversationId);
         if (withTracks != null) r = withTracks;
@@ -303,10 +326,27 @@ public class DiscoveryAgentTools {
         return "%s — %s (%s)\n%s".formatted(r.artist(), r.title(), r.getYearsDisplay(), tracks);
     }
 
-    // Research/factual questions ("розкажи про X", "хто такий X", "що за лейбл Y") are no longer a
-    // local @Tool — DiscoveryAgent's model bean (discoveryChatModel, see AgentModelsConfig) carries
-    // Anthropic's server-side web_search tool, which the model calls directly with results returned
-    // in the same API response. No client-side execution, no jsoup/DuckDuckGo scraping needed.
+    @Tool("""
+            Answer a factual music question from the web — artist bios, label history, discographies,
+            scenes: "розкажи про X", "хто такий X", "що за лейбл Y", "коли вийшов Z". Use it when the user
+            wants to KNOW something and did not ask to find or show releases. Pass a self-contained
+            question with every name spelled out — resolve "він" / "цей лейбл" from the conversation first.
+            Returns a short sourced answer to relay; it shows no cards.
+            """)
+    public String researchMusic(
+            @P("self-contained question, names spelled out, e.g. 'history of the Tresor label'") String question,
+            InvocationParameters parameters) {
+        AgentTurn.of(parameters).progress("🌐 шукаю в мережі...");
+        try {
+            String answer = musicResearcher.research(question);
+            return answer == null || answer.isBlank()
+                    ? "web research found nothing on '" + question + "' — say so"
+                    : answer;
+        } catch (Exception e) {
+            log.warn("Music research failed for '{}': {}", question, e.getMessage());
+            return "web research failed — tell the user you could not check this right now";
+        }
+    }
 
     /** One recommended thing to look up: the pinpoint search's input plus the label its stack wears. */
     private record Candidate(String artist, String title, String label) {}
@@ -347,7 +387,7 @@ public class DiscoveryAgentTools {
      * The recommender lists spares for exactly that case; all picks are searched side by side and the
      * first confirmed ones, in the recommender's order, become the stacks.
      */
-    private String buildStacks(String conversationId, List<Candidate> candidates, String provenance) {
+    private String buildStacks(AgentTurn turn, List<Candidate> candidates, String provenance) {
         List<ConfirmedPick> confirmed;
         try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
             List<CompletableFuture<ConfirmedPick>> searches = candidates.stream()
@@ -367,13 +407,12 @@ public class DiscoveryAgentTools {
         if (confirmed.isEmpty()) {
             return "none of the researched picks could be confirmed in the catalogs — say so and ask for a narrower ask";
         }
-        List<String> found = new ArrayList<>();
+        List<SearchStack> opened = new ArrayList<>();
         for (ConfirmedPick pick : confirmed) {
-            searchContextService.openStack(conversationId, pick.candidate().label(), pick.request(),
-                    pick.candidate().label(), pick.releases());
-            found.add("%s (%d releases)".formatted(pick.candidate().label(), pick.releases().size()));
+            opened.add(openStack(turn, pick.candidate().label(), pick.request(),
+                    pick.candidate().label(), null, pick.releases()));
         }
-        return describeStacks(found, provenance);
+        return report(opened, provenance);
     }
 
     private ConfirmedPick confirmPick(Candidate candidate) {
@@ -391,15 +430,32 @@ public class DiscoveryAgentTools {
                 "", "", "", "", "", "", "");
     }
 
-    private static String describeStacks(List<String> found, String provenance) {
-        return "showed %d card stacks — %s. Source: %s. Write a 2-4 sentence intro explaining the picks; do NOT list them again."
-                .formatted(found.size(), String.join("; ", found), provenance);
+    /**
+     * Opens one stack in this turn. The first stack a turn opens first drops the previous answer's
+     * stacks; a turn that finds nothing leaves them, so paging on cards already in the chat keeps working.
+     */
+    private SearchStack openStack(AgentTurn turn, String rawInput, MetadataSearchRequest request,
+                                  String label, String group, List<ReleaseMetadata> releases) {
+        if (turn.claimStackReset()) {
+            searchContextService.beginStacks(turn.conversationId());
+        }
+        String id = searchContextService.openStack(turn.conversationId(), rawInput, request, label, group, releases);
+        SearchStack stack = new SearchStack(id, label, group, releases, 0);
+        turn.stackOpened(stack);
+        return stack;
     }
 
-    private String reportMiss(String conversationId, MetadataSearchRequest request, String rawInput,
+    private static String report(List<SearchStack> stacks, String provenance) {
+        String facts = stacks.size() == 1
+                ? "showed 1 card stack — %s: %s".formatted(stacks.getFirst().label(), StackReport.describe(stacks.getFirst().releases()))
+                : StackReport.forMainAgent(stacks);
+        return facts + "\nSource: " + provenance + ".";
+    }
+
+    private String reportMiss(AgentTurn turn, MetadataSearchRequest request, String rawInput,
                               AggregatedSearchService.Aggregated aggregated) {
         // Keep the query around even though it confirmed nothing — digDeeper widens THIS query.
-        searchContextService.rememberQuery(conversationId, rawInput, request);
+        searchContextService.rememberQuery(turn.conversationId(), rawInput, request);
         String filters = describeFilters(request);
         if (aggregated.rawCount() > 0) {
             return ("catalogs returned %d results for '%s' but none were the requested artist/title/label "
@@ -410,15 +466,15 @@ public class DiscoveryAgentTools {
                 .formatted(rawInput, filters);
     }
 
-    private String runStack(String conversationId, MetadataSearchRequest request, String rawInput, String label) {
+    private String runStack(AgentTurn turn, MetadataSearchRequest request, String rawInput) {
         var aggregated = aggregatedSearch.search(request);
         if (aggregated.isEmpty()) {
-            return reportMiss(conversationId, request, rawInput, aggregated);
+            return reportMiss(turn, request, rawInput, aggregated);
         }
-        searchContextService.openStack(conversationId, rawInput, request, label, aggregated.releases());
+        openStack(turn, rawInput, request, null, null, aggregated.releases());
         String sources = aggregated.sources().stream().map(SearchEngine::getName).collect(Collectors.joining(", "));
-        return "found %d matching releases for '%s' on %s — card stack shown to the user"
-                .formatted(aggregated.releases().size(), rawInput, sources);
+        return "showed 1 card stack for '%s' on %s: %s"
+                .formatted(rawInput, sources, StackReport.describe(aggregated.releases()));
     }
 
     private static String describeFilters(MetadataSearchRequest request) {
@@ -439,8 +495,7 @@ public class DiscoveryAgentTools {
         try {
             List<ReleaseMetadata> results = searchContextService.getSearchResults(conversationId);
             if (results.isEmpty()) return null;
-            String mainId = conversationId.endsWith(":d") ? conversationId.substring(0, conversationId.length() - 2) : conversationId;
-            int page = searchContextService.getCurrentPage(mainId);
+            int page = searchContextService.getCurrentPage(conversationId);
             return results.get(Math.min(page, results.size() - 1));
         } catch (Exception e) {
             return null;

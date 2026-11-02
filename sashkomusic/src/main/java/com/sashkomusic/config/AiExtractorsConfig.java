@@ -62,9 +62,9 @@ public class AiExtractorsConfig {
         return AiServices.builder(SmartlistDslExtractor.class).chatModel(haiku).build();
     }
 
-    // discoveryChatModel, not haiku — this is the only bean carrying the server-side web_search tool.
+    // webSearchChatModel, not haiku — this is the only bean carrying the server-side web_search tool.
     @Bean
-    public ListenLinkWebSearch listenLinkWebSearch(@Qualifier("discoveryChatModel") ChatModel discovery) {
-        return AiServices.builder(ListenLinkWebSearch.class).chatModel(discovery).build();
+    public ListenLinkWebSearch listenLinkWebSearch(@Qualifier("webSearchChatModel") ChatModel webSearch) {
+        return AiServices.builder(ListenLinkWebSearch.class).chatModel(webSearch).build();
     }
 }
