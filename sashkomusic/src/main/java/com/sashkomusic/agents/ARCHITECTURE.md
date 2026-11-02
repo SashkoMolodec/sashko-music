@@ -4,7 +4,9 @@
 
 ```
 Telegram Update
-  └─ TelegramChatBot.consume()
+  └─ TelegramChatBot.consume(List<Update>)   ← polling thread: routes only
+       ├─ ConversationLanes: MESSAGES lane (text, photo) / CALLBACKS lane, serial per conversation,
+       │  parallel across conversations and lanes (CLAUDE.md → Telegram Entry Layer)
        ├─ buildContext(chatId, messageThreadId) → ConversationContext
        │    ├─ DM / General:  ConversationContext(chatId, null)    conversationId = "chatId"
        │    └─ Group Topic:   ConversationContext(chatId, topicId) conversationId = "chatId:topicId"

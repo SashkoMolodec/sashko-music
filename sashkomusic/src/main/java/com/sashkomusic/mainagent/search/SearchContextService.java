@@ -7,6 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -17,6 +20,13 @@ public class SearchContextService {
 
     private final ChatStateStore stateStore;
     private final Map<SearchEngine, SearchEngineService> searchEngines;
+    /**
+     * One lock per conversation around every read-modify-write of its state. An agent turn (opening
+     * stacks) and a button press (paging a stack) of the same chat run in parallel lanes, and
+     * ChatStateStore's get-then-put would otherwise let one silently overwrite the other. A
+     * ReentrantLock rather than a monitor: no thread pinning, and it is held across a JDBC call.
+     */
+    private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public SearchContextService(ChatStateStore stateStore,
                                 Map<SearchEngine, SearchEngineService> searchEngines) {
@@ -51,8 +61,8 @@ public class SearchContextService {
     public void saveSearchContext(String conversationId, SearchEngine source, String rawInput,
                                   MetadataSearchRequest request, List<ReleaseMetadata> results) {
         List<ReleaseMetadata> releases = distinctById(results);
-        stateStore.put(conversationId, FLOW_KEY,
-                new SearchState(contextFor(source, rawInput, request, releases), releases, List.of()));
+        locked(conversationId, () -> stateStore.put(conversationId, FLOW_KEY,
+                new SearchState(contextFor(source, rawInput, request, releases), releases, List.of())));
     }
 
     /**
@@ -61,9 +71,9 @@ public class SearchContextService {
      * already-sent cards keep resolving.
      */
     public void beginStacks(String conversationId) {
-        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state ->
+        locked(conversationId, () -> stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state ->
                 stateStore.put(conversationId, FLOW_KEY,
-                        new SearchState(state.context(), state.releases(), List.of())));
+                        new SearchState(state.context(), state.releases(), List.of()))));
     }
 
     /**
@@ -82,14 +92,16 @@ public class SearchContextService {
         List<ReleaseMetadata> releases = distinctById(results);
         SearchEngine source = releases.isEmpty() ? SearchEngine.MUSICBRAINZ : releases.getFirst().source();
 
-        List<SearchStack> stacks = new ArrayList<>(
-                stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::stacks).orElse(List.of()));
-        String stackId = "s" + (stacks.size() + 1);
-        stacks.add(new SearchStack(stackId, label, group, releases, 0));
+        return locked(conversationId, () -> {
+            List<SearchStack> stacks = new ArrayList<>(
+                    stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::stacks).orElse(List.of()));
+            String stackId = "s" + (stacks.size() + 1);
+            stacks.add(new SearchStack(stackId, label, group, releases, 0));
 
-        stateStore.put(conversationId, FLOW_KEY,
-                new SearchState(contextFor(source, rawInput, request, releases), releases, stacks));
-        return stackId;
+            stateStore.put(conversationId, FLOW_KEY,
+                    new SearchState(contextFor(source, rawInput, request, releases), releases, stacks));
+            return stackId;
+        });
     }
 
     /**
@@ -98,6 +110,10 @@ public class SearchContextService {
      * while the cards from the previous search keep working.
      */
     public void rememberQuery(String conversationId, String rawInput, MetadataSearchRequest request) {
+        locked(conversationId, () -> rememberQueryLocked(conversationId, rawInput, request));
+    }
+
+    private void rememberQueryLocked(String conversationId, String rawInput, MetadataSearchRequest request) {
         SearchState state = stateStore.get(conversationId, FLOW_KEY, SearchState.class)
                 .orElseGet(() -> new SearchState(null, List.of(), List.of()));
         SearchContext old = state.context();
@@ -121,12 +137,12 @@ public class SearchContextService {
     }
 
     public void updateStackPage(String conversationId, String stackId, int page) {
-        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+        locked(conversationId, () -> stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
             List<SearchStack> updated = state.stacks().stream()
                     .map(stack -> stack.id().equals(stackId) ? stack.withPage(page) : stack)
                     .toList();
             stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), state.releases(), updated));
-        });
+        }));
     }
 
     private static SearchContext contextFor(SearchEngine source, String rawInput,
@@ -197,26 +213,20 @@ public class SearchContextService {
     }
 
     public void updateCurrentPage(String conversationId, int page) {
-        stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+        locked(conversationId, () -> stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
             SearchContext old = state.context();
             SearchContext updated = new SearchContext(
                     old.source(), old.request(), old.rawInput(), old.releaseIds(), page);
             stateStore.put(conversationId, FLOW_KEY, new SearchState(updated, state.releases(), state.stacks()));
-        });
+        }));
     }
 
     public int getCurrentPage(String conversationId) {
         return loadContext(conversationId).map(SearchContext::currentPage).orElse(0);
     }
 
-    /** Moves the whole state — stacks included, otherwise a multi-stack turn would arrive as one. */
-    public void copySearchContext(String fromId, String toId) {
-        stateStore.get(fromId, FLOW_KEY, SearchState.class).ifPresent(state ->
-                stateStore.put(toId, FLOW_KEY, state));
-    }
-
     public void clearSearch(String conversationId) {
-        stateStore.remove(conversationId, FLOW_KEY);
+        locked(conversationId, () -> stateStore.remove(conversationId, FLOW_KEY));
     }
 
     public void clearAllCaches() {
@@ -234,6 +244,10 @@ public class SearchContextService {
     }
 
     private void replaceReleaseInState(String conversationId, ReleaseMetadata replacement) {
+        locked(conversationId, () -> replaceReleaseLocked(conversationId, replacement));
+    }
+
+    private void replaceReleaseLocked(String conversationId, ReleaseMetadata replacement) {
         stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
             List<ReleaseMetadata> updated = state.releases().stream()
                     .map(r -> r.id().equals(replacement.id()) ? replacement : r)
@@ -249,5 +263,22 @@ public class SearchContextService {
                     .toList();
             stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), updated, stacks));
         });
+    }
+
+    private void locked(String conversationId, Runnable body) {
+        locked(conversationId, () -> {
+            body.run();
+            return null;
+        });
+    }
+
+    private <T> T locked(String conversationId, Supplier<T> body) {
+        ReentrantLock lock = locks.computeIfAbsent(conversationId, id -> new ReentrantLock());
+        lock.lock();
+        try {
+            return body.get();
+        } finally {
+            lock.unlock();
+        }
     }
 }

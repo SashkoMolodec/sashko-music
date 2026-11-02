@@ -42,7 +42,6 @@ record SearchStack(String id, String label, String group, List<ReleaseMetadata> 
 | `getSearchResults(conversationId)` | Релізи активного стосу |
 | `getMetadataWithTracks(releaseId, conversationId)` | Lazy-load треків; оновлений реліз пишеться і в активний стос, і в усі стоси, де він лежить |
 | `updateCurrentPage` / `getCurrentPage` | Сторінка активного стосу |
-| `copySearchContext(fromId, toId)` | Копіює **весь** `SearchState` (`:d` → основний), інакше мульти-стосовий хід приїхав би як один |
 | `clearSearch` / `clearAllCaches` | Видаляє зі store |
 
 ---
@@ -167,7 +166,10 @@ extractor.extract(raw))`. Раніше це робив лише агентний
 ---
 
 ## Hard rules
-1. `SearchContextService` — єдиний writer в `ChatStateStore` для `flow_key = "search"`.
+1. `SearchContextService` — єдиний writer в `ChatStateStore` для `flow_key = "search"`. Кожен read-modify-write
+   стану йде під per-conversation `ReentrantLock`: хід агента (`openStack`) і callback (`CARD:` → `updateStackPage`)
+   тепер виконуються паралельно в різних lanes (див. CLAUDE.md, Telegram Entry Layer), і без lock-а один
+   перезаписав би зміни іншого.
 2. `getReleaseMetadata(releaseId)` без `conversationId` → тільки in-memory cache, не ходить в store.
 3. Discovery-тули пишуть прямо під основний `conversationId` — суфіксних ключів нема.
 4. `DownloadContextHolder` — окремий holder з flow_key `"dl_ctx"`, не тут.

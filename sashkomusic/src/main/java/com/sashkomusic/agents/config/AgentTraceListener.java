@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -86,7 +87,7 @@ public class AgentTraceListener implements ChatModelListener {
         if (flowId != null) {
             CallEntry entry = new CallEntry(agentName, toolNames, inputTokens, outputTokens,
                     cacheRead, cacheWrite, costUsd);
-            flowCalls.computeIfAbsent(flowId, k -> new ArrayList<>()).add(entry);
+            flowCalls.computeIfAbsent(flowId, k -> Collections.synchronizedList(new ArrayList<>())).add(entry);
         }
         log.info("[agent={}] [flow={}] ← response toolCalls={} tokensIn={} tokensOut={} cacheRead={} cacheWrite={} cost=${}",
                 agentName, flowId, toolCalls, inputTokens, outputTokens, cacheRead, cacheWrite,

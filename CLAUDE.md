@@ -100,7 +100,26 @@ Decision split:
 ## Telegram Entry Layer
 
 ```
-TelegramChatBot.consume
+TelegramChatBot.consume(List<Update>)            ← long-polling thread: only routes, never processes
+  └─ ConversationLanes.submit(lane, conversationId, task)   ← pool `telegram.updates.threads` (default 8)
+       ├─ MESSAGES lane  — text + photo, strictly in order per conversation
+       └─ CALLBACKS lane — buttons, in order per conversation, NOT behind a running LLM turn
+```
+
+Concurrency rules:
+- One task at a time per (lane, conversationId); different conversations and the two lanes run in parallel.
+  A 30-second MainAgent turn no longer holds button presses in that chat, nor any other chat.
+- Agent memory (`conversation_messages`) is written only from the MESSAGES lane — keep it that way.
+- State that both lanes mutate must be safe under concurrency: `SearchContextService` guards every
+  read-modify-write of `search` with a per-conversation `ReentrantLock` (not `synchronized` — no pinning
+  of carrier threads, no monitor held across JDBC). A new holder whose state a callback AND a free-text
+  turn both mutate needs the same treatment.
+- `answerCallbackQuery` goes out immediately, outside the lanes, so Telegram stops the spinner even when
+  the callback lane of that chat is busy.
+- On shutdown `ConversationLanes` stops taking work and waits up to 30 s for in-flight turns.
+
+```
+lane task
   ├─ text → UserInteractionOrchestrator.handleUserRequest
   │         ├─ for each OngoingFlow → if appliesTo → handle (multi-turn dialogue)
   │         ├─ slash command / "стоп"
@@ -306,6 +325,7 @@ class MyTest {
 
 **What lives where**
 - `SearchRequestNormalizerTest` — pure unit example (`@ParameterizedTest` over query shapes).
+- `ConversationLanesTest` — concurrency example (per-key ordering, cross-key parallelism, graceful shutdown).
 - `SearchFlowIntegrationTest` — slice example (MusicBrainz → Discogs fallback, engine switch).
 - `DownloadFlowIntegrationTest` — slice + event capture (`DL:` callback → `FilesSearchTaskEvent`).
 - `LibraryFlowIntegrationTest` — slice + event capture + `InMemoryChatStateStore` (`/np` UI + `RATE:` → `RateTrackTaskEvent` + Navidrome call).

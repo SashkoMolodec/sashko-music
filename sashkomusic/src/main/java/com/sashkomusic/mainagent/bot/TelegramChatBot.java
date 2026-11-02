@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
-import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
@@ -43,7 +42,7 @@ import java.util.Objects;
 
 @Component
 @Slf4j
-public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
+public class TelegramChatBot implements SpringLongPollingBot, LongPollingUpdateConsumer {
     private static final int MAX_TEXT_LENGTH = 4096;
     private static final String FILE_ID_PREFIX = "FILE_ID:";
     private static final String LOCAL_FILE_PREFIX = "LOCAL_FILE:";
@@ -63,6 +62,7 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
     private final UserInteractionOrchestrator orchestrator;
     private final FileIdCacheService fileIdCacheService;
     private final ChatStateStore chatStateStore;
+    private final ConversationLanes lanes;
     private final TelegramClient client;
     private final String botToken;
     private final Long allowedGroupId;
@@ -74,12 +74,14 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
                            UserInteractionOrchestrator orchestrator,
                            FileIdCacheService fileIdCacheService,
                            ChatStateStore chatStateStore,
+                           ConversationLanes lanes,
                            TelegramClient telegramClient) {
         this.botToken = token;
         this.client = telegramClient;
         this.orchestrator = orchestrator;
         this.fileIdCacheService = fileIdCacheService;
         this.chatStateStore = chatStateStore;
+        this.lanes = lanes;
         this.allowedGroupId = allowedGroupIdStr.isBlank() ? null : Long.parseLong(allowedGroupIdStr);
         this.defaultChatId = defaultChatId;
     }
@@ -100,46 +102,64 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         return this;
     }
 
+    /**
+     * Runs on the long-polling thread, so it only routes: each update goes to its conversation's lane
+     * and is processed on the lanes' pool. See {@link ConversationLanes} for the ordering guarantees.
+     */
     @Override
-    public void consume(Update update) {
-        MDC.put("flowId", String.valueOf(update.getUpdateId()));
+    public void consume(List<Update> updates) {
+        updates.forEach(this::route);
+    }
+
+    void route(Update update) {
         try {
-            if (update.hasMessage() && update.getMessage().hasText()) {
+            if (update.hasMessage() && (update.getMessage().hasText() || hasPhoto(update.getMessage()))) {
                 Message msg = update.getMessage();
                 ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
                 if (!isAllowed(ctx)) return;
-
-                var text = msg.getText();
-                log.info("📩 Text from [{}]: {}", ctx.conversationId(), text);
-
-                orchestrator.handleUserRequest(ctx, text)
-                        .forEach(res -> sendResponse(ctx, res));
-
-            } else if (update.hasMessage() && update.getMessage().getPhoto() != null && !update.getMessage().getPhoto().isEmpty()) {
-                Message msg = update.getMessage();
-                ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
-                if (!isAllowed(ctx)) return;
-
-                String caption = msg.getCaption() != null ? msg.getCaption() : "";
-                log.info("🖼️ Photo from [{}], caption: {}", ctx.conversationId(), caption);
-
-                orchestrator.handleUserPhoto(ctx, msg.getPhoto(), caption)
-                        .forEach(res -> sendResponse(ctx, res));
+                lanes.submit(ConversationLanes.Lane.MESSAGES, ctx.conversationId(),
+                        () -> inFlow(update, () -> handleMessage(ctx, msg)));
 
             } else if (update.hasCallbackQuery()) {
                 var callback = update.getCallbackQuery();
-                var data = callback.getData();
                 Message msg = (Message) callback.getMessage();
                 ConversationContext ctx = buildContext(msg.getChatId(), msg.getMessageThreadId());
                 if (!isAllowed(ctx)) return;
-
-                log.info("👆 Click from [{}]: {}", ctx.conversationId(), data);
-                answerCallback(callback.getId());
-
-                Integer sourceMessageId = msg.getMessageId();
-                orchestrator.handleCallback(ctx, data, sourceMessageId)
-                        .forEach(response -> sendResponse(ctx, response));
+                // Stop Telegram's spinner now, even if this chat's callback lane is still busy.
+                lanes.submitUnordered(() -> answerCallback(callback.getId()));
+                lanes.submit(ConversationLanes.Lane.CALLBACKS, ctx.conversationId(),
+                        () -> inFlow(update, () -> handleCallback(ctx, callback.getData(), msg)));
             }
+        } catch (Exception e) {
+            log.error("Could not route update {}: ", update.getUpdateId(), e);
+        }
+    }
+
+    private void handleMessage(ConversationContext ctx, Message msg) {
+        if (msg.hasText()) {
+            var text = msg.getText();
+            log.info("📩 Text from [{}]: {}", ctx.conversationId(), text);
+            orchestrator.handleUserRequest(ctx, text)
+                    .forEach(res -> sendResponse(ctx, res));
+        } else {
+            String caption = msg.getCaption() != null ? msg.getCaption() : "";
+            log.info("🖼️ Photo from [{}], caption: {}", ctx.conversationId(), caption);
+            orchestrator.handleUserPhoto(ctx, msg.getPhoto(), caption)
+                    .forEach(res -> sendResponse(ctx, res));
+        }
+    }
+
+    private void handleCallback(ConversationContext ctx, String data, Message msg) {
+        log.info("👆 Click from [{}]: {}", ctx.conversationId(), data);
+        orchestrator.handleCallback(ctx, data, msg.getMessageId())
+                .forEach(response -> sendResponse(ctx, response));
+    }
+
+    /** The flowId ties an update's log lines and LLM costs together; it lives on the lane thread now. */
+    private static void inFlow(Update update, Runnable body) {
+        MDC.put("flowId", String.valueOf(update.getUpdateId()));
+        try {
+            body.run();
         } catch (SearchSessionExpiredException e) {
             log.warn("Session expired: {}", e.getMessage());
         } catch (Exception e) {
@@ -147,6 +167,10 @@ public class TelegramChatBot implements SpringLongPollingBot, LongPollingSingleT
         } finally {
             MDC.remove("flowId");
         }
+    }
+
+    private static boolean hasPhoto(Message msg) {
+        return msg.getPhoto() != null && !msg.getPhoto().isEmpty();
     }
 
     private ConversationContext buildContext(long chatId, Integer threadId) {

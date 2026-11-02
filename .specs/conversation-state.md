@@ -161,8 +161,6 @@ Telegram group topics отримують `topicId`, DMs — тільки `chatId
 /newtopic [optional name]
   └─ NewTopicFlowService.handle(ctx, name?)
        ├─ Telegram API: createForumTopic(name) → новий topicId
-       ├─ SearchContextService.copySearchContext(fromId=chatId, toId=chatId:topicId)
-       │    └─ переносить поточний search context в новий топік
        ├─ ChatMemoryStore.copy(chatId, chatId:topicId)   // LLM memory
        └─ ChatStateStore.clearAll("search")              // очищує батьківський контекст
 ```
