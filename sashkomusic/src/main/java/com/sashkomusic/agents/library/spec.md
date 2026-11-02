@@ -29,6 +29,8 @@ public interface LibraryAgent {
 ```
 
 Built in `LibraryAgentConfig` with `haikuChatModel` + `libraryMemoryProvider` (16-message window, backed by `PostgresChatMemoryStore` → `conversation_messages` table under key `<conversationId>:lib`).
+`agents.haiku.max-tokens` = 4096: the agent's reply is relayed verbatim when it is a tracklist, and a 20-track
+Cyrillic list ran into the old 1024 cap. It is a ceiling, not a cost — short answers stay short.
 
 ---
 

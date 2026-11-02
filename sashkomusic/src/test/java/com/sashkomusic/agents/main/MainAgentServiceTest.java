@@ -1,10 +1,11 @@
 package com.sashkomusic.agents.main;
 
+import com.sashkomusic.agents.config.MainChatMemoryProvider;
 import com.sashkomusic.agents.discovery.DiscoveryTools;
 import com.sashkomusic.agents.discovery.MusicResearcher;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector;
 import com.sashkomusic.agents.discovery.ReleaseRecommender;
-import com.sashkomusic.agents.discovery.SearchRequestExtractor;
+import com.sashkomusic.mainagent.search.SearchRequestExtractor;
 import com.sashkomusic.agents.library.LibraryAgentService;
 import com.sashkomusic.agents.turn.ProgressNotifier;
 import com.sashkomusic.mainagent.bot.BotResponse;
@@ -39,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,9 +61,10 @@ class MainAgentServiceTest {
     private final SearchRequestExtractor extractor = mock(SearchRequestExtractor.class);
     private final ReleaseSearchFlowService releaseSearch = mock(ReleaseSearchFlowService.class);
     private final ProgressNotifier progress = mock(ProgressNotifier.class);
+    private final MainChatMemoryProvider memory = mock(MainChatMemoryProvider.class);
 
     private final ScriptedModel model = new ScriptedModel();
-    private final MainAgentService sut = new MainAgentService(agent(), progress, releaseSearch);
+    private final MainAgentService sut = new MainAgentService(agent(), memory, progress, releaseSearch, searchContext);
 
     @Test
     void the_turn_never_shows_up_in_a_tool_schema() {
@@ -110,7 +113,9 @@ class MainAgentServiceTest {
         List<BotResponse> out = sut.chat(CTX, "знайди burial untrue");
 
         assertThat(out).containsExactly(BotResponse.aiText("untrue — другий альбом burial"), stackCard);
-        verify(searchContext).beginStacks(CTX.conversationId());
+        verify(searchContext).retainStacks(CTX.conversationId(), List.of("s1"));
+        verify(searchContext, never()).beginStacks(any());
+        verify(searchContext, never()).discardStacks(any(), any());
         assertThat(model.lastToolResult()).startsWith("showed 1 card stack for 'Burial Untrue'").contains("Hyperdub");
     }
 
@@ -129,6 +134,36 @@ class MainAgentServiceTest {
         List<BotResponse> out = sut.chat(CTX, "видали untrue");
 
         assertThat(out).containsExactly(BotResponse.aiText("перевір і підтверди"), confirm);
+    }
+
+    @Test
+    void every_turn_compacts_the_memory_before_the_model_sees_it() {
+        model.reply("привіт");
+
+        sut.chat(CTX, "привіт");
+
+        verify(memory).compact(CTX.conversationId());
+        verify(searchContext, never()).retainStacks(any(), any());
+    }
+
+    @Test
+    void a_failed_turn_rolls_back_its_stacks_and_leaves_the_older_ones() {
+        when(extractor.extract(anyString())).thenReturn(MetadataSearchRequest.create("Burial", "Untrue", "",
+                DateRange.empty(), "", "", "", "", "", "", "", Language.EN));
+        ReleaseMetadata untrue = new ReleaseMetadata("discogs:release:1", null, SearchEngine.DISCOGS, "Burial",
+                "Untrue", 100, List.of("2007"), List.of("Album"), 0, 0, 1, List.of(), null, List.of("Dubstep"), "Hyperdub");
+        when(aggregatedSearch.search(any())).thenReturn(
+                new AggregatedSearchService.Aggregated(List.of(untrue), 1, List.of(SearchEngine.DISCOGS), 0));
+        when(searchContext.openStack(eq(CTX.conversationId()), anyString(), any(), any(), any(), any())).thenReturn("s4");
+        model.callTool("search", "{\"query\":\"Burial Untrue\"}");
+        model.fail(new IllegalStateException("model overloaded"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sut.chat(CTX, "знайди burial untrue"))
+                .hasMessageContaining("model overloaded");
+
+        verify(searchContext).discardStacks(CTX.conversationId(), List.of("s4"));
+        verify(searchContext, never()).retainStacks(any(), any());
+        verify(searchContext, never()).beginStacks(any());
     }
 
     @Test

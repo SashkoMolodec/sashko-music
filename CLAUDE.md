@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./gradlew :sashkomusic:test
 
 # Run a single test class
-./gradlew :sashkomusic:test --tests com.sashkomusic.agents.discovery.SearchRequestNormalizerTest
+./gradlew :sashkomusic:test --tests com.sashkomusic.mainagent.search.SearchRequestNormalizerTest
 
 # Run locally (requires infrastructure via docker compose)
 ./gradlew :sashkomusic:bootRun
@@ -132,8 +132,8 @@ lane task
 `OngoingFlow` SPI (`mainagent.bot.OngoingFlow`) — same idea for text-based multi-turn dialogue (e.g. "type your comment now"). Each flow that holds pending per-chat state implements:
 ```java
 public interface OngoingFlow {
-    boolean appliesTo(long chatId);
-    List<BotResponse> handle(long chatId, String input);
+    boolean appliesTo(ConversationContext ctx);
+    List<BotResponse> handle(ConversationContext ctx, String input);
 }
 ```
 Orchestrator injects `List<OngoingFlow>` and iterates. Add a new ongoing flow by writing a `@Component` impl — zero edits in orchestrator. Existing impls: `CommentInputOngoingFlow` (DjTag comment), `ProcessFolderSelectionOngoingFlow`.
@@ -143,14 +143,14 @@ Orchestrator injects `List<OngoingFlow>` and iterates. Add a new ongoing flow by
 Per-chat state survives JVM restart via Postgres — **not Redis** (existing infra wins; swap to Redis later behind the same interface if multi-instance becomes needed).
 
 ```
-chat_state (chat_id BIGINT, flow_key TEXT, payload JSONB, updated_at TIMESTAMPTZ, PRIMARY KEY(chat_id, flow_key))
+chat_state (conversation_id TEXT, flow_key TEXT, payload JSONB, updated_at TIMESTAMPTZ, PRIMARY KEY(conversation_id, flow_key))
 ```
 
 Use through `com.sashkomusic.mainagent.bot.state.ChatStateStore`:
 ```java
-<T> Optional<T> get(long chatId, String flowKey, Class<T> type);
-       void     put(long chatId, String flowKey, Object payload);
-       void     remove(long chatId, String flowKey);
+<T> Optional<T> get(String conversationId, String flowKey, Class<T> type);
+       void     put(String conversationId, String flowKey, Object payload);
+       void     remove(String conversationId, String flowKey);
        int      clearAll(String flowKey);
 ```
 
@@ -224,6 +224,8 @@ LOGICAL boundaries (enforce via code review, not the compiler):
   downloadagent and libraryagent do not call each other
   downloadagent and libraryagent do not import mainagent AT ALL — currently zero imports, keep it that way
   anything two packages need goes to com.sashkomusic.shared, never into mainagent
+  agents sits on top of mainagent's flows and search; inside mainagent only the entry layer
+    (mainagent.bot, incl. newtopic) imports agents — search, download, process, library never do
 ```
 
 If you are about to add an `import com.sashkomusic.mainagent.…` inside `downloadagent` or
@@ -232,6 +234,8 @@ If you are about to add an `import com.sashkomusic.mainagent.…` inside `downlo
 ```bash
 grep -rl "import com.sashkomusic.mainagent" --include=*.java \
   sashkomusic/src/main/java/com/sashkomusic/{downloadagent,libraryagent}/   # must print nothing
+grep -rl "import com.sashkomusic.agents" --include=*.java sashkomusic/src/main/java/com/sashkomusic/mainagent/ \
+  | grep -v "/mainagent/bot/"                                              # must print nothing
 ```
 
 ## Internal Layer Rules (per package)
@@ -286,7 +290,7 @@ FlowService  →  domain Service  →  Port / Repository
 - A `*Service` that exists only to call 2–3 other services is overhead. Inline into the caller (e.g. the `clearAllCaches` lesson — `UtilFlowService` was inlined into `UserInteractionOrchestrator`).
 
 **Match prompt location to consumer**
-- Single-purpose LangChain4j interfaces live next to their caller package, not in a shared `ai/` bag. `SearchRequestExtractor`, `ReleaseRecommender` and `MusicResearcher` live under `agents.discovery`; `DownloadBatchAnalyzer` under `mainagent.download`; `FolderNameParser` under `mainagent.process`.
+- Single-purpose LangChain4j interfaces live next to their caller package, not in a shared `ai/` bag. `ReleaseRecommender` and `MusicResearcher` live under `agents.discovery`; `SearchRequestExtractor` (+ `SearchRequestNormalizer`) under `mainagent.search` — direct searches, `/process` and the discovery tools all parse queries with it, and the search domain must not depend on `agents`; `DownloadBatchAnalyzer` under `mainagent.download`; `FolderNameParser` under `mainagent.process`.
 
 ## Testing
 

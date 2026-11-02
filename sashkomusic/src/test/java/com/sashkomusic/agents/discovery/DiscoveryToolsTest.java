@@ -6,6 +6,7 @@ import com.sashkomusic.agents.turn.AgentTurn;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import com.sashkomusic.mainagent.search.SearchRequestExtractor;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.Language;
@@ -332,7 +333,7 @@ class DiscoveryToolsTest {
     }
 
     @Test
-    void the_first_stack_of_a_turn_drops_the_previous_answers_stacks_and_only_the_first() {
+    void tools_only_add_stacks_and_leave_the_turn_boundary_to_the_service() {
         when(recommender.recommend(anyString())).thenReturn("""
                 Model 500 — Classics
                 Derrick May — Innovator
@@ -344,7 +345,8 @@ class DiscoveryToolsTest {
                 "", "", "", "", "", "", "", Language.EN));
         tools.search("Burial Untrue", turn.parameters());
 
-        verify(contextService, times(1)).beginStacks(CONVERSATION);
+        verify(contextService, never()).beginStacks(any());
+        verify(contextService, never()).retainStacks(any(), any());
         assertThat(turn.openedStacks()).extracting(stack -> stack.label())
                 .containsExactly("Model 500 — Classics", "Derrick May — Innovator", "Juan Atkins — Deep Space", null);
     }

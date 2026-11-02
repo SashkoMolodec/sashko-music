@@ -1,6 +1,6 @@
 package com.sashkomusic.mainagent.process;
 
-import com.sashkomusic.agents.discovery.SearchRequestExtractor;
+import com.sashkomusic.mainagent.search.SearchRequestExtractor;
 import com.sashkomusic.mainagent.search.client.bandcamp.BandcampClient;
 import com.sashkomusic.mainagent.search.client.discogs.DiscogsClient;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;

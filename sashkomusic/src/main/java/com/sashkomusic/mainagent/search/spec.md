@@ -32,8 +32,10 @@ record SearchStack(String id, String label, String group, List<ReleaseMetadata> 
 | Метод | Що робить |
 |-------|-----------|
 | `saveSearchContext(conversationId, source, rawInput, request, results)` | Один результат без стосів (URL-резолв, photo search) |
-| `beginStacks(conversationId)` | Межа ходу: чистить список стосів, лишає активний стос живим (кнопки на старих картках далі працюють) |
-| `openStack(conversationId, rawInput, request, label, results)` | Додає стос, робить його активним, повертає `stackId` |
+| `beginStacks(conversationId)` | Межа прямого пошуку (`searchDefault`, URL): чистить список стосів, лишає активний стос живим (кнопки на старих картках далі працюють) |
+| `retainStacks(conversationId, ids)` | Межа вдалого агентного ходу (`MainAgentService`): лишає тільки стоси цього ходу |
+| `discardStacks(conversationId, ids)` | Хід, що впав: прибирає його стоси; активним стає останній зі старих стосів (його релізи й сторінка), запит лишається останнім спробуваним — ⛏️ розширює саме його |
+| `openStack(conversationId, rawInput, request, label, results)` | Додає стос, робить його активним, повертає `stackId`. Id — `s<max+1>` серед живих стосів, а не `s<кількість+1>`: після `retainStacks` лишаються, скажімо, `s3`,`s4`, і наступний стос не має стати другим `s3` |
 | `openStack(conversationId, rawInput, request, label, group, results)` | Те саме, але стос належить до групи: `group` читає лише вступ, на картці він не друкується |
 | `getStacks(conversationId)` / `findStack(conversationId, id)` | Стоси поточного ходу |
 | `updateStackPage(conversationId, stackId, page)` | Сторінка конкретного стосу |
@@ -175,7 +177,7 @@ extractor.extract(raw))`. Раніше це робив лише агентний
 4. `DownloadContextHolder` — окремий holder з flow_key `"dl_ctx"`, не тут.
 5. `currentPage` читається `getTrackList` (`DiscoveryTools`) щоб знати який реліз показати.
 6. Жоден результат не потрапляє юзеру без перевірки `ReleaseMatchValidator` — крім явного "копай глибше".
-7. `beginStacks` викликається раз на хід: у агентному ході — перший `openStack` (`AgentTurn.claimStackReset`), у прямих пошуках — `searchDefault`. Інакше другий пошук у тому ж ході затер би стос першого.
+7. Межа ходу: у прямих пошуках — `beginStacks` перед `openStack` (`searchDefault`); в агентному ході — `MainAgentService` після ходу (`retainStacks` / `discardStacks`), тули стоси не скидають. Так другий пошук ходу не затирає перший, а хід, що впав, не ламає стоси вже надісланих карток.
 
 ---
 

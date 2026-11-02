@@ -1,4 +1,4 @@
-package com.sashkomusic.agents.discovery;
+package com.sashkomusic.mainagent.search;
 
 import com.sashkomusic.shared.model.MetadataSearchRequest;
 import dev.langchain4j.service.SystemMessage;

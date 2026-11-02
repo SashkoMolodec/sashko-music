@@ -47,17 +47,20 @@ public class ConversationLanes {
     /** Queues {@code task} behind whatever is still running or waiting for this lane of this conversation. */
     public void submit(Lane lane, String conversationId, Runnable task) {
         String key = lane + ":" + conversationId;
-        tails.compute(key, (k, tail) -> {
-            CompletableFuture<Void> previous = tail == null ? CompletableFuture.completedFuture(null) : tail;
+        CompletableFuture<Void> tail = tails.compute(key, (k, current) -> {
+            CompletableFuture<Void> previous = current == null ? CompletableFuture.completedFuture(null) : current;
             if (pool.isShutdown()) {
                 log.warn("Dropping update for [{}] — shutting down", k);
-                return tail;
+                return current;
             }
-            CompletableFuture<Void> next = previous.handle((ignored, error) -> null)
+            return previous.handle((ignored, error) -> null)
                     .thenRunAsync(() -> runLogged(k, task), pool);
-            next.whenComplete((ignored, error) -> tails.remove(k, next));
-            return next;
         });
+        // Registered only once the new tail is in the map: a task that has already finished runs this
+        // callback right here, and inside compute it would find the old tail and leave the key behind.
+        if (tail != null) {
+            tail.whenComplete((ignored, error) -> tails.remove(key, tail));
+        }
     }
 
     /** For work that must not wait for any lane, e.g. answering a callback query. */

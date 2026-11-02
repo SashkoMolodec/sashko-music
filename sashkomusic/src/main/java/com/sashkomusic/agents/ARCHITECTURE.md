@@ -16,6 +16,7 @@ Telegram Update
             ├─ OngoingFlow.appliesTo(ctx) → OngoingFlow.handle(ctx, text)
             ├─ /np /process /reprocess /newtopic → FlowService
             └─ runMainAgent(ctx, text) → MainAgentService.chat(ctx, text)
+                 ├─ mainMemoryProvider.compact(conversationId)                  ← підсумок, якщо ≥ 26 повідомлень
                  ├─ turn = new AgentTurn(ctx, progress → ProgressNotifier)
                  ├─ MainAgent.chat(conversationId, text, turn.parameters())     ← Sonnet
                  │    └─ [tool calls, each gets the turn via InvocationParameters]
@@ -23,6 +24,7 @@ Telegram Update
                  │         ├─ researchMusic → MusicResearcher (Haiku + web_search, no memory)
                  │         ├─ downloadMusic → MusicDownloadFlowService (no LLM)
                  │         └─ manageLibrary → LibraryAgentService → LibraryAgent (Haiku, memory ":lib")
+                 ├─ стоси: вдалий хід → retainStacks(ids), хід упав → discardStacks(ids)
                  ├─ reply = [aiText] + turn.shown() + one message per turn.openedStacks()
                  └─ chatBot.sendResponse(ctx, each response)
 ```
@@ -44,7 +46,7 @@ record ConversationContext(long chatId, @Nullable Integer topicId) {
 `conversationId` — єдиний ключ для:
 - `conversation_messages` (LangChain4j memory)
 - `chat_state` (per-flow session state)
-- `SearchContextService` (in-memory search results)
+- `SearchContextService` (стан пошуку в `chat_state`, flow_key `search`)
 - Всіх async event DTOs
 
 ---
@@ -72,7 +74,10 @@ MainAgent ще не має відповіді. Спільний ключ доп�
 Колишні ключі `:d` (DiscoveryAgent) прибрані міграцією V21.
 
 **Window semantics:** `MessageWindowChatMemory` автоматично витискає найстаріші
-повідомлення коли вікно переповнюється. Кожен хід розмови:
+повідомлення коли вікно переповнюється. Щоб до цього не доходило, `MainAgentService` перед кожним ходом
+викликає `MainChatMemoryProvider.compact(conversationId)`: від 26 повідомлень старіші стискаються Haiku в
+підсумок. Саме явний виклик — LangChain4j кешує `ChatMemory` розмови й кличе `ChatMemoryProvider.get()` для неї
+один раз за життя JVM, тож логіка всередині `get()` майже ніколи не спрацьовувала б. Кожен хід розмови:
 - Без tool: 2 messages (USER + AI)
 - З tool:   4 messages (USER + AI(tool_use) + TOOL_RESULT + AI(text))
 
@@ -93,11 +98,12 @@ AgentTurn.of(parameters)   — хід, у якому працює тул (поз
 turn.context()             — куди відповідати (замість @ToolMemoryId і розбору суфіксів)
 turn.show(responses)       — картки / підтвердження / прев'ю, повз LLM
 turn.progress(text)        — "🔍 шукаю..." напряму в Telegram, кожен текст раз на хід
-turn.claimStackReset()     — перший стос ходу скидає стоси попередньої відповіді
 turn.stackOpened(stack)    — стос, який MainAgentService покаже після відповіді
+turn.openedStacks()        — стоси ходу; після ходу лишаються тільки вони (retainStacks), впав — прибираються
 ```
 
-Хід, що впав, забирає свої картки з собою — нема що чистити і нема "stale" стану для наступного ходу.
+Хід, що впав, забирає свої картки з собою, а його стоси `MainAgentService` прибирає (`discardStacks`) — стоси вже
+надісланих карток лишаються живими.
 
 ### ProgressNotifier
 Надсилає через `TelegramClient` напряму; `AgentTurn.progress` — єдиний його споживач в агентах.
@@ -106,28 +112,9 @@ turn.stackOpened(stack)    — стос, який MainAgentService покаже 
 
 ## Async Events
 
-Для операцій що не повертають результат синхронно (завантаження, теги) — повний список у CLAUDE.md, Spring Event Map:
-
-```
-Publisher                Event                          Listener (mainagent)
-─────────────────────────────────────────────────────────────────────────────
-mainagent     → FilesSearchTaskEvent      → downloadagent
-downloadagent → FileSearchResultEvent     → SearchFilesResultListener
-mainagent     → FilesDownloadTaskEvent    → downloadagent
-downloadagent → DownloadCompleteEvent     → DownloadCompleteListener
-downloadagent → DownloadBatchCompleteEvent→ DownloadBatchCompleteListener
-downloadagent → DownloadErrorEvent        → DownloadErrorListener
-mainagent     → ProcessLibraryTaskEvent   → libraryagent
-libraryagent  → LibraryProcessingCompleteEvent → LibraryProcessingCompleteListener
-mainagent     → ReprocessReleaseTaskEvent → libraryagent
-libraryagent  → ReprocessReleaseCompleteEvent  → ReprocessReleaseResultListener
-mainagent     → RateTrackTaskEvent        → libraryagent
-mainagent     → SetEnergyTaskEvent        → libraryagent
-mainagent     → SetFunctionTaskEvent      → libraryagent
-mainagent     → AddCommentTaskEvent       → libraryagent
-libraryagent  → TrackUpdateResultEvent    → TrackUpdateResultListener
-libraryagent  → TagChangesNotificationEvent → TagChangesNotificationListener
-```
+Для операцій, що не повертають результат синхронно (завантаження, теги, process, Apple Music sync), агенти
+публікують події через `ApplicationEventPublisher`. Повний і єдиний актуальний список — **Spring Event Map у
+CLAUDE.md**; тут його не дублюємо, щоб дві копії не розходились.
 
 **Правило:** всі DTO що несуть "куди відповісти" використовують `String conversationId`.
 Listener реконструює: `ConversationContext.from(dto.conversationId())` → правильний топік.
@@ -146,12 +133,15 @@ chat_state
   PRIMARY KEY (conversation_id, flow_key)
 ```
 
-| flow_key   | Holder                | Що зберігає                      |
-|------------|-----------------------|----------------------------------|
-| `dj_tag`   | `DjTagContextHolder`  | trackId + waitingForComment flag |
-| `download` | `DownloadContextHolder`| options per releaseId            |
-| `search`   | `SearchContextService`| результати, стоси, поточна сторінка |
-| `process`  | `ProcessFolderContextHolder` | pending folder selection  |
+Основні ключі (повний перелік — `.specs/conversation-state.md`; кожен holder тримає свій `FLOW_KEY`):
+
+| flow_key   | Holder                       | Що зберігає                                   |
+|------------|------------------------------|-----------------------------------------------|
+| `search`   | `SearchContextService`       | результати, стоси, поточна сторінка           |
+| `dl_ctx`   | `DownloadContextHolder`      | обраний реліз + варіанти по кожному releaseId |
+| `dj_tag`   | `DjTagContextHolder`         | трек + прапорець очікування коментаря         |
+| `proc_sel` | `ProcessFolderContextHolder` | очікуваний вибір папки для `/process`         |
+| `last_release` | `LastReleaseContextHolder` | останній оброблений реліз                    |
 
 Персистується через `JpaChatStateStore` (Postgres). Виживає після рестарту.
 

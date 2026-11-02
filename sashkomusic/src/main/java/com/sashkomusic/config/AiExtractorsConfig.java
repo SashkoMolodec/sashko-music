@@ -1,6 +1,6 @@
 package com.sashkomusic.config;
 
-import com.sashkomusic.agents.discovery.SearchRequestExtractor;
+import com.sashkomusic.mainagent.search.SearchRequestExtractor;
 import com.sashkomusic.mainagent.bot.newtopic.TopicEmojiPicker;
 import com.sashkomusic.mainagent.bot.newtopic.TopicNameGenerator;
 import com.sashkomusic.mainagent.bot.photo.PhotoReleaseTextExtractor;

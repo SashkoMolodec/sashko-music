@@ -27,15 +27,21 @@ import org.telegram.telegrambots.meta.api.objects.photo.PhotoSize;
 import org.slf4j.MDC;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UserInteractionOrchestrator {
+
+    /** "копай ще" / "копай далі" ask MainAgent to widen the last search (digDeeper), not Soulseek for "ще". */
+    private static final Set<String> DIG_MORE_WORDS = Set.of("ще", "далі", "глибше", "більше", "все");
 
     private final MainAgentService mainAgentService;
     private final CallbackDispatcher callbackDispatcher;
@@ -170,10 +176,18 @@ public class UserInteractionOrchestrator {
         if (rawInput.startsWith("/np") || rawInput.trim().equalsIgnoreCase("шо грає 🎵")) {
             return withNowPlayingContext(ctx, "/np", nowPlayingFlowService.nowPlaying(ctx));
         }
-        if (rawInput.toLowerCase().startsWith("копай ")) {
-            return directSoulseekSearchFlowService.search(ctx, rawInput.substring("копай ".length()));
+        if (isDirectSoulseekSearch(rawInput)) {
+            return directSoulseekSearchFlowService.search(ctx, rawInput.trim().substring("копай ".length()));
         }
         return Collections.emptyList();
+    }
+
+    /** "копай <query>" is a raw Soulseek search — unless everything after "копай" only says "more". */
+    static boolean isDirectSoulseekSearch(String rawInput) {
+        String text = rawInput.trim().toLowerCase(Locale.ROOT);
+        if (!text.startsWith("копай ")) return false;
+        String rest = text.substring("копай ".length()).replaceAll("[^\\p{L}\\s]", " ").trim();
+        return !rest.isEmpty() && !Arrays.stream(rest.split("\\s+")).allMatch(DIG_MORE_WORDS::contains);
     }
 
     /**

@@ -14,8 +14,10 @@ tool-об'єкт у `MainAgentConfig`). Окремого LLM-агента тут
 `ReleaseMatchValidator`, див. [mainagent/search/spec.md](../../mainagent/search/spec.md)). Один пошук = одна
 конкретна річ = один стос карток. Гортати в Telegram десятки випадкових релізів — це не результат.
 
-Пакет також тримає однопризначенні LLM-інтерфейси, які тули викликають у коді: `SearchRequestExtractor` (+
-`SearchRequestNormalizer`), `ReleaseRecommender`, `MusicResearcher`. Жоден з них не має пам'яті й тулів.
+Пакет також тримає однопризначенні LLM-інтерфейси, які тули викликають у коді: `ReleaseRecommender`,
+`MusicResearcher`. Жоден з них не має пам'яті й тулів. Розбір запиту (`SearchRequestExtractor` +
+`SearchRequestNormalizer`) живе в `mainagent.search` — ним користуються й прямі пошуки, і `/process`, а пошуковий
+домен не має залежати від пакета агентів.
 
 ---
 
@@ -26,11 +28,17 @@ tool-об'єкт у `MainAgentConfig`). Окремого LLM-агента тут
 (`SearchContextService`, flow_key `search`) пишеться і читається прямо під ним. Суфікса `:d`, `copySearchContext`
 і стрипання суфікса в тулах більше нема.
 
-**Межа ходу для стосів.** Перший стос, який відкриває хід, спершу скидає стоси попередньої відповіді:
-`if (turn.claimStackReset()) searchContextService.beginStacks(conversationId)`. Далі кожен `openStack` додає стос і
-`turn.stackOpened(stack)`. Хід, що нічого не знайшов (промах, треклист, research), стан не чіпає, тож стоси й
+**Межа ходу для стосів.** Тул лише додає стос: `searchContextService.openStack(...)` + `turn.stackOpened(stack)`.
+Стоси попередньої відповіді тули не скидають — це робить `MainAgentService` **після** ходу: вдалий хід лишає тільки
+свої стоси (`retainStacks`), хід, що впав, прибирає свої (`discardStacks`), див. "AgentTurn" у
+[main/spec.md](../main/spec.md). Хід, що нічого не відкрив (промах, треклист, research), стоси не чіпає, тож
 ⬅️/➡️ на вже надісланих картках працюють далі. `MainAgentService` після ходу шле по повідомленню на кожен
 `turn.openedStacks()`.
+
+**Пул пошуків.** `findSimilar` і `exploreAndRecommend` підтверджують кандидатів паралельно на одному спільному
+пулі `DiscoveryTools` (`SIMILAR_SEARCH_CONCURRENCY` = 3 потоки на весь бот, закривається на shutdown). MusicBrainz
+обслуговує один запит за секунду, тож більше потоків — хоч на виклик, хоч на розмову — лише стояли б у черзі його
+rate limiter-а.
 
 **Результат тула** — текст для вступу MainAgent, що будує `StackReport`:
 - один стос → `"showed 1 card stack for '<query>' on <sources>: "` + агрегат (`StackReport.describe`);
@@ -41,7 +49,7 @@ tool-об'єкт у `MainAgentConfig`). Окремого LLM-агента тут
 | Параметр      | Значення |
 |---------------|----------|
 | ChatModel bean| `webSearchChatModel` (`AgentModelsConfig`) — Haiku (`agents.haiku.model-name`), **окремий** від спільного `haikuChatModel` (LibraryAgent + екстрактори), бо тільки цей несе Anthropic server-side `web_search` tool (`max_uses=3`). Споживачі: `MusicResearcher` і `ReleaseRecommender` (`DiscoveryToolsConfig`), `ListenLinkWebSearch` (`AiExtractorsConfig`, див. [.specs/streaming.md](../../../../../../.specs/streaming.md)) |
-| maxTokens     | 1024 (`agents.haiku.max-tokens`) |
+| maxTokens     | 4096 (`agents.haiku.max-tokens`, спільний з `haikuChatModel`; стеля, а не ціна) |
 | Memory        | немає — кожен виклик самодостатній, контекст розмови розрезолвлює MainAgent перед викликом тула |
 
 Модель викликає `web_search` напряму на інфраструктурі Anthropic — результат приходить у **тій самій** відповіді
@@ -227,7 +235,8 @@ Real similarity, never invented from the LLM's own knowledge. Детерміно
 5. `exploreAndRecommend()` показує тільки те, що підтвердилось у каталогах — рекомендація без картки не показується.
 6. Група стосу береться з джерела зв'язку в коді, а не з LLM: модель описує групи, але не визначає їх.
 7. Жоден запит без анкера (артист/назва/трек/лейбл) не доходить до показу як "пошук" — або explore, або нічого.
-8. Стоси скидає тільки перший `openStack` ходу (`AgentTurn.claimStackReset`) — інакше другий пошук у тому ж ході затер би стос першого.
+8. Тули стоси не скидають — межу ходу закриває `MainAgentService` після ходу (`retainStacks` / `discardStacks`). Інакше
+   хід, що впав після першого пошуку, лишив би чат без робочих стосів, а другий пошук ходу міг би затерти перший.
 9. Стан пошуку живе під основним `conversationId`; жодних суфіксних ключів.
 
 ---

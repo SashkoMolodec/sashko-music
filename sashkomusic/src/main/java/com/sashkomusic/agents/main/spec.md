@@ -49,16 +49,24 @@ public interface MainAgent {
 | `context()` / `conversationId()` | куди йде відповідь — замість `@ToolMemoryId` і розбору суфіксів |
 | `show(List<BotResponse>)` | картки, кнопки підтвердження, прев'ю — повз LLM |
 | `progress(text)` | "🔍 шукаю..." напряму в Telegram; той самий текст двічі за хід не шлеться |
-| `claimStackReset()` / `stackOpened(stack)` | стоси карток пошуку цього ходу (див. discovery/spec.md) |
+| `stackOpened(stack)` / `openedStacks()` | стоси карток пошуку цього ходу (див. discovery/spec.md) |
 
 Чому не спільний буфер (`ChatResponseAccumulator`, видалений): картки жили в singleton-мапі по
 `conversationId` і переживали хід, що впав посередині (`begin()` лише логував "stale"). Хід тепер — локальний
 об'єкт: впав `chat()` — його картки зникають разом з ним, і нічого не треба чистити.
 
-`MainAgentService.chat` після `mainAgent.chat()` збирає відповідь у такому порядку:
+`MainAgentService.chat` перед ходом стискає пам'ять (`mainMemoryProvider.compact(conversationId)`, див. "Модель і
+пам'ять"), а після `mainAgent.chat()` збирає відповідь у такому порядку:
 1. текст MainAgent (`BotResponse.aiText`) — вступ до того, що далі;
 2. `turn.shown()` — картки бібліотеки / завантаження в порядку показу;
 3. по повідомленню на кожен відкритий за хід стос (`ReleaseSearchFlowService.buildStackResponse(ctx, id, 0)`).
+
+**Межа ходу для стосів закривається після ходу, не під час нього.** Тули лише додають стоси
+(`SearchContextService.openStack`); стоси попередньої відповіді лишаються, поки хід не скінчився:
+- хід вдався і відкрив стоси → `searchContextService.retainStacks(conversationId, ids)` — лишаються тільки стоси
+  цього ходу;
+- хід упав → `searchContextService.discardStacks(conversationId, ids)` — стоси цього ходу прибираються (їхніх
+  карток ніхто не побачив), а стоси й ⬅️/➡️ на вже надісланих картках працюють далі; виняток іде далі.
 
 Помилка моделі → виняток іде в `UserInteractionOrchestrator`, який відповідає "шось не то, попробуй ще раз".
 
@@ -78,13 +86,18 @@ public interface MainAgent {
 | Memory provider | `MainChatMemoryProvider` (backed by `PostgresChatMemoryStore` → `conversation_messages` table) |
 | Prompt caching | `cacheSystemMessages=true`, `cacheTools=true` |
 
-`MainChatMemoryProvider` кешує `MessageWindowChatMemory` per conversationId, так що in-memory window і persistent
-store залишаються синхронізованими. Cross-agent context: `UserInteractionOrchestrator` викликає
+`MainChatMemoryProvider.get()` віддає `MessageWindowChatMemory` без власного стану — кожне читання й запис іде в
+store, тому кешувати її нема чого. Cross-agent context: `UserInteractionOrchestrator` викликає
 `mainMemoryProvider.appendUserAndAi(...)` після `/library`, дописуючи чистий `UserMessage` + `AiMessage(summary)`
 в основну MainAgent memory. `/discovery` цього не потребує — він і є хід MainAgent.
 
-**Auto-summarization:** коли `get(conversationId)` повертає memory з ≥ 26 повідомленнями, `MainChatMemoryProvider`
-автоматично стискає старіші повідомлення:
+**Auto-summarization — `compact(conversationId)`, явний виклик, не побічний ефект `get()`.** LangChain4j
+(`ChatMemoryService`) кешує `ChatMemory` кожної розмови й кличе `ChatMemoryProvider.get()` для неї один раз за
+життя JVM, тож сумаризація всередині `get()` спрацьовувала лише після рестарту або на `/np`/`/library`, а в
+розмові з самого вільного тексту вікно мовчки витискало старе. Тепер `compact` викликають:
+`MainAgentService.chat` перед кожним ходом і `appendUserAndAi` / `appendUserAndAiIfNew` після дописування. Обидва —
+з MESSAGES lane, тому з ходом тієї ж розмови не перетинаються. Коли memory має ≥ 26 повідомлень, старіші
+стискаються:
 1. Всі повідомлення крім останніх 10 подаються в Haiku з проханням стиснути до одного абзацу (≤150 слів, **англійською** — менше токенів, більше контексту вміщується).
 2. Memory замінюється на: `UserMessage("Підсумок попередньої розмови:")` + `AiMessage(summaryText)` + останні 10 повідомлень (~12 повідомлень разом).
 3. Межа розрізання вирівнюється по найближчому `UserMessage` щоб не розривати `tool_use`/`tool_result` пари.
@@ -106,7 +119,7 @@ store залишаються синхронізованими. Cross-agent conte
 | `search(query)` | названий реліз / трек / артист; лейбл як `"лейбл <назва>"` | `DiscoveryTools` — точковий пошук, свій стос карток |
 | `exploreAndRecommend(topic)` | "порадь щось", сцена / жанр / епоха без назви | `DiscoveryTools` — research + до 3 стосів |
 | `findSimilar(seedQuery)` | "хочу схоже на X" (НОВА музика) | `DiscoveryTools` — MusicBrainz-зв'язки + ListenBrainz, до 10 стосів |
-| `digDeeper()` | "копай", "покажи все" | `DiscoveryTools` — останній запит без валідації |
+| `digDeeper()` | "копай", "ще копай", "копай ще/далі/глибше", "покажи все" | `DiscoveryTools` — останній запит без валідації. "копай <запит>" з будь-яким іншим словом — пряма команда пошуку в Soulseek, до MainAgent не доходить (`UserInteractionOrchestrator`) |
 | `getTrackList()` | треклист релізу на екрані, якого **нема** в бібліотеці | `DiscoveryTools` — треки з каталогу |
 | `researchMusic(question)` | фактичне питання без прохання показати релізи: "розкажи про X", "хто такий X", "що за лейбл Y" | `DiscoveryTools` → `MusicResearcher` (Haiku + web_search) |
 | `manageLibrary(command)` | будь-яка операція з власною бібліотекою: пошук, переміщення, process / reprocess, смартлисти; **треклист релізу що є в бібліотеці**; "маю щось схоже на X?"; **інфо про власний реліз**; **"що зараз грає"** | `LibraryAgentService` → `LibraryAgent` (Haiku) |

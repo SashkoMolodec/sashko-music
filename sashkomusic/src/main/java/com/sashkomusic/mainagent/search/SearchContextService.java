@@ -95,13 +95,59 @@ public class SearchContextService {
         return locked(conversationId, () -> {
             List<SearchStack> stacks = new ArrayList<>(
                     stateStore.get(conversationId, FLOW_KEY, SearchState.class).map(SearchState::stacks).orElse(List.of()));
-            String stackId = "s" + (stacks.size() + 1);
+            String stackId = nextStackId(stacks);
             stacks.add(new SearchStack(stackId, label, group, releases, 0));
 
             stateStore.put(conversationId, FLOW_KEY,
                     new SearchState(contextFor(source, rawInput, request, releases), releases, stacks));
             return stackId;
         });
+    }
+
+    /**
+     * Closes a successful agent turn: only the stacks it opened stay "what was just found". Done after
+     * the turn rather than at its first stack, so a turn that fails half-way never takes the stacks of
+     * cards already in the chat down with it.
+     */
+    public void retainStacks(String conversationId, Collection<String> stackIds) {
+        locked(conversationId, () -> stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state ->
+                stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), state.releases(),
+                        state.stacks().stream().filter(stack -> stackIds.contains(stack.id())).toList()))));
+    }
+
+    /**
+     * Rolls back the stacks of a failed agent turn — nobody saw their cards. The last stack left becomes
+     * the active one again; the query stays the last one tried, so ⛏️ widens what was asked.
+     */
+    public void discardStacks(String conversationId, Collection<String> stackIds) {
+        locked(conversationId, () -> stateStore.get(conversationId, FLOW_KEY, SearchState.class).ifPresent(state -> {
+            List<SearchStack> kept = state.stacks().stream()
+                    .filter(stack -> !stackIds.contains(stack.id()))
+                    .toList();
+            if (kept.isEmpty()) {
+                stateStore.put(conversationId, FLOW_KEY, new SearchState(state.context(), state.releases(), kept));
+                return;
+            }
+            SearchStack active = kept.getLast();
+            SearchContext old = state.context();
+            SearchContext context = new SearchContext(
+                    active.releases().isEmpty() ? old.source() : active.releases().getFirst().source(),
+                    old.request(), old.rawInput(),
+                    active.releases().stream().map(ReleaseMetadata::id).toList(),
+                    active.currentPage());
+            stateStore.put(conversationId, FLOW_KEY, new SearchState(context, active.releases(), kept));
+        }));
+    }
+
+    /** One past the highest live id, not the count: after retainStacks keeps s3 and s4, the next is s5. */
+    private static String nextStackId(List<SearchStack> stacks) {
+        int max = stacks.stream()
+                .map(SearchStack::id)
+                .filter(id -> id != null && id.matches("s\\d+"))
+                .mapToInt(id -> Integer.parseInt(id.substring(1)))
+                .max()
+                .orElse(0);
+        return "s" + (max + 1);
     }
 
     /**

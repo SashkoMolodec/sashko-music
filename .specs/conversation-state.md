@@ -28,12 +28,24 @@ chat_state (
 
 ## Context Holders
 
-| Holder | flow_key | Persisted | Package |
-|--------|----------|-----------|---------|
-| `SearchContextService` | `"search"` | ✅ PostgreSQL | mainagent/search |
-| `DjTagContextHolder` | `"dj_tag"` | ✅ PostgreSQL | mainagent/library |
-| `ProcessFolderContextHolder` | `"process"` | ✅ PostgreSQL | mainagent/process |
-| `DownloadContextHolder` | — | ❌ in-memory only | mainagent/download |
+| Holder | flow_key | Package |
+|---|---|---|
+| `SearchContextService` | `search` | mainagent/search |
+| `DownloadContextHolder` | `dl_ctx` | mainagent/download |
+| `SoulseekDirectoryConfirmContextHolder` | `slsk_dir_confirm` | mainagent/download |
+| `SoulseekCustomSearchFlowService` | `slsk_custom` | mainagent/download |
+| `DjTagContextHolder` | `dj_tag` | mainagent/library |
+| `AlbumCommentContextHolder` | `np_album_comment` | mainagent/library |
+| `LastReleaseContextHolder` | `last_release` | mainagent/library |
+| `TrackRemovalContextHolder` | `track_removal_select` | mainagent/library |
+| `SmartlistLabelContextHolder` | `sml_label` | mainagent/library |
+| `MarkersFlowService` | `markers_creating` / `markers_removing` | mainagent/library |
+| `SmartlistDraft (SmartlistCreationFlowService)` | `smartlist_create` | libraryagent/domain/smartlist |
+| `ProcessFolderContextHolder` | `proc_sel` | mainagent/process |
+| `PendingProcessContextHolder` | `pending_process` | mainagent/process |
+| `StreamingFlowService` | `listen_msg` | mainagent/streaming |
+
+Усі — `ChatStateStore` (Postgres, `chat_state`), переживають рестарт. Константа `FLOW_KEY` у класі — джерело правди.
 
 ---
 
@@ -75,8 +87,12 @@ SearchState {
 ⬇️/🎧 на картці будь-якого зі стосів, у будь-якому порядку.
 
 ### Межа ходу
-`beginStacks(conversationId)` чистить `stacks` на початку кожного ходу, але **лишає** активний стос —
-кнопки на вже відправлених картках мають працювати й після наступного запиту. `rememberQuery()` записує
+Прямий пошук (`searchDefault`) перед своїм стосом викликає `beginStacks(conversationId)`: чистить `stacks`, але
+**лишає** активний стос — кнопки на вже відправлених картках мають працювати й після наступного запиту.
+Агентний хід стоси не скидає під час роботи тулів: після ходу `MainAgentService` викликає `retainStacks` (вдався —
+лишаються тільки стоси ходу) або `discardStacks` (впав — його стоси прибираються, старі живі). Новий id — `s<max+1>`
+серед живих стосів, тож після `retainStacks` два стоси не отримають однаковий id.
+`rememberQuery()` записує
 запит без результатів (порожній точковий пошук), щоб ⛏️ мав що розширювати.
 
 ---
@@ -99,7 +115,7 @@ DjTagContext {
 
 ---
 
-## ProcessFolderContextHolder (flow_key: "process")
+## ProcessFolderContextHolder (flow_key: "proc_sel")
 
 ```java
 ProcessFolderContext {
@@ -113,18 +129,10 @@ ProcessFolderContext {
 
 ---
 
-## DownloadContextHolder (in-memory, не persisted)
+## DownloadContextHolder (flow_key: "dl_ctx")
 
-```java
-Map<String conversationId, DownloadContext {
-  String chosenReleaseId,
-  List<OptionReport> optionReports
-}>
-```
-
-Активний під час `DownloadOptionSelectionOngoingFlow`. Втрачається при рестарті → `"😔 варіанти пропали, нич нема, давай ше раз"`.
-
-**Рішення: мігрувати на ChatStateStore з flow_key `"download"` коли знадобиться.**
+Обраний реліз (`chosenReleaseId`) і `OptionReport`-и по кожному releaseId. Персистується через `ChatStateStore`,
+тож варіанти завантаження переживають рестарт. Чиститься на `ChatHardResetEvent` ("стоп").
 
 ---
 
@@ -134,8 +142,8 @@ Map<String conversationId, DownloadContext {
 
 | Agent | Table | Window | Memory ID |
 |-------|-------|--------|-----------|
-| MainAgent | `ai_message` | 32 msgs | `conversationId` |
-| LibraryAgent | `ai_message` | 16 msgs | `conversationId + ":lib"` |
+| MainAgent | `conversation_messages` | 32 msgs (+ `compact` перед кожним ходом) | `conversationId` |
+| LibraryAgent | `conversation_messages` | 16 msgs | `conversationId + ":lib"` |
 
 ---
 

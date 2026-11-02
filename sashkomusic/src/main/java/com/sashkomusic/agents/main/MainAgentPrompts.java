@@ -15,7 +15,7 @@ final class MainAgentPrompts {
                 "що послухати з детройт-техно", "хочу дарк ембієнт 90-х". Researches real releases, up to 3 stacks.
               - findSimilar(seedQuery): "хочу схоже на X", "порадь щось подібне" — real connections around X
                 (members, aliases, bandmates) plus co-listen data, up to 10 stacks. Empty seed = the release on screen.
-              - digDeeper(): "копай", "ще копай", "покажи все" — the last search again, unfiltered.
+              - digDeeper(): "копай", "ще копай", "копай ще/далі", "покажи все" — the last search again, unfiltered.
               - getTrackList(): tracks of the release the user is looking at, when it is NOT in their library.
               - researchMusic(question): facts from the web — "розкажи про X", "хто такий X", "що за лейбл Y",
                 "дискографія X" — when the user wants to KNOW something and did not ask to see releases.

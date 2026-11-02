@@ -1,4 +1,4 @@
-package com.sashkomusic.agents.discovery;
+package com.sashkomusic.mainagent.search;
 
 import com.sashkomusic.shared.model.DateRange;
 import com.sashkomusic.shared.model.MetadataSearchRequest;

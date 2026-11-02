@@ -38,12 +38,6 @@ class AgentTurnTest {
     }
 
     @Test
-    void only_the_first_stack_of_a_turn_resets_the_stacks() {
-        assertThat(turn.claimStackReset()).isTrue();
-        assertThat(turn.claimStackReset()).isFalse();
-    }
-
-    @Test
     void shown_cards_keep_their_order_and_cannot_be_changed_from_outside() {
         BotResponse first = BotResponse.text("one");
         BotResponse second = BotResponse.text("two");

@@ -19,14 +19,14 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * ChatMemoryProvider для MainAgent. Кешує MessageWindowChatMemory по conversationId,
- * щоб in-memory view залишалась узгодженою зі store. Дає append-методи для cross-agent
- * context (коли /library чи /np пишуть summary у memory MainAgent).
- * Automatically summarizes the main conversation when it approaches MAX_MESSAGES.
+ * ChatMemoryProvider для MainAgent. {@link MessageWindowChatMemory} не має власного стану — кожне читання
+ * й запис іде в store, тому кешувати її нема чого. Дає append-методи для cross-agent context (коли /library
+ * чи /np пишуть summary у memory MainAgent) і {@link #compact}, що стискає розмову, коли вона підходить до
+ * MAX_MESSAGES. Стискання — явний виклик, а не побічний ефект {@code get()}: LangChain4j кешує ChatMemory
+ * розмови й питає провайдера про неї один раз за життя JVM.
  */
 @Slf4j
 @Component("mainMemoryProvider")
@@ -39,25 +39,26 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
 
     private final ChatMemoryStore store;
     private final ChatModel haikuModel;
-    private final ConcurrentHashMap<Object, ChatMemory> memories = new ConcurrentHashMap<>();
 
     @Override
     public ChatMemory get(Object memoryId) {
-        ChatMemory memory = memories.computeIfAbsent(memoryId, id ->
-                MessageWindowChatMemory.builder()
-                        .maxMessages(MAX_MESSAGES)
-                        .id(id)
-                        .chatMemoryStore(store)
-                        .build());
-        maybeSummarize(memoryId, memory);
-        return memory;
+        return MessageWindowChatMemory.builder()
+                .maxMessages(MAX_MESSAGES)
+                .id(memoryId)
+                .chatMemoryStore(store)
+                .build();
     }
 
-    private void maybeSummarize(Object memoryId, ChatMemory memory) {
+    /**
+     * Summarises everything but the most recent messages once the conversation reaches
+     * SUMMARIZE_THRESHOLD. Called between turns only — never while a tool loop is writing to the memory.
+     */
+    public void compact(String conversationId) {
+        ChatMemory memory = get(conversationId);
         List<ChatMessage> msgs = memory.messages();
         if (msgs.size() < SUMMARIZE_THRESHOLD) return;
 
-        log.info("Summarizing memory for conversationId={}: {} messages", memoryId, msgs.size());
+        log.info("Summarizing memory for conversationId={}: {} messages", conversationId, msgs.size());
         int splitAt = msgs.size() - KEEP_RECENT;
         // Advance splitAt to the nearest UserMessage boundary to avoid breaking tool pairs
         while (splitAt < msgs.size() && !(msgs.get(splitAt) instanceof UserMessage)) {
@@ -77,7 +78,7 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
             memory.add(m);
         }
         log.info("Memory summarized for conversationId={}: {} → {} messages",
-                memoryId, msgs.size(), 2 + toKeep.size());
+                conversationId, msgs.size(), 2 + toKeep.size());
     }
 
     private String callSummarize(List<ChatMessage> messages) {
@@ -119,6 +120,7 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
         ChatMemory memory = get(conversationId);
         memory.add(UserMessage.from(userText));
         memory.add(AiMessage.from(aiText));
+        compact(conversationId);
     }
 
     /**
@@ -135,11 +137,10 @@ public class MainChatMemoryProvider implements ChatMemoryProvider {
         }
         memory.add(UserMessage.from(userText));
         memory.add(AiMessage.from(aiText));
+        compact(conversationId);
     }
 
     public void clear(Object memoryId) {
-        ChatMemory memory = memories.remove(memoryId);
-        if (memory != null) memory.clear();
         store.deleteMessages(memoryId);
     }
 

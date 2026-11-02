@@ -31,7 +31,6 @@ public final class AgentTurn {
     private final List<BotResponse> shown = new ArrayList<>();
     private final List<SearchStack> openedStacks = new ArrayList<>();
     private final Set<String> progressSent = new HashSet<>();
-    private boolean stacksReset;
 
     public AgentTurn(ConversationContext context, Consumer<String> progressSink) {
         this.context = Objects.requireNonNull(context, "context");
@@ -84,17 +83,7 @@ public final class AgentTurn {
         progressSink.accept(text);
     }
 
-    /**
-     * True for the first stack this turn opens, and only then: that is when the previous answer's
-     * stacks stop being "what was just found". A turn that opens none leaves them — and the paging on
-     * cards already in the chat — alone.
-     */
-    public synchronized boolean claimStackReset() {
-        if (stacksReset) return false;
-        stacksReset = true;
-        return true;
-    }
-
+    /** A card stack this turn opened; {@code MainAgentService} sends it after the reply and keeps only these. */
     public synchronized void stackOpened(SearchStack stack) {
         openedStacks.add(stack);
     }

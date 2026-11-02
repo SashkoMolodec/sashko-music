@@ -22,10 +22,10 @@ User: "трек Adjust (BE) - Mist"
        │    ├─ ReleaseMatchValidator: викидає все, що не той артист/назва
        │    ├─ deep pass: довантажує треклисти компіляцій (бюджет 8) → підтверджує по треку
        │    └─ дедуп + ранжування + cap 20
-       ├─ перший стос ходу → beginStacks(conversationId)      ← межа ходу (AgentTurn.claimStackReset)
        ├─ openStack(conversationId, ...) → stack "s1" → turn.stackOpened
        └─ "showed 1 card stack for … : <агрегат>" → MainAgent пише вступ
-  └─ після ходу: [вступ] + buildStackResponse(ctx, "s1", 0)
+  └─ після ходу: retainStacks(conversationId, ["s1"])           ← межа ходу (впав → discardStacks)
+               [вступ] + buildStackResponse(ctx, "s1", 0)
 ```
 
 ### 1a. Lookup vs explore — де проходить межа

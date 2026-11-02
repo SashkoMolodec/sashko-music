@@ -5,6 +5,8 @@ import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.agents.turn.AgentTurn;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
+import com.sashkomusic.mainagent.search.SearchRequestExtractor;
+import com.sashkomusic.mainagent.search.SearchRequestNormalizer;
 import com.sashkomusic.mainagent.search.SearchStack;
 import com.sashkomusic.mainagent.search.client.musicbrainz.MusicBrainzClient;
 import com.sashkomusic.shared.model.DateRange;
@@ -14,6 +16,7 @@ import com.sashkomusic.shared.model.SearchEngine;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.invocation.InvocationParameters;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -46,7 +49,7 @@ public class DiscoveryTools {
     private static final int MAX_SIMILAR_STACKS = 10;
     /** A couple of spares for picks the catalogs don't have, without paying for the whole scene. */
     private static final int MAX_SIMILAR_ARTISTS_TRIED = 12;
-    /** MusicBrainz serves one request a second, so more threads would only queue on its rate limiter. Shared by explore and similar. */
+    /** MusicBrainz serves one request a second, so more threads would only queue on its rate limiter. Shared by explore and similar, across conversations. */
     private static final int SIMILAR_SEARCH_CONCURRENCY = 3;
     private static final int MAX_LABEL_STACKS = 10;
     /** Beyond three styles the recommendation topic stops describing anything in particular. */
@@ -61,6 +64,14 @@ public class DiscoveryTools {
     private final MusicBrainzClient musicBrainzClient;
     private final RelatedArtistsCollector relatedArtistsCollector;
     private final MusicResearcher musicResearcher;
+    /** Shared by every conversation: MusicBrainz's one-a-second limit is global, so a pool per call only queues. */
+    private final ExecutorService searchPool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY,
+            Thread.ofPlatform().name("discovery-search-", 0).daemon().factory());
+
+    @PreDestroy
+    void shutdownSearchPool() {
+        searchPool.shutdownNow();
+    }
 
     @Tool("""
             Pinpoint search for ONE specific thing — a release, a track, or an artist's records.
@@ -167,23 +178,20 @@ public class DiscoveryTools {
      * stacks are opened afterwards because openStack is a read-modify-write of the chat state.
      */
     private List<SearchStack> openSimilarStacks(AgentTurn turn, String seedArtist, List<RelatedArtist> related) {
-        List<ConfirmedRelease> confirmed;
-        try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
-            List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
-                    .limit(MAX_SIMILAR_ARTISTS_TRIED)
-                    .map(artist -> CompletableFuture.supplyAsync(() -> confirmRelease(artist), pool)
-                            .exceptionally(e -> {
-                                log.warn("Related artist '{}' could not be confirmed: {}", artist.name(), e.getMessage());
-                                return null;
-                            }))
-                    .toList();
-            confirmed = searches.stream()
-                    .map(CompletableFuture::join)
-                    .filter(Objects::nonNull)
-                    .limit(MAX_SIMILAR_STACKS)
-                    .sorted(Comparator.comparing(ConfirmedRelease::connection))
-                    .toList();
-        }
+        List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
+                .limit(MAX_SIMILAR_ARTISTS_TRIED)
+                .map(artist -> CompletableFuture.supplyAsync(() -> confirmRelease(artist), searchPool)
+                        .exceptionally(e -> {
+                            log.warn("Related artist '{}' could not be confirmed: {}", artist.name(), e.getMessage());
+                            return null;
+                        }))
+                .toList();
+        List<ConfirmedRelease> confirmed = searches.stream()
+                .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
+                .limit(MAX_SIMILAR_STACKS)
+                .sorted(Comparator.comparing(ConfirmedRelease::connection))
+                .toList();
 
         List<SearchStack> opened = new ArrayList<>();
         for (ConfirmedRelease release : confirmed) {
@@ -274,7 +282,7 @@ public class DiscoveryTools {
 
     @Tool("""
             Widen the last search — same query, validation switched off, so everything the catalogs
-            returned is shown. Use when the user says "копай", "ще копай", "покажи все", "dig deeper",
+            returned is shown. Use when the user says "копай", "ще копай", "копай ще", "покажи все", "dig deeper",
             i.e. the pinpoint answer was too narrow or missed a differently-spelled pressing.
             """)
     public String digDeeper(InvocationParameters parameters) {
@@ -388,21 +396,18 @@ public class DiscoveryTools {
      * first confirmed ones, in the recommender's order, become the stacks.
      */
     private String buildStacks(AgentTurn turn, List<Candidate> candidates, String provenance) {
-        List<ConfirmedPick> confirmed;
-        try (ExecutorService pool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY)) {
-            List<CompletableFuture<ConfirmedPick>> searches = candidates.stream()
-                    .map(candidate -> CompletableFuture.supplyAsync(() -> confirmPick(candidate), pool)
-                            .exceptionally(e -> {
-                                log.warn("Recommendation '{}' could not be confirmed: {}", candidate.label(), e.getMessage());
-                                return null;
-                            }))
-                    .toList();
-            confirmed = searches.stream()
-                    .map(CompletableFuture::join)
-                    .filter(Objects::nonNull)
-                    .limit(MAX_RECOMMENDATIONS)
-                    .toList();
-        }
+        List<CompletableFuture<ConfirmedPick>> searches = candidates.stream()
+                .map(candidate -> CompletableFuture.supplyAsync(() -> confirmPick(candidate), searchPool)
+                        .exceptionally(e -> {
+                            log.warn("Recommendation '{}' could not be confirmed: {}", candidate.label(), e.getMessage());
+                            return null;
+                        }))
+                .toList();
+        List<ConfirmedPick> confirmed = searches.stream()
+                .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
+                .limit(MAX_RECOMMENDATIONS)
+                .toList();
 
         if (confirmed.isEmpty()) {
             return "none of the researched picks could be confirmed in the catalogs — say so and ask for a narrower ask";
@@ -431,14 +436,11 @@ public class DiscoveryTools {
     }
 
     /**
-     * Opens one stack in this turn. The first stack a turn opens first drops the previous answer's
-     * stacks; a turn that finds nothing leaves them, so paging on cards already in the chat keeps working.
+     * Opens one stack in this turn. The previous answer's stacks stay until the turn is over —
+     * {@code MainAgentService} drops them once it succeeds, so a failed turn leaves them working.
      */
     private SearchStack openStack(AgentTurn turn, String rawInput, MetadataSearchRequest request,
                                   String label, String group, List<ReleaseMetadata> releases) {
-        if (turn.claimStackReset()) {
-            searchContextService.beginStacks(turn.conversationId());
-        }
         String id = searchContextService.openStack(turn.conversationId(), rawInput, request, label, group, releases);
         SearchStack stack = new SearchStack(id, label, group, releases, 0);
         turn.stackOpened(stack);

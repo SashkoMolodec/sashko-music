@@ -42,7 +42,7 @@ public class AgentModelsConfig {
     @Primary
     public ChatModel haikuChatModel(Environment env) {
         return builder(env, "agents.haiku.model-name", "claude-haiku-4-5-20251001",
-                "agents.haiku.max-tokens", "1024", "haiku")
+                "agents.haiku.max-tokens", "4096", "haiku")
                 .build();
     }
 
@@ -65,7 +65,7 @@ public class AgentModelsConfig {
                 .addAttribute("max_uses", 3)
                 .build();
         return builder(env, "agents.haiku.model-name", "claude-haiku-4-5-20251001",
-                "agents.haiku.max-tokens", "1024", "web-search")
+                "agents.haiku.max-tokens", "4096", "web-search")
                 .serverTools(List.of(webSearch))
                 .build();
     }
