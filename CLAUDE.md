@@ -189,6 +189,7 @@ libraryagent         →  ReleasePlacedEvent                 →  libraryagent (
 mainagent            →  RateTrackTaskEvent                 →  libraryagent
 mainagent            →  AddCommentTaskEvent                →  libraryagent
 mainagent            →  AddMarkerTaskEvent                 →  libraryagent (appends the marker to the END of COMM)
+mainagent            →  RemoveMarkerTaskEvent              →  libraryagent (drops the "(marker)" parts from COMM, DB + file)
 mainagent            →  SetEnergyTaskEvent                 →  libraryagent
 mainagent            →  SetFunctionTaskEvent               →  libraryagent
 libraryagent         →  TrackUpdateResultEvent             →  mainagent

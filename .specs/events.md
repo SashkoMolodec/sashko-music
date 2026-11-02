@@ -39,6 +39,8 @@ mainagent       →  SetEnergyTaskEvent            →  libraryagent
 mainagent       →  SetFunctionTaskEvent          →  libraryagent
 mainagent       →  AddCommentTaskEvent           →  libraryagent
 mainagent       →  ReplaceCommentTaskEvent       →  libraryagent
+mainagent       →  AddMarkerTaskEvent            →  libraryagent
+mainagent       →  RemoveMarkerTaskEvent         →  libraryagent
 libraryagent    →  TrackUpdateResultEvent        →  mainagent
 libraryagent    →  TagChangesNotificationEvent   →  mainagent
 
@@ -188,13 +190,20 @@ ReplaceCommentTaskEvent(Long trackId, String comment, String conversationId)
 ```
 Різні дії, не різні поля: add дописує, replace перезаписує.
 
+### `AddMarkerTaskEvent` / `RemoveMarkerTaskEvent`
+```java
+AddMarkerTaskEvent(Long trackId, String marker, String conversationId)          // marker = "(назва)"
+RemoveMarkerTaskEvent(Long trackId, String markerName, String conversationId)   // markerName = "назва", без дужок
+```
+Add дописує мітку в кінець коментаря; remove викидає з коментаря частини `(назва)` (див. [dj-tagging.md](dj-tagging.md)).
+
 ### `TrackUpdateResultEvent`
 libraryagent → mainagent. Підтвердження збереження тегу.
 ```java
 TrackUpdateResultEvent(Long trackId, String fieldUpdated, String value,
                        boolean success, String message, String conversationId)
 ```
-`fieldUpdated`: `rating` | `energy` | `function` | `comment`.
+`fieldUpdated`: `rating` | `energy` | `function` | `comment` | `marker`.
 
 ### `TagChangesNotificationEvent`
 libraryagent → mainagent. Diff тегів, коли зміни батчуються.

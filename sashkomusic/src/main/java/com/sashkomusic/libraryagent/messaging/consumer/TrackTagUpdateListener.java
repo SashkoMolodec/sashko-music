@@ -3,6 +3,7 @@ package com.sashkomusic.libraryagent.messaging.consumer;
 import com.sashkomusic.events.AddCommentTaskEvent;
 import com.sashkomusic.events.AddMarkerTaskEvent;
 import com.sashkomusic.events.RateTrackTaskEvent;
+import com.sashkomusic.events.RemoveMarkerTaskEvent;
 import com.sashkomusic.events.ReplaceCommentTaskEvent;
 import com.sashkomusic.events.SetEnergyTaskEvent;
 import com.sashkomusic.events.SetFunctionTaskEvent;
@@ -44,6 +45,13 @@ public class TrackTagUpdateListener {
     public void handleAddMarker(AddMarkerTaskEvent event) {
         apply("marker", event.marker(), event.trackId(), event.conversationId(),
                 () -> rateTrackService.addMarker(event.trackId(), event.marker()));
+    }
+
+    @EventListener
+    @Async("asyncExecutor")
+    public void handleRemoveMarker(RemoveMarkerTaskEvent event) {
+        apply("marker", event.markerName(), event.trackId(), event.conversationId(),
+                () -> rateTrackService.removeMarker(event.trackId(), event.markerName()));
     }
 
     @EventListener

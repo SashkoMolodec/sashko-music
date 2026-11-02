@@ -59,6 +59,34 @@ public class DjTagWriter {
         }
     }
 
+    /** Cuts the marker out of the file's own comment, so whatever else the file holds there survives. */
+    public boolean removeMarker(Path audioFile, String markerName) {
+        try {
+            AudioFile audio = AudioFileIO.read(audioFile.toFile());
+            Tag tag = audio.getTag();
+            if (tag == null) {
+                return true;
+            }
+
+            String existingComment = tag.getFirst(FieldKey.COMMENT);
+            if (!MarkerComments.markersIn(existingComment).contains(markerName.trim().toLowerCase())) {
+                return true;
+            }
+            String remaining = MarkerComments.without(existingComment, markerName);
+            if (remaining.isEmpty()) {
+                tag.deleteField(FieldKey.COMMENT);
+            } else {
+                tag.setField(FieldKey.COMMENT, remaining);
+            }
+            audio.commit();
+            log.info("Removed marker ({}) from COMM tag in {}", markerName, audioFile.getFileName());
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to remove marker ({}) from COMM tag in {}: {}", markerName, audioFile, e.getMessage(), e);
+            return false;
+        }
+    }
+
     private boolean appendToComment(Path audioFile, String value, String label) {
         try {
             AudioFile audio = AudioFileIO.read(audioFile.toFile());

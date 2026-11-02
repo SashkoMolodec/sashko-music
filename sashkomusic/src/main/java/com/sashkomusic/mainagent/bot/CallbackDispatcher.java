@@ -94,6 +94,8 @@ public class CallbackDispatcher {
         handlers.put("LBL_PAGE:", (ctx, data, msgId) -> smartlistLabel.goToPage(ctx, Integer.parseInt(data.substring("LBL_PAGE:".length())), msgId));
         handlers.put("LBL_SEL:", (ctx, data, msgId) -> smartlistLabel.select(ctx, Integer.parseInt(data.substring("LBL_SEL:".length()))));
         handlers.put("LBL_CANCEL", (ctx, data, msgId) -> smartlistLabel.cancel(ctx));
+        handlers.put("LBL_RM_LIST:", (ctx, data, msgId) -> smartlistLabel.showRemovableFromCallback(ctx, data.substring("LBL_RM_LIST:".length()), msgId));
+        handlers.put("LBL_RM_SEL:", (ctx, data, msgId) -> smartlistLabel.removeSelected(ctx, Integer.parseInt(data.substring("LBL_RM_SEL:".length()))));
         handlers.put("SMARTLISTS_ADD_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelCreate(ctx));
         handlers.put("SMARTLISTS_ADD", (ctx, data, msgId) -> smartlistsFlow.promptCreate(ctx));
         handlers.put("SMARTLISTS_RM_CANCEL", (ctx, data, msgId) -> smartlistsFlow.cancelRemove(ctx));

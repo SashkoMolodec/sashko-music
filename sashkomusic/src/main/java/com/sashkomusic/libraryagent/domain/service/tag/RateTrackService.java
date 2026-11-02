@@ -154,6 +154,36 @@ public class RateTrackService {
         return new RateResult(true, "✅ мітку додано");
     }
 
+    /** Idempotent: a track without this marker is left as it is and reported as done. */
+    @Transactional
+    public RateResult removeMarker(Long trackId, String markerName) {
+        log.info("Removing marker for track id={}: ({})", trackId, markerName);
+
+        Track track = trackRepository.findByIdWithLock(trackId).orElse(null);
+        if (track == null) {
+            return new RateResult(false, "трек не знайдено");
+        }
+
+        String comment = track.getTag("COMM").orElse(null);
+        if (MarkerComments.markersIn(comment).contains(markerName.trim().toLowerCase())) {
+            String remaining = MarkerComments.without(comment, markerName);
+            if (remaining.isEmpty()) {
+                track.removeTag("COMM");
+            } else {
+                track.setTag("COMM", remaining);
+            }
+        }
+
+        Path audioFile = track.getLocalPath() != null ? Paths.get(track.getLocalPath()) : null;
+        if (audioFile != null && Files.exists(audioFile)) {
+            djTagWriter.removeMarker(audioFile, markerName);
+        }
+
+        trackRepository.save(track);
+        log.info("Successfully removed marker for track: id={}", trackId);
+        return new RateResult(true, "✅ мітку знято");
+    }
+
     @Transactional
     public RateResult replaceComment(Long trackId, String comment) {
         log.info("Replacing comment for track id={}: {}", trackId, comment);

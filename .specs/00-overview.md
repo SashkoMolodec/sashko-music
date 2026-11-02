@@ -58,6 +58,8 @@ Spring Events (async):
 | `ENERGY_RATE:` | `DjTagFlowService` | [dj-tagging.md](dj-tagging.md) |
 | `FUNCTION_RATE:` | `DjTagFlowService` | [dj-tagging.md](dj-tagging.md) |
 | `ADD_COMMENT:` | `DjTagFlowService` | [dj-tagging.md](dj-tagging.md) |
+| `LBL_LIST:` / `LBL_SEL:` / `LBL_PAGE:` / `LBL_CANCEL` | `SmartlistLabelFlowService` (додати мітку) | [dj-tagging.md](dj-tagging.md) |
+| `LBL_RM_LIST:` / `LBL_RM_SEL:` | `SmartlistLabelFlowService` (зняти мітку) | [dj-tagging.md](dj-tagging.md) |
 
 ### OngoingFlows (multi-turn text dialogue)
 | Flow | Active when | Feature spec |

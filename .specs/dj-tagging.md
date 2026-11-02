@@ -115,6 +115,34 @@ AddCommentTaskEvent → libraryagent AddCommentListener
 
 ---
 
+## Markers (мітки) — LBL_ callbacks
+
+Мітка — частина коментаря треку, що вся в дужках: `tool; E3; (detroit techno)`. Список міток — таблиця
+`markers` (`/markers`); на кожну є смартлист `comment contains "(назва)"`. Розбір і вирізання —
+`libraryagent.domain.service.tag.MarkerComments` (спільний для бота й запису у файл).
+
+```
+[🏷] на запиті коментаря треку (LBL_LIST:T:<trackId>) або альбому (LBL_LIST:A:<releaseId>)
+  └─ SmartlistLabelFlowService.showList → усі мітки сторінками по 10
+       [1] [2] … [⬅️ ➡️]   [➖ зняти] [❌]
+       ├─ LBL_SEL:<i> / набраний номер → AddMarkerTaskEvent(trackId, "(назва)") на трек
+       │     або на кожен трек альбому → RateTrackService.addMarker дописує "; (назва)" у COMM (БД + файл)
+       └─ LBL_RM_LIST:<T|A>:<id> → showRemovable — редагує те саме повідомлення:
+            лише мітки, що зараз стоять на треку (для альбому — на будь-якому з його треків)
+            [1] [2] …  [❌]   (немає жодної → "на цьому треку / альбомі міток нема")
+            └─ LBL_RM_SEL:<i> → RemoveMarkerTaskEvent(trackId, "назва") — лише на треки, де вона є
+                 → RateTrackService.removeMarker: з COMM у БД і з коментаря у файлі (читається з файлу)
+                   викидаються частини, рівні "(назва)" без огляду на регістр; решта склеюється "; ".
+                   Порожній коментар прибирається зовсім. Мітки вже нема → нічого не робить (ідемпотентно).
+                 → TrackUpdateResultEvent → "✅ оновлено"
+```
+
+Стан пікера — `SmartlistLabelContextHolder`: `sml_label` (додавання, ще й для набраного номера) і
+`sml_label_rm` (зняття, лише кнопки). Відкриття одного режиму скидає інший; ❌ і `стоп` скидають обидва.
+Таблиця `markers` і смартлист при знятті не змінюються — трек просто випадає зі смартлиста при наступній регенерації.
+
+---
+
 ## manageLibrary tool (LLM path)
 
 Тегування з вільного тексту ("постав цьому треку 5 зірок") **не реалізоване**: у `LibraryAgentTools`
