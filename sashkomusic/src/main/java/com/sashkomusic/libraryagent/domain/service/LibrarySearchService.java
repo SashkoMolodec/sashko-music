@@ -13,23 +13,53 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LibrarySearchService {
 
+    /**
+     * The stored search_vector joined at query time with the release's track comments, where the user's
+     * markers, DJ function and genres live — always fresh after a tag sync, no reindex. Phrase hits first.
+     */
     private static final String SEARCH_SQL = """
+            WITH q AS (
+                SELECT websearch_to_tsquery('simple_unaccent', ?) AS words,
+                       phraseto_tsquery('simple_unaccent', ?)     AS phrase
+            ),
+            comments AS (
+                SELECT tr.release_id, string_agg(DISTINCT trim(part), ' ; ') AS text
+                FROM track_tags tt
+                JOIN tracks tr ON tr.id = tt.track_id
+                CROSS JOIN LATERAL regexp_split_to_table(tt.tag_value, ';') AS part
+                WHERE tt.tag_name IN ('COMM', 'COMMENT')
+                GROUP BY tr.release_id
+            ),
+            docs AS (
+                SELECT r.id,
+                       coalesce(r.search_vector, ''::tsvector)
+                           || setweight(to_tsvector('simple_unaccent', coalesce(c.text, '')), 'B') AS doc
+                FROM releases r
+                LEFT JOIN comments c ON c.release_id = r.id
+            )
             SELECT
                 r.id,
                 r.title,
                 r.initial_release,
                 r.directory_path,
-                ts_rank(r.search_vector, websearch_to_tsquery('simple_unaccent', ?)) AS rank,
+                ts_rank(d.doc, q.words) AS rank,
                 (SELECT string_agg(a.name, ', ' ORDER BY a.name)
                  FROM release_artists ra JOIN artists a ON a.id = ra.artist_id
                  WHERE ra.release_id = r.id) AS artists,
                 (SELECT string_agg(t.name, ', ' ORDER BY t.name)
                  FROM release_tags rt JOIN tags t ON t.id = rt.tag_id
                  WHERE rt.release_id = r.id) AS tags,
+                (SELECT string_agg(DISTINCT lower(trim(m[1])), ', ')
+                 FROM tracks tr
+                 JOIN track_tags tt ON tt.track_id = tr.id
+                 CROSS JOIN LATERAL regexp_matches(tt.tag_value, '\\(([^)]+)\\)', 'g') AS m
+                 WHERE tr.release_id = r.id AND tt.tag_name IN ('COMM', 'COMMENT')) AS markers,
                 (SELECT count(*) FROM tracks tr WHERE tr.release_id = r.id) AS track_count
-            FROM releases r
-            WHERE r.search_vector @@ websearch_to_tsquery('simple_unaccent', ?)
-            ORDER BY rank DESC
+            FROM docs d
+            JOIN releases r ON r.id = d.id
+            CROSS JOIN q
+            WHERE d.doc @@ q.words
+            ORDER BY (d.doc @@ q.phrase) DESC, rank DESC
             LIMIT ?
             """;
 
@@ -102,6 +132,7 @@ public class LibrarySearchService {
                     rs.getString("artists"),
                     rs.getObject("initial_release", Integer.class),
                     rs.getString("tags"),
+                    rs.getString("markers"),
                     rs.getString("directory_path"),
                     rs.getInt("track_count"),
                     rs.getDouble("rank")

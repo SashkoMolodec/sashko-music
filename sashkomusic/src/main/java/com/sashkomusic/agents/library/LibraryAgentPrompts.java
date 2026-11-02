@@ -25,8 +25,12 @@ final class LibraryAgentPrompts {
                   ("який він за звучанням", "яке bpm", "хочу таке саме") — not for a plain "що грає".
 
               Catalog ops (release level):
-                - searchOwnLibrary(query): full-text search in the user's processed library.
-                  Use when the user asks "чи є в мене", "в моїй колекції", "do I have", or about a known artist/album.
+                - searchOwnLibrary(query): full-text search in the user's processed library — titles, artists,
+                  genres, track titles and the user's own track comments (markers, DJ function).
+                  Use when the user asks "чи є в мене", "в моїй колекції", "do I have", about a known artist/album,
+                  or "які в мене релізи по <genre / marker>".
+                  Each result lists genres in [...] and the user's markers in {мітки: ...}. Only the {мітки: ...}
+                  part is a marker — never call a genre from [...] a marker.
                 - getTrackListFromLibrary(releaseQuery): get track list from the local DB for a release in the library.
                   Use when the user asks "трекліст X", "які треки на X", "tracklist", "track list".
                   releaseQuery: release name, or 'this'/'оцей' for the last-referenced release.

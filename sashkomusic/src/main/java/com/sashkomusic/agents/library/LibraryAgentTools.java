@@ -98,11 +98,15 @@ public class LibraryAgentTools {
 
     // ───────────────── catalog ops ─────────────────
 
-    @Tool("Search the user's own processed music library (full-text). Use for 'чи є в мене', 'in my library', or any 'do I have X' question.")
+    @Tool("""
+            Search the user's own processed music library (full-text over titles, artists, genres, track titles and
+            the user's track comments — markers, DJ function). Use for 'чи є в мене', 'in my library',
+            any 'do I have X' question, and 'які в мене релізи по <genre / marker>'.
+            """)
     public String searchOwnLibrary(
-            @P("search query — artist, album, genre tag, or combination") String query,
+            @P("search query — artist, album, genre, marker, or combination") String query,
             InvocationParameters parameters) {
-        List<LibrarySearchResult> results = librarySearchService.search(query, 5);
+        List<LibrarySearchResult> results = librarySearchService.search(query, 10);
         if (results.isEmpty()) {
             return "нічого не знайдено у твоїй бібліотеці за запитом: " + query;
         }
@@ -116,6 +120,7 @@ public class LibraryAgentTools {
             sb.append(r.title());
             if (r.year() != null) sb.append(" (").append(r.year()).append(")");
             if (r.tags() != null && !r.tags().isBlank()) sb.append(" [").append(r.tags()).append("]");
+            if (r.markers() != null && !r.markers().isBlank()) sb.append(" {мітки: ").append(r.markers()).append("}");
             sb.append(", ").append(r.trackCount()).append(" треків\n");
         }
         return sb.toString().strip();

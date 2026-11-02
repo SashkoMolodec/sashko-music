@@ -232,8 +232,17 @@ docker compose logs --since 10m sashkomusic 2>&1 | grep -E "tool=|Aggregated sea
 
 | Дата | Кейс | Запит (дослівно) | Шлях (мій висновок) | Результат (юзер) | Знахідки |
 |---|---|---|---|---|---|
-| | | | | | |
+| 2026-11-03 | C + бібліотека | досліди мені детройт техно: глянь спочатку які в мене релізи по цьому, а потім якісь класичні альбоми дай | main → `manageLibrary` + `exploreAndRecommend` паралельно; library-haiku → `searchOwnLibrary("detroit techno")` → 1 реліз (Introversion, жанри `detroit`+`techno`); explore → 3 стеки (Model 500 Classics, Derrick May Innovator, Cybotron Enter); $0.094 | слабко: бібліотека знайшла 1 замість 6 | Ф1 |
 
 ### Знахідки, що чекають рішення
 
-(порожньо)
+- **Ф1 — `searchOwnLibrary` не бачить мітки.** `search_vector` = назва + артисти + жанри релізу + назви треків.
+  Мітки живуть лише в COMM треків (`(detroit techno)`), тому 6 релізів з міткою `detroit techno`
+  (Model 500 — Night Drive, Deep Space; Jeff Mills — Lifelike EP; UR — The Final Frontier;
+  Underground Resistance — Interstellar Fugitives; CEM3340 & 2030 — Machines Awake EP) не знайшлись.
+  Знайшовся натомість Introversion — у нього мітка `raw modern techno`, а `detroit` лише жанровий тег Discogs.
+  `websearch_to_tsquery` ще й вимагає обидва слова (AND), а в Interstellar Fugitives жанрів релізу нема взагалі.
+  Haiku до того ж назвала жанр `detroit` "міткою детройт-техно".
+  **Рішення:** пошук іде ще й по коментах треків (вони клеяться до `search_vector` під час запиту),
+  фразові збіги першими, ліміт 10, у результаті окремо `{мітки: …}`. Перевірити повторним прогоном.
+

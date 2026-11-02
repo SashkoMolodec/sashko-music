@@ -68,7 +68,7 @@ no turn.
 | Tool | Trigger | Action |
 |------|---------|--------|
 | `nowPlayingTrack()` | "що зараз грає", і **завжди першим** коли юзер каже "це" / "той трек що грає" / "схоже на те що грає", а в розмові трек не названий | `NowPlayingResolver.resolve()` — Navidrome → Icecast fallback → пошук рядка плеєра в БД. Повертає артиста, назву, реліз, рік, жанри й уже проставлені DJ-теги; робить реліз, що грає, референтом `"this"` (пише `LastReleaseContextHolder`) |
-| `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X" | `LibrarySearchService.search(query, 5)`; updates `LastReleaseContextHolder` |
+| `searchOwnLibrary(query)` | "чи є в мене", "в моїй бібліотеці", "do I have X", "які в мене релізи по <жанр / мітка>" | `LibrarySearchService.search(query, 10)` — назва, артисти, жанри, назви треків і коменти треків (мітки, DJ-функція); кожен рядок: `артисти — назва (рік) [жанри] {мітки: …}, N треків`; updates `LastReleaseContextHolder` |
 | `getTrackListFromLibrary(releaseQuery)` | "трекліст / tracklist / які треки / track list" for a release already in the library | Resolves release via `resolveRelease` → `LibraryInfoService.trackList(releaseId)` (read-only, ordered by track number); returns `<label>\n<1. title …>` |
 | `getReleaseInfo(releaseQuery)` | "розкажи про X", "що за альбом X", "який в нього bpm / лейбл / жанр", і щоб зрозуміти, що юзер має на увазі під "хочу щось таке як мій альбом X" | Resolves release via `resolveRelease` → `LibraryInfoService.releaseInfo` (read-only): артисти, рік, лейбл, sublibrary, жанри, середні аудіо-фічі (BPM, danceability, loudness, dynamic complexity, onset rate, spectral centroid, dissonance) і по кожному треку BPM + DJ-теги (рейтинг / енергія / функція / комент). Тільки читання. |
 | `getPlayingTrackDetails()` | "який він за звучанням", "яке bpm", "хочу таке саме" про трек, що грає | `NowPlayingResolver.resolve()` (як `nowPlayingTrack`, теж ставить референт `"this"`) + `LibraryInfoService.trackInfo` — аудіо-профіль треку з `tracks_analyzed` і DJ-теги. Трек не в бібліотеці → тільки summary плеєра. |
@@ -187,9 +187,21 @@ Read-only, у `libraryagent/domain/service`. Збирає в текст для L
 
 ## Library Full-Text Search (`LibrarySearchService`)
 
-Reused by `searchOwnLibrary` tool. Unchanged: PostgreSQL FTS on `releases.search_vector` (GIN index),
-`simple_unaccent` config, `websearch_to_tsquery` parsing, weights A (title + artists), B (genre tags),
-C (track titles). See `LibrarySearchService` for details.
+Reused by `searchOwnLibrary`, `resolveRelease` and the `/reprocess` / remove lookups. PostgreSQL FTS,
+`simple_unaccent` config, `websearch_to_tsquery` parsing (every word must match).
+
+The document of a release is `releases.search_vector` — weights A (title + artists), B (genre tags),
+C (track titles) — joined at query time with the release's track comments (`COMM` / `COMMENT` in
+`track_tags`) at weight B. A comment holds what the user actually tagged: DJ function and energy, genres,
+and markers in parentheses (`(detroit techno)`). Comments are split on `;` and de-duplicated per release,
+so one marker on every track does not outweigh the title. They are joined at query time, not stored in
+`search_vector`: a marker set from `/np` is searchable as soon as the tag sync writes it to `track_tags`,
+with no reindex. The library is small (~hundreds of releases), so the sequential scan is fine.
+
+Ordering: releases that contain the query as a phrase first (`phraseto_tsquery` — "detroit techno" the
+marker beats a release that only has the genres `detroit` and `techno`), then `ts_rank`.
+
+Each result carries the release's markers (the parenthesised parts of its comments) next to its genres.
 
 ---
 

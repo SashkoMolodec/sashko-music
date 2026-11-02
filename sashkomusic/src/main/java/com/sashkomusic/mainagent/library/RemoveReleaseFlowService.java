@@ -71,6 +71,7 @@ public class RemoveReleaseFlowService {
                 artists,
                 release.getInitialRelease(),
                 null,
+                null,
                 release.getDirectoryPath(),
                 release.getTracks().size(),
                 0.0

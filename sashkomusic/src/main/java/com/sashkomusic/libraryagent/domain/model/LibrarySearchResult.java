@@ -6,6 +6,7 @@ public record LibrarySearchResult(
         String artists,
         Integer year,
         String tags,
+        String markers,
         String directoryPath,
         int trackCount,
         double rank
