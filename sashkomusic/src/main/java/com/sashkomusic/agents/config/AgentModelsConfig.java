@@ -54,8 +54,9 @@ public class AgentModelsConfig {
      * thinking blocks that server-tool blocks would have to be interleaved with.
      * Anthropic's server-side web_search tool runs entirely on Anthropic's infrastructure — the
      * model calls it and gets results back within the same API response, no client-side execution
-     * or WebSearchService/jsoup-DuckDuckGo-scraping needed. Verified live against this exact model
-     * (claude-haiku-4-5-20251001) before wiring it in.
+     * or WebSearchService/jsoup-DuckDuckGo-scraping needed. Its own model property, so the extractors on
+     * {@code haikuChatModel} keep theirs: Haiku 5.5 with web_search_20250305 was verified live on 2026-11-03.
+     * Haiku 5.5 thinks by default and the thinking counts toward max-tokens, hence the larger ceiling.
      */
     @Bean("webSearchChatModel")
     public ChatModel webSearchChatModel(Environment env) {
@@ -64,8 +65,8 @@ public class AgentModelsConfig {
                 .name("web_search")
                 .addAttribute("max_uses", 3)
                 .build();
-        return builder(env, "agents.haiku.model-name", "claude-haiku-4-5-20251001",
-                "agents.haiku.max-tokens", "4096", "web-search")
+        return builder(env, "agents.web-search.model-name", "claude-haiku-5-5",
+                "agents.web-search.max-tokens", "8192", "web-search")
                 .serverTools(List.of(webSearch))
                 .build();
     }

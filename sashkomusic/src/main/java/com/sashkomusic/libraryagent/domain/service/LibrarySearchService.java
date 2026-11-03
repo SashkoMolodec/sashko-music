@@ -1,6 +1,7 @@
 package com.sashkomusic.libraryagent.domain.service;
 
 import com.sashkomusic.libraryagent.domain.model.LibrarySearchResult;
+import com.sashkomusic.libraryagent.domain.model.OwnedRelease;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -118,7 +119,30 @@ public class LibrarySearchService {
             WHERE releases.id = agg.id
             """;
 
+    private static final String OWNED_SQL = """
+            SELECT
+                r.title,
+                (SELECT string_agg(a.name, ', ' ORDER BY a.name)
+                 FROM release_artists ra JOIN artists a ON a.id = ra.artist_id
+                 WHERE ra.release_id = r.id) AS artists
+            FROM releases r
+            ORDER BY r.id DESC
+            LIMIT ?
+            """;
+
     private final JdbcTemplate jdbcTemplate;
+
+    /** The newest {@code limit} releases, so discovery can skip what the user already has. Empty on a DB error. */
+    public List<OwnedRelease> ownedReleases(int limit) {
+        try {
+            return jdbcTemplate.query(OWNED_SQL, (rs, rowNum) -> new OwnedRelease(
+                    rs.getString("artists") == null ? "" : rs.getString("artists"),
+                    rs.getString("title")), limit);
+        } catch (Exception e) {
+            log.error("Failed to list owned releases: {}", e.getMessage(), e);
+            return List.of();
+        }
+    }
 
     public List<LibrarySearchResult> search(String query, int limit) {
         if (query == null || query.isBlank()) {

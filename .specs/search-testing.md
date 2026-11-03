@@ -233,6 +233,7 @@ docker compose logs --since 10m sashkomusic 2>&1 | grep -E "tool=|Aggregated sea
 | Дата | Кейс | Запит (дослівно) | Шлях (мій висновок) | Результат (юзер) | Знахідки |
 |---|---|---|---|---|---|
 | 2026-11-03 | C + бібліотека | досліди мені детройт техно: глянь спочатку які в мене релізи по цьому, а потім якісь класичні альбоми дай | main → `manageLibrary` + `exploreAndRecommend` паралельно; library-haiku → `searchOwnLibrary("detroit techno")` → 1 реліз (Introversion, жанри `detroit`+`techno`); explore → 3 стеки (Model 500 Classics, Derrick May Innovator, Cybotron Enter); $0.094 | слабко: бібліотека знайшла 1 замість 6 | Ф1 |
+| 2026-11-03 | D → C | схоже на Cybotron — Clear; потім «без хіп-хопу»; потім «але для чого ти цей enter даєш, як його я вже маю, deep space також» | findSimilar → немає co-listen → style fallback `electronic electro hip hop 1980s` → Planet Rock / The Message / Rockit; exploreAndRecommend ×2 → 1-й: Enter, Deep Space, Strings of Life (обидва перші вже в бібліотеці); 2-й: з 6 «піків» підтвердився лише Blake Baxter; ~$0.39 за три ходи | погано: дає те, що вже є; лише 1 картка | Ф2, Ф3, Ф4 |
 
 ### Знахідки, що чекають рішення
 
@@ -245,4 +246,21 @@ docker compose logs --since 10m sashkomusic 2>&1 | grep -E "tool=|Aggregated sea
   Haiku до того ж назвала жанр `detroit` "міткою детройт-техно".
   **Рішення:** пошук іде ще й по коментах треків (вони клеяться до `search_vector` під час запиту),
   фразові збіги першими, ліміт 10, у результаті окремо `{мітки: …}`. Перевірити повторним прогоном.
+- **Ф2 — рекомендації не знають бібліотеки.** Ні `exploreAndRecommend`, ні `findSimilar` не перевіряють, чи
+  реліз уже є у юзера: Cybotron — Enter (реліз 177, оброблений того ж вечора) і Model 500 — Deep Space (169)
+  прийшли як рекомендації. Юзер: «коли я прошу шось схоже за вайбом … треба враховувати що в мене вже є».
+- **Ф3 — приклад у промпті `ReleaseRecommender` — це і є відповідь на detroit techno.** Приклад:
+  Model 500 — Classics, Derrick May — Innovator, Juan Atkins — Deep Space, Cybotron — Enter, Inner City — Paradise.
+  Перший прогін (Ф1) дав рівно Classics / Innovator / Enter, другий — Enter / Deep Space / Strings of Life / Paradise / Innovator.
+  Модель копіює приклад замість дослідження.
+- **Ф4 — з 6 «піків» підтвердився один.** Рекомендатор (web search) пише преамбулу й вибачення попри «EXACTLY 5 lines»;
+  парсер узяв `Вибачте — не можу надати повну відповідь…` за пару артист — назва і шукав її в усіх каталогах.
+  Решта — неточні назви: `Rhythm Is Rhythm — Innovator` (Rhythim Is Rhythim; Innovator — це Derrick May),
+  `Kevin Saunderson — Triangle of Love` (трек Kreem, сингл), `Juan Atkins — Techno Music` (трек зі збірки),
+  `Eddie Fowlkes — Metroplex Records Releases` (не реліз). Валідатор правильно їх відкинув, але запасних не лишилось.
+- **Рішення Ф2–Ф4:** рекомендатор переведено на Haiku 5.5 (`agents.web-search.model-name`); він отримує список
+  бібліотеки і дає 10 піків без прикладу зі справжніми релізами; власні релізи код відсіює до пошуку (`OwnedReleases`,
+  і в explore, і в `findSimilar`) та повідомляє MainAgent, що пропущено; рядки-проза не йдуть у каталоги; піки
+  шукаються хвилями по 5. Перевірити повторними прогонами C і D: чи є серед карток уже наявне, скільки з 10 підтвердилось.
+
 

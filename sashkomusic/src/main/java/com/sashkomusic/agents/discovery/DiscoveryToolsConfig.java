@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class DiscoveryToolsConfig {
 
-    /** One question in, five release names out. */
+    /** One ask and the user's library in, ten release names out. */
     @Bean
     public ReleaseRecommender releaseRecommender(@Qualifier("webSearchChatModel") ChatModel webSearchChatModel) {
         return AiServices.builder(ReleaseRecommender.class)

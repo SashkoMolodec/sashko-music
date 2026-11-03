@@ -3,6 +3,7 @@ package com.sashkomusic.agents.discovery;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.agents.turn.AgentTurn;
+import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
 import com.sashkomusic.mainagent.search.SearchRequestExtractor;
@@ -29,7 +30,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -45,6 +48,14 @@ public class DiscoveryTools {
 
     /** Three stacks is what still reads as an answer in a Telegram chat rather than as a dump. */
     private static final int MAX_RECOMMENDATIONS = 3;
+    /** Picks searched side by side; the next wave only runs while fewer than three are confirmed. */
+    private static final int PICK_WAVE = 5;
+    /** What the recommender reads as the user's library — the newest releases, enough to show the taste. */
+    private static final int OWNED_FOR_PROMPT = 400;
+    /** A real "Artist — Title" pair is short; past this it is the model's prose ("Вибачте — не можу…"). */
+    private static final int MAX_TITLE_CHARS = 100;
+    private static final int MAX_TITLE_WORDS = 12;
+    private static final int MAX_ARTIST_WORDS = 8;
     /** A ceiling, not a target: "схоже" shows what the catalogs confirm, up to this many stacks. */
     private static final int MAX_SIMILAR_STACKS = 10;
     /** A couple of spares for picks the catalogs don't have, without paying for the whole scene. */
@@ -64,6 +75,7 @@ public class DiscoveryTools {
     private final MusicBrainzClient musicBrainzClient;
     private final RelatedArtistsCollector relatedArtistsCollector;
     private final MusicResearcher musicResearcher;
+    private final LibrarySearchService librarySearchService;
     /** Shared by every conversation: MusicBrainz's one-a-second limit is global, so a pool per call only queues. */
     private final ExecutorService searchPool = Executors.newFixedThreadPool(SIMILAR_SEARCH_CONCURRENCY,
             Thread.ofPlatform().name("discovery-search-", 0).daemon().factory());
@@ -101,7 +113,7 @@ public class DiscoveryTools {
         // way an explore ask should be answered — researched picks, each its own stack.
         if (!request.hasLookupAnchor()) {
             log.info("search('{}') has no artist/title anchor — handling as an explore ask", query);
-            return explore(turn, query);
+            return explore(turn, query, ownedReleases());
         }
         return runStack(turn, request, query);
     }
@@ -117,15 +129,37 @@ public class DiscoveryTools {
             InvocationParameters parameters) {
         AgentTurn turn = AgentTurn.of(parameters);
         turn.progress(SEARCHING);
-        return explore(turn, topic);
+        return explore(turn, topic, ownedReleases());
     }
 
-    private String explore(AgentTurn turn, String topic) {
-        List<Candidate> candidates = researchCandidates(topic);
+    private String explore(AgentTurn turn, String topic, OwnedReleases owned) {
+        List<Candidate> candidates = researchCandidates(topic, owned);
         if (candidates.isEmpty()) {
             return "research returned no concrete releases for '" + topic + "' — ask the user to narrow the topic";
         }
-        return buildStacks(turn, candidates, "researched picks for '" + topic + "'");
+        List<String> skipped = new ArrayList<>();
+        List<Candidate> fresh = new ArrayList<>();
+        for (Candidate candidate : candidates) {
+            if (owned.owns(candidate.artist(), candidate.title())) {
+                log.info("Recommendation '{}' is already in the library — skipped", candidate.label());
+                skipped.add(candidate.label());
+            } else {
+                fresh.add(candidate);
+            }
+        }
+        if (fresh.isEmpty()) {
+            return "every researched pick for '" + topic + "' is already in the user's library ("
+                    + String.join("; ", skipped) + ") — say so and ask which direction to dig";
+        }
+        return buildStacks(turn, fresh, "researched picks for '" + topic + "'") + skippedNote(skipped);
+    }
+
+    private OwnedReleases ownedReleases() {
+        return OwnedReleases.of(librarySearchService.ownedReleases(OWNED_FOR_PROMPT));
+    }
+
+    private static String skippedNote(List<String> skipped) {
+        return skipped.isEmpty() ? "" : "\nSkipped, already in the user's library: " + String.join("; ", skipped) + ".";
     }
 
     @Tool("""
@@ -163,12 +197,15 @@ public class DiscoveryTools {
                 .map(relatedArtistsCollector::collect)
                 .orElse(List.of());
 
-        List<SearchStack> opened = openSimilarStacks(turn, seedArtist, related);
+        OwnedReleases owned = ownedReleases();
+        List<String> skipped = new ArrayList<>();
+        List<SearchStack> opened = openSimilarStacks(turn, seedArtist, related, owned, skipped);
         if (opened.isEmpty()) {
             log.info("No confirmed related releases for '{}' — falling back to the seed's own styles", seedArtist);
-            return similarByStyle(turn, seed, seedRequest);
+            return similarByStyle(turn, seed, seedRequest, owned);
         }
-        return report(opened, "artists connected to " + seedArtist + " by MusicBrainz relations and ListenBrainz co-listen data");
+        return report(opened, "artists connected to " + seedArtist + " by MusicBrainz relations and ListenBrainz co-listen data")
+                + skippedNote(skipped);
     }
 
     /**
@@ -177,10 +214,12 @@ public class DiscoveryTools {
      * The searches run side by side because ten in a row would hold the bot for a minute; the
      * stacks are opened afterwards because openStack is a read-modify-write of the chat state.
      */
-    private List<SearchStack> openSimilarStacks(AgentTurn turn, String seedArtist, List<RelatedArtist> related) {
+    private List<SearchStack> openSimilarStacks(AgentTurn turn, String seedArtist, List<RelatedArtist> related,
+                                                OwnedReleases owned, List<String> skipped) {
+        var skippedHere = new ConcurrentLinkedQueue<String>();
         List<CompletableFuture<ConfirmedRelease>> searches = related.stream()
                 .limit(MAX_SIMILAR_ARTISTS_TRIED)
-                .map(artist -> CompletableFuture.supplyAsync(() -> confirmRelease(artist), searchPool)
+                .map(artist -> CompletableFuture.supplyAsync(() -> confirmRelease(artist, owned, skippedHere), searchPool)
                         .exceptionally(e -> {
                             log.warn("Related artist '{}' could not be confirmed: {}", artist.name(), e.getMessage());
                             return null;
@@ -192,6 +231,7 @@ public class DiscoveryTools {
                 .limit(MAX_SIMILAR_STACKS)
                 .sorted(Comparator.comparing(ConfirmedRelease::connection))
                 .toList();
+        skipped.addAll(skippedHere);
 
         List<SearchStack> opened = new ArrayList<>();
         for (ConfirmedRelease release : confirmed) {
@@ -201,11 +241,16 @@ public class DiscoveryTools {
         return opened;
     }
 
-    /** The related artist's main release, if it has one and the catalogs back it up; otherwise null. */
-    private ConfirmedRelease confirmRelease(RelatedArtist artist) {
+    /** The related artist's main release, if it has one, the user lacks it and the catalogs back it up; otherwise null. */
+    private ConfirmedRelease confirmRelease(RelatedArtist artist, OwnedReleases owned, Queue<String> skipped) {
         Optional<String> title = relatedArtistsCollector.mainRelease(artist.mbid());
         if (title.isEmpty()) {
             log.info("Related artist '{}' has no release to show — skipped", artist.name());
+            return null;
+        }
+        if (owned.owns(artist.name(), title.get())) {
+            log.info("Related release '{} — {}' is already in the library — skipped", artist.name(), title.get());
+            skipped.add(artist.name() + " — " + title.get());
             return null;
         }
         MetadataSearchRequest request = releaseRequest(artist.name(), title.get());
@@ -248,7 +293,7 @@ public class DiscoveryTools {
      * catalogs what the seed itself sounds like and recommend from that, instead of handing the model
      * a dead end it can only turn into "уточни назву".
      */
-    private String similarByStyle(AgentTurn turn, String seed, MetadataSearchRequest seedRequest) {
+    private String similarByStyle(AgentTurn turn, String seed, MetadataSearchRequest seedRequest, OwnedReleases owned) {
         var aggregated = aggregatedSearch.search(seedRequest);
         Optional<ReleaseMetadata> top = aggregated.releases().stream().findFirst();
         if (top.isEmpty()) {
@@ -267,7 +312,7 @@ public class DiscoveryTools {
 
         String topic = String.join(" ", styles) + decadeOf(top.get()).map(d -> " " + d).orElse("");
         log.info("Style fallback for '{}': recommending on '{}'", seed, topic);
-        return explore(turn, topic);
+        return explore(turn, topic, owned);
     }
 
     /** "1993" → "1990s" — a decade is a usable recommendation filter, an exact year is not. */
@@ -366,10 +411,10 @@ public class DiscoveryTools {
     private record ConfirmedRelease(String label, Connection connection, MetadataSearchRequest request,
                                     List<ReleaseMetadata> releases) {}
 
-    private List<Candidate> researchCandidates(String topic) {
+    private List<Candidate> researchCandidates(String topic, OwnedReleases owned) {
         String answer;
         try {
-            answer = releaseRecommender.recommend(topic);
+            answer = releaseRecommender.recommend(topic, owned.forPrompt());
         } catch (Exception e) {
             log.warn("Release recommender failed for topic '{}': {}", topic, e.getMessage());
             return List.of();
@@ -384,30 +429,42 @@ public class DiscoveryTools {
             String artist = parts[0].replaceFirst("^\\d+[.)]\\s*", "").trim();
             String title = parts[1].trim();
             if (artist.isBlank() || title.isBlank()) continue;
+            if (title.length() > MAX_TITLE_CHARS || words(title) > MAX_TITLE_WORDS || words(artist) > MAX_ARTIST_WORDS) {
+                log.info("Recommender line is prose, not a pick — skipped: {}", line.trim());
+                continue;
+            }
             candidates.add(new Candidate(artist, title, artist + " — " + title));
         }
         return candidates;
     }
 
+    private static int words(String text) {
+        return text.isBlank() ? 0 : text.trim().split("\\s+").length;
+    }
+
     /**
      * Turns researched picks into one card stack each. Candidates that nothing in the catalogs backs
      * up are skipped silently — a recommendation the user cannot open is worse than one fewer stack.
-     * The recommender lists spares for exactly that case; all picks are searched side by side and the
-     * first confirmed ones, in the recommender's order, become the stacks.
+     * The recommender lists spares for exactly that case. Picks are searched in waves, each side by
+     * side; the next wave runs only while fewer than three are confirmed, and the first confirmed
+     * ones, in the recommender's order, become the stacks.
      */
     private String buildStacks(AgentTurn turn, List<Candidate> candidates, String provenance) {
-        List<CompletableFuture<ConfirmedPick>> searches = candidates.stream()
-                .map(candidate -> CompletableFuture.supplyAsync(() -> confirmPick(candidate), searchPool)
-                        .exceptionally(e -> {
-                            log.warn("Recommendation '{}' could not be confirmed: {}", candidate.label(), e.getMessage());
-                            return null;
-                        }))
-                .toList();
-        List<ConfirmedPick> confirmed = searches.stream()
-                .map(CompletableFuture::join)
-                .filter(Objects::nonNull)
-                .limit(MAX_RECOMMENDATIONS)
-                .toList();
+        List<ConfirmedPick> confirmed = new ArrayList<>();
+        for (int from = 0; from < candidates.size() && confirmed.size() < MAX_RECOMMENDATIONS; from += PICK_WAVE) {
+            List<CompletableFuture<ConfirmedPick>> wave = candidates.subList(from, Math.min(from + PICK_WAVE, candidates.size()))
+                    .stream()
+                    .map(candidate -> CompletableFuture.supplyAsync(() -> confirmPick(candidate), searchPool)
+                            .exceptionally(e -> {
+                                log.warn("Recommendation '{}' could not be confirmed: {}", candidate.label(), e.getMessage());
+                                return null;
+                            }))
+                    .toList();
+            wave.stream().map(CompletableFuture::join).filter(Objects::nonNull).forEach(confirmed::add);
+        }
+        if (confirmed.size() > MAX_RECOMMENDATIONS) {
+            confirmed = confirmed.subList(0, MAX_RECOMMENDATIONS);
+        }
 
         if (confirmed.isEmpty()) {
             return "none of the researched picks could be confirmed in the catalogs — say so and ask for a narrower ask";

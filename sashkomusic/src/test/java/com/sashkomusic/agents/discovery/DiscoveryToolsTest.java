@@ -3,6 +3,8 @@ package com.sashkomusic.agents.discovery;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.Connection;
 import com.sashkomusic.agents.discovery.RelatedArtistsCollector.RelatedArtist;
 import com.sashkomusic.agents.turn.AgentTurn;
+import com.sashkomusic.libraryagent.domain.model.OwnedRelease;
+import com.sashkomusic.libraryagent.domain.service.LibrarySearchService;
 import com.sashkomusic.mainagent.bot.ConversationContext;
 import com.sashkomusic.mainagent.search.AggregatedSearchService;
 import com.sashkomusic.mainagent.search.SearchContextService;
@@ -24,6 +26,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,9 +47,10 @@ class DiscoveryToolsTest {
     private final MusicBrainzClient musicBrainz = mock(MusicBrainzClient.class);
     private final RelatedArtistsCollector relatedArtists = mock(RelatedArtistsCollector.class);
     private final MusicResearcher researcher = mock(MusicResearcher.class);
+    private final LibrarySearchService library = mock(LibrarySearchService.class);
 
     private final DiscoveryTools tools = new DiscoveryTools(
-            aggregatedSearch, contextService, extractor, recommender, musicBrainz, relatedArtists, researcher);
+            aggregatedSearch, contextService, extractor, recommender, musicBrainz, relatedArtists, researcher, library);
 
     private final List<String> progress = new ArrayList<>();
     private final AgentTurn turn = new AgentTurn(ConversationContext.dm(42L), progress::add);
@@ -62,7 +66,7 @@ class DiscoveryToolsTest {
         // "пошукай detroit techno класичне" — nothing here to validate a result against.
         whenExtracted(MetadataSearchRequest.create("", "", "", DateRange.empty(),
                 "", "", "", "", "detroit techno", "", "", Language.UA));
-        when(recommender.recommend(anyString())).thenReturn("""
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
                 Model 500 — Classics
                 Derrick May — Innovator
                 Juan Atkins — Deep Space
@@ -70,7 +74,7 @@ class DiscoveryToolsTest {
 
         String result = tools.search("detroit techno класичне", turn.parameters());
 
-        verify(recommender).recommend("detroit techno класичне");
+        verify(recommender).recommend(eq("detroit techno класичне"), anyString());
         verify(contextService, times(3)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
         assertThat(result).contains("card stacks");
     }
@@ -82,7 +86,7 @@ class DiscoveryToolsTest {
 
         String result = tools.search("Burial Untrue", turn.parameters());
 
-        verify(recommender, never()).recommend(anyString());
+        verify(recommender, never()).recommend(anyString(), anyString());
         verify(contextService).openStack(eq(CONVERSATION), eq("Burial Untrue"), any(), eq(null), any(), any());
         assertThat(result).startsWith("showed 1 card stack for 'Burial Untrue'");
     }
@@ -91,7 +95,7 @@ class DiscoveryToolsTest {
     void each_recommendation_is_searched_on_its_own_so_each_gets_its_own_stack() {
         whenExtracted(MetadataSearchRequest.create("", "", "", DateRange.empty(),
                 "", "", "", "", "ambient", "", "", Language.EN));
-        when(recommender.recommend(anyString())).thenReturn("""
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
                 Model 500 — Classics
                 Derrick May — Innovator
                 """);
@@ -109,7 +113,7 @@ class DiscoveryToolsTest {
 
     @Test
     void a_pick_the_catalogs_lack_is_replaced_by_a_spare_and_the_stacks_keep_the_recommenders_order() {
-        when(recommender.recommend(anyString())).thenReturn("""
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
                 Model 500 — Classics
                 Nobody — Unknown Tape
                 Derrick May — Innovator
@@ -132,10 +136,110 @@ class DiscoveryToolsTest {
     }
 
     @Test
+    void picks_the_user_already_owns_are_never_searched_and_the_agent_hears_why() {
+        when(library.ownedReleases(anyInt())).thenReturn(List.of(
+                new OwnedRelease("Cybotron", "Enter (Deluxe Edition)"),
+                new OwnedRelease("Model 500", "Deep Space")));
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
+                Cybotron — Enter
+                Model 500 — Deep Space
+                Blake Baxter — The Prince of Techno
+                """);
+
+        String result = tools.exploreAndRecommend("ранній детройт", turn.parameters());
+
+        verify(recommender).recommend("ранній детройт", "Cybotron — Enter (Deluxe Edition)\nModel 500 — Deep Space");
+        ArgumentCaptor<MetadataSearchRequest> requests = ArgumentCaptor.forClass(MetadataSearchRequest.class);
+        verify(aggregatedSearch).search(requests.capture());
+        assertThat(requests.getValue().artist()).isEqualTo("Blake Baxter");
+        assertThat(result).contains("Skipped, already in the user's library: Cybotron — Enter; Model 500 — Deep Space.");
+    }
+
+    @Test
+    void a_sentence_with_a_dash_in_it_is_not_a_pick() {
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
+                Мені потрібні конкретні інші артисти та релізи поза Belleville Three.
+                Blake Baxter — The Prince of Techno
+                Вибачте — не можу надати повну відповідь з достатньою впевненістю в точності каталогів без додаткового пошуку.
+                """);
+
+        tools.exploreAndRecommend("ранній детройт", turn.parameters());
+
+        verify(aggregatedSearch, times(1)).search(any());
+        verify(contextService, times(1)).openStack(eq(CONVERSATION), eq("Blake Baxter — The Prince of Techno"),
+                any(), anyString(), any(), any());
+    }
+
+    @Test
+    void spares_are_searched_in_waves_only_while_three_are_not_yet_confirmed() {
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
+                Real One — A
+                Ghost One — B
+                Ghost Two — C
+                Ghost Three — D
+                Ghost Four — E
+                Real Two — F
+                Real Three — G
+                Never Searched — H
+                Real Four — I
+                Real Five — J
+                """);
+        when(aggregatedSearch.search(any())).thenAnswer(invocation -> {
+            MetadataSearchRequest request = invocation.getArgument(0);
+            List<ReleaseMetadata> found = request.artist().startsWith("Real")
+                    ? List.of(release(request.artist(), request.release())) : List.of();
+            return new AggregatedSearchService.Aggregated(found, found.size(), List.of(SearchEngine.DISCOGS), 0);
+        });
+
+        tools.exploreAndRecommend("anything", turn.parameters());
+
+        ArgumentCaptor<String> labels = ArgumentCaptor.forClass(String.class);
+        verify(contextService, times(3)).openStack(eq(CONVERSATION), labels.capture(), any(), anyString(), any(), any());
+        assertThat(labels.getAllValues()).containsExactly("Real One — A", "Real Two — F", "Real Three — G");
+        verify(aggregatedSearch, times(10)).search(any());
+    }
+
+    @Test
+    void a_first_wave_that_confirms_three_leaves_the_spares_unsearched() {
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
+                A1 — T1
+                A2 — T2
+                A3 — T3
+                A4 — T4
+                A5 — T5
+                A6 — T6
+                A7 — T7
+                """);
+
+        tools.exploreAndRecommend("anything", turn.parameters());
+
+        verify(aggregatedSearch, times(5)).search(any());
+        verify(contextService, times(3)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
+    }
+
+    @Test
+    void a_related_release_the_user_owns_is_skipped() {
+        whenSeedIs("Cybotron", "mbid-1");
+        when(library.ownedReleases(anyInt())).thenReturn(List.of(new OwnedRelease("Model 500", "Deep Space")));
+        when(relatedArtists.collect("mbid-1")).thenReturn(List.of(
+                new RelatedArtist("m500", "Model 500", "псевдонім Juan Atkins", Connection.DIRECT),
+                new RelatedArtist("mbid-2", "Arpanet", "co-listen", Connection.CO_LISTEN)));
+        when(relatedArtists.mainRelease("m500")).thenReturn(Optional.of("Deep Space"));
+        when(relatedArtists.mainRelease("mbid-2")).thenReturn(Optional.of("Wireless Internet"));
+
+        String result = tools.findSimilar("Cybotron", turn.parameters());
+
+        ArgumentCaptor<MetadataSearchRequest> request = ArgumentCaptor.forClass(MetadataSearchRequest.class);
+        verify(aggregatedSearch).search(request.capture());
+        assertThat(request.getValue().artist()).isEqualTo("Arpanet");
+        assertThat(result).contains("Skipped, already in the user's library: Model 500 — Deep Space.");
+    }
+
+    @Test
     void prose_instead_of_release_names_yields_no_stacks() {
         whenExtracted(MetadataSearchRequest.create("", "", "", DateRange.empty(),
                 "", "", "", "", "techno", "", "", Language.EN));
-        when(recommender.recommend(anyString())).thenReturn("Detroit techno began in the mid-1980s.");
+        when(recommender.recommend(anyString(), anyString())).thenReturn("Detroit techno began in the mid-1980s.");
 
         String result = tools.exploreAndRecommend("techno", turn.parameters());
 
@@ -153,7 +257,7 @@ class DiscoveryToolsTest {
         when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
                 List.of(tagged("Symphony Of Love", "Spirit Of Love", "1993", "Acid", "Techno", "Trance", "Ambient")),
                 1, List.of(SearchEngine.DISCOGS), 0));
-        when(recommender.recommend(anyString())).thenReturn("""
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
                 Hardfloor — TB Resuscitation
                 Emmanuel Top — Acid Phase
                 """);
@@ -161,7 +265,7 @@ class DiscoveryToolsTest {
         String result = tools.findSimilar("Symphony Of Love — Spirit Of Love", turn.parameters());
 
         // Styles capped at 3, year turned into a decade — a usable recommendation topic.
-        verify(recommender).recommend("Acid Techno Trance 1990s");
+        verify(recommender).recommend(eq("Acid Techno Trance 1990s"), anyString());
         verify(contextService, times(2)).openStack(eq(CONVERSATION), anyString(), any(), anyString(), any(), any());
         assertThat(result).contains("card stacks");
     }
@@ -182,7 +286,7 @@ class DiscoveryToolsTest {
         assertThat(request.getValue().release()).isEqualTo("Wireless Internet");
         verify(contextService).openStack(eq(CONVERSATION), eq(label), any(), eq(label),
                 eq(Connection.DIRECT.describe("Drexciya")), any());
-        verify(recommender, never()).recommend(anyString());
+        verify(recommender, never()).recommend(anyString(), anyString());
         assertThat(result).startsWith("showed 1 card stack — " + label)
                 .contains("Source: artists connected to Drexciya");
         assertThat(turn.openedStacks()).extracting(stack -> stack.group())
@@ -268,11 +372,11 @@ class DiscoveryToolsTest {
         when(aggregatedSearch.search(any())).thenReturn(new AggregatedSearchService.Aggregated(
                 List.of(tagged("Symphony Of Love", "Spirit Of Love", "1993", "Acid")),
                 1, List.of(SearchEngine.DISCOGS), 0));
-        when(recommender.recommend(anyString())).thenReturn("Hardfloor — TB Resuscitation");
+        when(recommender.recommend(anyString(), anyString())).thenReturn("Hardfloor — TB Resuscitation");
 
         tools.findSimilar("Symphony Of Love", turn.parameters());
 
-        verify(recommender).recommend("Acid 1990s");
+        verify(recommender).recommend(eq("Acid 1990s"), anyString());
     }
 
     @Test
@@ -286,7 +390,7 @@ class DiscoveryToolsTest {
 
         String result = tools.search("лейбл Tresor", turn.parameters());
 
-        verify(recommender, never()).recommend(anyString());
+        verify(recommender, never()).recommend(anyString(), anyString());
         verify(contextService, times(2)).openStack(eq(CONVERSATION), eq("лейбл Tresor"), any(), eq("Tresor"), any(), any());
         assertThat(result).contains("Waveform Transmission Vol. 1", "Discovers the Rings of Saturn")
                 .doesNotContain("Vol. 3");
@@ -328,13 +432,13 @@ class DiscoveryToolsTest {
 
         String result = tools.findSimilar("Nonexistent Thing", turn.parameters());
 
-        verify(recommender, never()).recommend(anyString());
+        verify(recommender, never()).recommend(anyString(), anyString());
         assertThat(result).contains("spelling");
     }
 
     @Test
     void tools_only_add_stacks_and_leave_the_turn_boundary_to_the_service() {
-        when(recommender.recommend(anyString())).thenReturn("""
+        when(recommender.recommend(anyString(), anyString())).thenReturn("""
                 Model 500 — Classics
                 Derrick May — Innovator
                 Juan Atkins — Deep Space

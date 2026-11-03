@@ -182,7 +182,7 @@ class MainAgentServiceTest {
     private MainAgent agent() {
         DiscoveryTools discovery = new DiscoveryTools(aggregatedSearch, searchContext, extractor,
                 mock(ReleaseRecommender.class), mock(MusicBrainzClient.class), mock(RelatedArtistsCollector.class),
-                mock(MusicResearcher.class));
+                mock(MusicResearcher.class), mock(com.sashkomusic.libraryagent.domain.service.LibrarySearchService.class));
         return AiServices.builder(MainAgent.class)
                 .chatModel(model)
                 .chatMemoryProvider(id -> MessageWindowChatMemory.withMaxMessages(32))
