@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,27 @@ import lombok.RequiredArgsConstructor;
 public class TrackMatcher {
 
     public Map<String, TrackMatch> match(List<Path> audioFiles, ReleaseMetadata metadata) {
-        return dedupeTitles(matchInternal(audioFiles, metadata));
+        return dedupeTitles(cleanWhitespace(matchInternal(audioFiles, metadata)));
+    }
+
+    /**
+     * Source filenames/tags often carry stray whitespace (e.g. " Artist– Title.flac"); it would
+     * otherwise leak into the tag, the renamed file and the bot message.
+     */
+    private Map<String, TrackMatch> cleanWhitespace(Map<String, TrackMatch> matches) {
+        Map<String, TrackMatch> result = new HashMap<>();
+        matches.forEach((path, m) -> result.put(path,
+                new TrackMatch(m.trackNumber(), collapseWhitespace(m.artist()), collapseWhitespace(m.trackTitle()))));
+        return result;
+    }
+
+    // En/em dash used as a separator ("Artist– Title") gets a space on both sides; digit–digit ranges are left alone.
+    private static final Pattern SEPARATOR_DASH = Pattern.compile("(?<!\\d)\\s*([–—])\\s*|\\s*([–—])\\s*(?!\\d)");
+
+    private String collapseWhitespace(String value) {
+        if (value == null) return null;
+        String spaced = SEPARATOR_DASH.matcher(value).replaceAll(m -> " " + (m.group(1) != null ? m.group(1) : m.group(2)) + " ");
+        return spaced.replaceAll("[\\s\\u00A0]+", " ").trim();
     }
 
     private Map<String, TrackMatch> matchInternal(List<Path> audioFiles, ReleaseMetadata metadata) {
@@ -137,7 +158,13 @@ public class TrackMatcher {
             return new TrackMatch(trackNumber, metadata.artist(), title);
         }
 
-        // Case 3: No track number in filename - use provided fallback number
+        // Case 3: No track number in filename - try to find the official track by its title first
+        int byTitle = findTrackByTitle(filename, metadata);
+        if (byTitle > 0) {
+            var trackMetadata = metadata.tracks().get(byTitle - 1);
+            log.debug("File '{}' matched to official track {} by title", filename, byTitle);
+            return new TrackMatch(byTitle, trackMetadata.artist(), trackMetadata.title());
+        }
         String title = extractTitle(filename);
         log.warn("No track number found in '{}', assigning track {}", filename, fallbackTrackNum);
         return new TrackMatch(fallbackTrackNum, metadata.artist(), title);
@@ -175,6 +202,7 @@ public class TrackMatcher {
 
         Map<String, TrackMatch> matchMap = new HashMap<>();
         Set<Integer> usedTrackNumbers = new HashSet<>();
+        Set<Integer> assignedTrackNumbers = new HashSet<>();
 
         for (Path file : audioFiles) {
             try {
@@ -189,6 +217,7 @@ public class TrackMatcher {
 
                 String trackStr = tag.getFirst(FieldKey.TRACK);
                 int trackNum = parseTrackNumberFromTag(trackStr);
+                int rawTrackNum = trackNum;
 
                 if (usedTrackNumbers.contains(trackNum)) {
                     log.warn("Duplicate track number {} detected in tags (folder: {}). Skipping tag matching entirely.", trackNum, currentDir);
@@ -201,10 +230,28 @@ public class TrackMatcher {
                     continue;
                 }
 
+                String titleHint = tag.getFirst(FieldKey.TITLE);
+                if (titleHint == null || titleHint.isBlank()) {
+                    titleHint = file.getFileName().toString();
+                }
+                int correctedNum = correctTrackNumberByTitle(trackNum, titleHint, metadata);
+                if (correctedNum != trackNum) {
+                    log.warn("File '{}': tag track {} contradicts its title, using track {} ('{}')",
+                            file.getFileName(), trackNum, correctedNum, metadata.tracks().get(correctedNum - 1).title());
+                    if (!assignedTrackNumbers.add(correctedNum)) {
+                        log.warn("Corrected track number {} is already taken. Skipping tag matching entirely.", correctedNum);
+                        return new HashMap<>();
+                    }
+                    trackNum = correctedNum;
+                } else if (!assignedTrackNumbers.add(trackNum)) {
+                    log.warn("Track number {} was already assigned by a title correction. Skipping tag matching entirely.", trackNum);
+                    return new HashMap<>();
+                }
+
                 var trackMetadata = metadata.tracks().get(trackNum - 1);
                 TrackMatch match = createTrackMatchFromTags(tag, trackMetadata, trackNum);
 
-                usedTrackNumbers.add(trackNum);
+                usedTrackNumbers.add(rawTrackNum);
                 matchMap.put(file.toString(), match);
 
                 log.debug("File '{}' matched by tags: track={}, title='{}', artist='{}'",
@@ -216,6 +263,46 @@ public class TrackMatcher {
             }
         }
         return matchMap;
+    }
+
+    /**
+     * Track numbers in existing tags can be stale (e.g. an untagged vinyl rip numbered in an arbitrary
+     * order). If the title no longer corresponds to the official track at that number but clearly
+     * corresponds to another one, the title wins.
+     */
+    private int correctTrackNumberByTitle(int trackNum, String titleHint, ReleaseMetadata metadata) {
+        String key = titleKey(titleHint);
+        String expected = titleKey(metadata.tracks().get(trackNum - 1).title());
+        if (!expected.isEmpty() && key.contains(expected)) {
+            return trackNum;
+        }
+        int byTitle = findTrackByTitle(titleHint, metadata);
+        return byTitle > 0 ? byTitle : trackNum;
+    }
+
+    /** 1-based number of the single official track whose title is contained in the text, or -1. */
+    private int findTrackByTitle(String text, ReleaseMetadata metadata) {
+        if (metadata.tracks() == null) return -1;
+        String key = titleKey(text);
+        int best = -1;
+        int bestLength = 0;
+        boolean ambiguous = false;
+        for (int i = 0; i < metadata.tracks().size(); i++) {
+            String candidate = titleKey(metadata.tracks().get(i).title());
+            if (candidate.isEmpty() || !key.contains(candidate)) continue;
+            if (candidate.length() > bestLength) {
+                best = i + 1;
+                bestLength = candidate.length();
+                ambiguous = false;
+            } else if (candidate.length() == bestLength) {
+                ambiguous = true;
+            }
+        }
+        return ambiguous ? -1 : best;
+    }
+
+    private String titleKey(String value) {
+        return value == null ? "" : value.toLowerCase().replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
     private Integer extractTrackNumber(String filename, ReleaseMetadata metadata) {
