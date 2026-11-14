@@ -271,7 +271,7 @@ public class DiscogsClient implements SearchEngineService {
         List<String> years = groupResults.stream()
                 .map(DiscogsSearchResponse.Result::year)
                 .filter(Objects::nonNull)
-                .filter(y -> !y.isEmpty())
+                .filter(y -> !y.isEmpty() && !y.equals("0"))
                 .distinct()
                 .sorted()
                 .toList();
@@ -422,7 +422,7 @@ public class DiscogsClient implements SearchEngineService {
 
             List<TrackMetadata> tracks = getTracks(releaseId);
 
-            List<String> years = response.year() != null
+            List<String> years = response.year() != null && response.year() != 0
                     ? List.of(String.valueOf(response.year()))
                     : List.of();
 
