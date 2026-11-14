@@ -1,8 +1,10 @@
 package com.sashkomusic.libraryagent.domain.service.processFolder;
 
 import com.sashkomusic.shared.model.ReleaseMetadata;
-import lombok.RequiredArgsConstructor;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -13,52 +15,64 @@ import java.nio.file.Paths;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CoverArtService {
 
     private final RestClient.Builder restClientBuilder;
+    private final CoverArtService self;
 
+    public CoverArtService(RestClient.Builder restClientBuilder, @Lazy CoverArtService self) {
+        this.restClientBuilder = restClientBuilder;
+        this.self = self;
+    }
+
+    @CircuitBreaker(name = "coverArtClient", fallbackMethod = "downloadCoverFallback")
+    @Retry(name = "coverArtClient")
     public void downloadCover(String coverUrl, Path albumDirectory) {
         if (coverUrl == null || coverUrl.isEmpty()) {
             log.warn("No cover URL provided, skipping cover art download");
             return;
         }
 
+        log.info("Downloading cover art from: {}", coverUrl);
+
+        RestClient client = restClientBuilder.build();
+
+        byte[] imageData = client.get()
+                .uri(coverUrl)
+                .retrieve()
+                .body(byte[].class);
+
+        if (imageData == null || imageData.length == 0) {
+            throw new CoverArtDownloadException("Empty response from cover URL: " + coverUrl);
+        }
+
+        // Validate it's actually an image
+        if (!isValidImageData(imageData)) {
+            throw new CoverArtDownloadException("Downloaded data is not a valid image (first bytes: "
+                    + bytesToHex(imageData, Math.min(8, imageData.length)) + ")");
+        }
+
+        Path coverPath = albumDirectory.resolve("cover.jpg");
         try {
-            log.info("Downloading cover art from: {}", coverUrl);
-
-            RestClient client = restClientBuilder.build();
-
-            byte[] imageData = client.get()
-                    .uri(coverUrl)
-                    .retrieve()
-                    .onStatus(status -> status.value() >= 400, (request, response) -> {
-                        log.error("HTTP error downloading cover: {} {}", response.getStatusCode(), response.getStatusText());
-                        throw new IOException("HTTP error: " + response.getStatusCode());
-                    })
-                    .body(byte[].class);
-
-            if (imageData == null || imageData.length == 0) {
-                log.warn("Empty response from cover URL: {}", coverUrl);
-                return;
-            }
-
-            // Validate it's actually an image
-            if (!isValidImageData(imageData)) {
-                log.error("Downloaded data is not a valid image (first bytes: {})",
-                        bytesToHex(imageData, Math.min(8, imageData.length)));
-                return;
-            }
-
-            Path coverPath = albumDirectory.resolve("cover.jpg");
             Files.write(coverPath, imageData);
-
-            log.info("Cover art saved successfully: {} ({} bytes)", coverPath, imageData.length);
-
         } catch (IOException ex) {
-            log.error("Error saving cover art to disk: {}", ex.getMessage());
-        } catch (Exception ex) {
-            log.error("Error downloading cover art from {}: {}", coverUrl, ex.getMessage(), ex);
+            throw new CoverArtDownloadException("Error saving cover art to disk: " + coverPath, ex);
+        }
+
+        log.info("Cover art saved successfully: {} ({} bytes)", coverPath, imageData.length);
+    }
+
+    private void downloadCoverFallback(String coverUrl, Path albumDirectory, Exception ex) {
+        log.error("Failed to download cover art from {} after retries: {}", coverUrl, ex.getMessage());
+    }
+
+    public static class CoverArtDownloadException extends RuntimeException {
+        public CoverArtDownloadException(String message) {
+            super(message);
+        }
+
+        public CoverArtDownloadException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
@@ -100,7 +114,7 @@ public class CoverArtService {
             }
         }
 
-        downloadCover(metadata.coverUrl(), albumDir);
+        self.downloadCover(metadata.coverUrl(), albumDir);
 
         if (!Files.exists(coverPath)) {
             log.warn("Cover art not found at: {}", coverPath);
