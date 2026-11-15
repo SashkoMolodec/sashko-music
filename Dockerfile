@@ -30,7 +30,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
-        sed -i "s/(?=eyJh)(.*?)(?=\")/(?=eyJ)(.*?)(?=\")/g" {} \;
+        sed -i "s/(?=eyJh)(.*?)(?=\")/(?=eyJ)(.*?)(?=\")/g" {} \; && \
+    find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
+        sed -i "s/index-legacy\[~-\]/index(?:-legacy)?[~-]/g" {} \;
 
 COPY --from=builder /app/sashkomusic/build/libs/*.jar app.jar
 COPY entrypoint.sh /app/entrypoint.sh
