@@ -32,7 +32,9 @@ RUN apt-get update && \
     find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
         sed -i "s/(?=eyJh)(.*?)(?=\")/(?=eyJ)(.*?)(?=\")/g" {} \; && \
     find /usr/local/lib -path "*/gamdl/api/apple_music_api.py" -exec \
-        sed -i "s/index-legacy\[~-\]/index(?:-legacy)?[~-]/g" {} \;
+        sed -i "s/index-legacy\[~-\]/index(?:-legacy)?[~-]/g" {} \; && \
+    find /usr/local/lib -path "*/gamdl/downloader/downloader_base.py" -exec \
+        sed -i "s/async with httpx.AsyncClient() as client:/async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(retries=10)) as client:/g" {} \;
 
 COPY --from=builder /app/sashkomusic/build/libs/*.jar app.jar
 COPY entrypoint.sh /app/entrypoint.sh
